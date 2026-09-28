@@ -232,6 +232,15 @@ impl Engine {
         }
     }
 
+    /// Changes the preview cache budget at runtime (settings), evicting to fit.
+    pub fn set_preview_cache_budget(&self, bytes: usize) {
+        self.shared
+            .previews
+            .lock()
+            .expect("preview cache lock")
+            .set_budget(bytes);
+    }
+
     pub fn preview_cache_stats(&self) -> CacheStats {
         self.shared
             .previews
@@ -275,10 +284,7 @@ impl Shared {
             Ok(None) => None,
             Err(e) => {
                 // The real decode below reports actionable errors; this is advisory.
-                eprintln!(
-                    "[engine] embedded preview unavailable for {}: {e}",
-                    path.display()
-                );
+                log::warn!("embedded preview unavailable for {}: {e}", path.display());
                 None
             }
         };
@@ -338,6 +344,18 @@ impl Shared {
                 previews.retain(|k| k.source != e.source_id);
             }
         }
+        log::info!(
+            "opened {} ({}, {}x{}): decode {:.0} ms, pyramid {:.1} ms, embedded preview {}",
+            path.display(),
+            summary.decoder,
+            summary.full_width,
+            summary.full_height,
+            summary.decode_ms,
+            summary.pyramid_ms,
+            summary
+                .embedded_preview_ms
+                .map_or("none".into(), |ms| format!("{ms:.0} ms")),
+        );
         Ok(summary)
     }
 
@@ -393,6 +411,14 @@ impl Shared {
         export::write_atomic(&req.destination, &bytes)?;
         let write_ms = ms(t);
 
+        let total_ms = ms(start);
+        log::info!(
+            "exported {} ({}x{}, {} bytes) in {total_ms:.0} ms",
+            req.destination.display(),
+            rendered.width(),
+            rendered.height(),
+            bytes.len()
+        );
         Ok(ExportSummary {
             path: req.destination.clone(),
             width: rendered.width(),
@@ -402,7 +428,7 @@ impl Shared {
             render_ms,
             encode_ms,
             write_ms,
-            total_ms: ms(start),
+            total_ms,
         })
     }
 }

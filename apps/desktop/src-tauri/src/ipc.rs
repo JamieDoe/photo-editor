@@ -122,8 +122,6 @@ pub struct ExportRequestDto {
     #[ts(type = "number")]
     pub image_id: u64,
     pub recipe: EditRecipe,
-    /// JPEG quality 1-100.
-    pub quality: u8,
     /// Only honoured in self-test mode; otherwise a save dialog is shown.
     pub destination: Option<String>,
 }
@@ -224,29 +222,45 @@ pub enum IpcErrorKind {
 }
 
 /// Error returned to the UI: a category and a photographer-facing message.
-/// Technical detail is logged on the Rust side, never shown.
+/// Technical detail is logged on the Rust side, never shown; `reference` links the
+/// two (it appears in the log line and in the UI's "Copy details").
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct IpcError {
     pub kind: IpcErrorKind,
     pub message: String,
+    pub reference: Option<String>,
 }
 
 impl IpcError {
-    pub fn internal(message: impl Into<String>) -> Self {
+    /// An internal failure in the shell itself; the detail is logged, the user sees a
+    /// generic message.
+    pub fn internal(detail: impl std::fmt::Display) -> Self {
+        let reference = crate::logging::new_reference();
+        log::error!("[{reference}] internal: {detail}");
         Self {
             kind: IpcErrorKind::Internal,
-            message: message.into(),
+            message: "Something went wrong. Please try again.".into(),
+            reference: Some(reference),
         }
     }
 }
 
 impl From<EngineError> for IpcError {
     fn from(e: EngineError) -> Self {
-        if e.kind != ErrorKind::Cancelled {
-            eprintln!("[engine] {e}");
-        }
+        let reference = (e.kind != ErrorKind::Cancelled).then(|| {
+            let reference = crate::logging::new_reference();
+            // Expected failures (unsupported file, bad destination) are warnings; the
+            // rest are errors.
+            match e.kind {
+                ErrorKind::Internal | ErrorKind::ExportFailed => {
+                    log::error!("[{reference}] {:?}: {}", e.kind, e.detail);
+                }
+                _ => log::warn!("[{reference}] {:?}: {}", e.kind, e.detail),
+            }
+            reference
+        });
         let kind = match e.kind {
             ErrorKind::NotFound => IpcErrorKind::NotFound,
             ErrorKind::Unsupported => IpcErrorKind::Unsupported,
@@ -260,6 +274,7 @@ impl From<EngineError> for IpcError {
         Self {
             kind,
             message: e.message,
+            reference,
         }
     }
 }
@@ -270,4 +285,93 @@ impl From<EngineError> for IpcError {
 pub struct SelfTestConfigDto {
     pub image_path: String,
     pub export_path: String,
+}
+
+/// Where a UI-side error came from.
+#[derive(Debug, Clone, Copy, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ClientErrorSource {
+    /// React render error caught by the error boundary.
+    Render,
+    /// `window.onerror`.
+    Uncaught,
+    /// Unhandled promise rejection.
+    UnhandledRejection,
+}
+
+/// An error that happened in the webview, reported for the local log.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ClientErrorReport {
+    pub source: ClientErrorSource,
+    pub message: String,
+    pub stack: Option<String>,
+}
+
+/// Facts included in "Copy details" and useful in bug reports. Local only.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct DiagnosticsDto {
+    pub app_version: String,
+    pub os: String,
+    pub arch: String,
+    pub cpu_threads: u32,
+    pub renderer_version: u32,
+    pub libraw_version: Option<String>,
+    pub jpeg_encoder: String,
+    pub embedded_jpeg_decoder: String,
+    pub log_dir: Option<String>,
+}
+
+/// Settings as shown in the Settings screen.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SettingsViewDto {
+    pub settings: settings::Settings,
+    /// A changed setting only takes effect after the app restarts.
+    pub restart_required: bool,
+    /// Set if the settings file was unreadable at start-up and was moved to this path.
+    pub recovered_from: Option<String>,
+}
+
+/// One step in the path from the granted folder down to the listed folder.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FolderCrumbDto {
+    pub name: String,
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PhotoEntryDto {
+    pub name: String,
+    pub path: String,
+    #[ts(type = "number")]
+    pub size_bytes: u64,
+    #[ts(type = "number")]
+    pub modified_ms: u64,
+    /// Camera RAW (as opposed to an already-rendered format such as JPEG).
+    pub raw: bool,
+}
+
+/// A one-level folder listing for the Library.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct FolderListingDto {
+    pub path: String,
+    pub name: String,
+    /// From the granted folder (first) to this folder (last).
+    pub breadcrumbs: Vec<FolderCrumbDto>,
+    pub folders: Vec<FolderCrumbDto>,
+    pub photos: Vec<PhotoEntryDto>,
+    /// Entries that could not be read.
+    pub skipped: u32,
 }

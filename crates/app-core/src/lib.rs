@@ -23,6 +23,6 @@ pub use types::{
 
 // Re-exported so shells depend on one crate for the engine API.
 pub use export::ExportFormat;
-pub use jobs::{JobError, JobHandle};
+pub use jobs::{CancelToken, JobError, JobHandle};
 pub use raw::SourceKind;
 pub use renderer::{EditRecipe, PreviewQuality};

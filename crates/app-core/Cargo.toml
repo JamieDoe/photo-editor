@@ -20,6 +20,7 @@ cache.workspace = true
 jobs.workspace = true
 export = { path = "../export", default-features = false }
 rayon.workspace = true
+log.workspace = true
 
 [dev-dependencies]
 fixtures.workspace = true

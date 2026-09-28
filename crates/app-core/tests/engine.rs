@@ -465,3 +465,23 @@ fn files_without_embedded_preview_open_normally() {
         assert_eq!(summary.embedded_preview_ms, None, "{name}");
     }
 }
+
+#[test]
+fn preview_cache_budget_can_shrink_at_runtime() {
+    let dir = fixtures::TempDir::new("engine-cache-budget");
+    let path = write(dir.path(), "chart.jpg", fixtures::chart_jpeg(800, 600, 90));
+    let engine = engine();
+    let id = engine.open(&path).wait().unwrap().id;
+    for i in 0..4 {
+        let r = EditRecipe {
+            exposure: i as f32 * 0.1,
+            ..Default::default()
+        };
+        preview(&engine, id, r, PreviewQuality::Detail);
+    }
+    assert!(engine.preview_cache_stats().entries >= 4);
+    engine.set_preview_cache_budget(800 * 600 * 4 * 2);
+    let stats = engine.preview_cache_stats();
+    assert!(stats.used_bytes <= stats.budget_bytes, "{stats:?}");
+    assert_eq!(stats.budget_bytes, 800 * 600 * 4 * 2);
+}

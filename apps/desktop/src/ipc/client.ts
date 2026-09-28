@@ -5,17 +5,25 @@
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { EngineInfoDto } from "./generated/EngineInfoDto";
+import type { ClientErrorReport } from "./generated/ClientErrorReport";
+import type { DiagnosticsDto } from "./generated/DiagnosticsDto";
 import type { ExportEvent } from "./generated/ExportEvent";
 import type { ExportRequestDto } from "./generated/ExportRequestDto";
 import type { ExportStartedDto } from "./generated/ExportStartedDto";
+import type { FolderListingDto } from "./generated/FolderListingDto";
 import type { ImageSummaryDto } from "./generated/ImageSummaryDto";
 import type { IpcError } from "./generated/IpcError";
 import type { PreviewRequestDto } from "./generated/PreviewRequestDto";
+import type { QuitRequestedDto } from "./generated/QuitRequestedDto";
 import type { SelfTestConfigDto } from "./generated/SelfTestConfigDto";
+import type { Settings } from "./generated/Settings";
+import type { SettingsViewDto } from "./generated/SettingsViewDto";
 import { decodeFrame, type PreviewFrame } from "./frame";
 
 /** Must match `EXPORT_EVENT` in src-tauri/src/ipc.rs. */
 const EXPORT_EVENT = "export://event";
+/** Must match `QUIT_REQUESTED_EVENT` in src-tauri/src/lifecycle.rs. */
+const QUIT_REQUESTED_EVENT = "app://quit-requested";
 
 export const engineInfo = () => invoke<EngineInfoDto>("engine_info");
 
@@ -50,7 +58,7 @@ export async function renderPreview(request: PreviewRequestDto): Promise<Preview
 }
 
 /** A synthetic cancellation, for responses that became obsolete on the UI side. */
-export const staleError = (): IpcError => ({ kind: "cancelled", message: "stale" });
+export const staleError = (): IpcError => ({ kind: "cancelled", message: "stale", reference: null });
 
 export const exportImage = (request: ExportRequestDto) =>
   invoke<ExportStartedDto | null>("export_image", { request });
@@ -59,6 +67,37 @@ export const exportImage = (request: ExportRequestDto) =>
 export async function onExportEvent(handler: (e: ExportEvent) => void): Promise<UnlistenFn> {
   return listen<ExportEvent>(EXPORT_EVENT, (event) => handler(event.payload));
 }
+
+export const getSettings = () => invoke<SettingsViewDto>("get_settings");
+
+/** Saves settings; the result holds the values actually stored (clamped). */
+export const updateSettings = (settings: Settings) => invoke<SettingsViewDto>("update_settings", { settings });
+
+/** Native folder picker; grants and lists the folder. Null if the user cancelled. */
+export const chooseFolder = () => invoke<FolderListingDto | null>("choose_folder");
+
+/** Lists a folder inside a previously granted folder. */
+export const listFolder = (path: string) => invoke<FolderListingDto>("list_folder", { path });
+
+export const setDefaultFolder = (path: string) => invoke<SettingsViewDto>("set_default_folder", { path });
+
+export const diagnostics = () => invoke<DiagnosticsDto>("diagnostics");
+
+export const openLogsFolder = () => invoke<void>("open_logs_folder");
+
+/** Writes a UI-side error to the local log; returns its reference (null if throttled). */
+export const reportClientError = (report: ClientErrorReport) =>
+  invoke<string | null>("report_client_error", { report });
+
+/** Closing or quitting was held because work is running; the UI should confirm. */
+export async function onQuitRequested(handler: (e: QuitRequestedDto) => void): Promise<UnlistenFn> {
+  return listen<QuitRequestedDto>(QUIT_REQUESTED_EVENT, (event) => handler(event.payload));
+}
+
+/** Quits after cancelling running exports (the user confirmed). */
+export const quit = () => invoke<void>("quit");
+
+export const selfTestRequestClose = () => invoke<void>("self_test_request_close");
 
 export const selfTestConfig = () => invoke<SelfTestConfigDto | null>("self_test_config");
 
