@@ -1,0 +1,12 @@
+[package]
+name = "jpeg-turbo"
+description = "Minimal safe bindings to libjpeg-turbo (TurboJPEG 3): JPEG encode and DCT-scaled decode."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+build = "build.rs"
+links = "turbojpeg"
+
+[build-dependencies]
+cc.workspace = true

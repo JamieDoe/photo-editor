@@ -1,0 +1,16 @@
+[package]
+name = "gpu-spike"
+description = "Phase 0 GPU feasibility spike: the render plan as a wgpu compute shader. Not used by the app."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+image-core.workspace = true
+renderer.workspace = true
+raw.workspace = true
+fixtures.workspace = true
+wgpu = "30"
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }

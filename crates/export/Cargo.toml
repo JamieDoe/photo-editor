@@ -1,0 +1,22 @@
+[package]
+name = "export"
+description = "Encoding rendered images and writing them safely to disk."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["turbojpeg"]
+# SIMD JPEG encoding via libjpeg-turbo (BSD-3-Clause/IJG/Zlib), dynamically linked.
+# Without it, the pure-Rust jpeg-encoder is used. See docs/ADR/0006-jpeg-encoder.md.
+turbojpeg = ["dep:jpeg-turbo"]
+
+[dependencies]
+image-core.workspace = true
+jpeg-encoder.workspace = true
+jpeg-turbo = { workspace = true, optional = true }
+
+[dev-dependencies]
+fixtures.workspace = true
+zune-jpeg.workspace = true

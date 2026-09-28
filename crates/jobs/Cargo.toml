@@ -1,0 +1,11 @@
+[package]
+name = "jobs"
+description = "Native background job system: lanes, priority, supersession and cancellation."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+image-core.workspace = true
+rayon.workspace = true

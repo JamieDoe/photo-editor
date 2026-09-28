@@ -1,0 +1,29 @@
+[package]
+name = "raw"
+description = "Source decoding behind a decoder abstraction (LibRaw for camera RAW, zune-jpeg for JPEG)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+build = "build.rs"
+links = "raw_r"
+
+[features]
+default = ["libraw", "turbojpeg"]
+# Camera RAW support via the system LibRaw (LGPL-2.1 OR CDDL-1.0), dynamically linked.
+# See docs/ADR/0003-raw-decoder.md.
+libraw = ["dep:cc"]
+# Decode embedded RAW previews with libjpeg-turbo's DCT-domain scaling (ADR 0007).
+# Without it, embedded JPEGs are decoded at full size with zune-jpeg.
+turbojpeg = ["dep:jpeg-turbo"]
+
+[dependencies]
+image-core.workspace = true
+zune-jpeg.workspace = true
+jpeg-turbo = { workspace = true, optional = true }
+
+[build-dependencies]
+cc = { workspace = true, optional = true }
+
+[dev-dependencies]
+fixtures.workspace = true

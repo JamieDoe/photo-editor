@@ -1,0 +1,51 @@
+# Dependency policy (CLAUDE.md §17). Run: cargo deny check
+# Native libraries (LibRaw etc.) are outside Cargo's view; see docs/ADR/0003-raw-decoder.md.
+
+[graph]
+all-features = true
+
+[licenses]
+# Permissive licences acceptable in a proprietary application.
+allow = [
+    "MIT",
+    "MIT-0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "0BSD",
+    "IJG",
+]
+confidence-threshold = 0.9
+
+# MPL-2.0 (file-level copyleft) arrives only through Tauri itself (tauri-utils'
+# HTML/CSS handling and `dirs`). Allowed per crate, pending the same legal review as
+# LibRaw (docs/ADR/0003-raw-decoder.md): any *new* MPL dependency still fails.
+exceptions = [
+    { name = "cssparser", allow = ["MPL-2.0"] },
+    { name = "cssparser-macros", allow = ["MPL-2.0"] },
+    { name = "dtoa-short", allow = ["MPL-2.0"] },
+    { name = "selectors", allow = ["MPL-2.0"] },
+    { name = "option-ext", allow = ["MPL-2.0"] },
+]
+
+[licenses.private]
+# Our own workspace crates are unpublished and proprietary.
+ignore = true
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[advisories]
+# Unmaintained crates are reported but do not fail the check.
+unmaintained = "workspace"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

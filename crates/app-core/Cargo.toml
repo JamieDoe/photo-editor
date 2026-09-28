@@ -1,0 +1,26 @@
+[package]
+name = "app-core"
+description = "Application engine: open, preview, export over the job system, cache and decoders."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = ["libraw", "turbojpeg"]
+libraw = ["raw/libraw"]
+# libjpeg-turbo for export encoding and scaled embedded-preview decoding.
+turbojpeg = ["raw/turbojpeg", "export/turbojpeg"]
+
+[dependencies]
+image-core.workspace = true
+raw = { path = "../raw", default-features = false }
+renderer.workspace = true
+cache.workspace = true
+jobs.workspace = true
+export = { path = "../export", default-features = false }
+rayon.workspace = true
+
+[dev-dependencies]
+fixtures.workspace = true
+png.workspace = true

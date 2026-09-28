@@ -1,0 +1,22 @@
+[package]
+name = "bench"
+description = "Phase 0 baseline benchmarks: decode, preview, render stages, export, cancellation."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "bench"
+path = "src/main.rs"
+
+[dependencies]
+app-core.workspace = true
+export.workspace = true
+image-core.workspace = true
+raw.workspace = true
+renderer.workspace = true
+jobs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+libc.workspace = true

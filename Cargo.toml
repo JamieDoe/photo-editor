@@ -1,0 +1,67 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/image-core",
+    "crates/raw",
+    "crates/renderer",
+    "crates/cache",
+    "crates/jobs",
+    "crates/export",
+    "crates/jpeg-turbo",
+    "crates/app-core",
+    "crates/fixtures",
+    "crates/bench",
+    "crates/gpu-spike",
+    "apps/desktop/src-tauri",
+]
+# The GPU spike pulls in wgpu; keep it out of the default build/test cycle.
+default-members = [
+    "crates/image-core",
+    "crates/raw",
+    "crates/renderer",
+    "crates/cache",
+    "crates/jobs",
+    "crates/export",
+    "crates/jpeg-turbo",
+    "crates/app-core",
+    "crates/fixtures",
+    "crates/bench",
+    "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "LicenseRef-Proprietary"
+publish = false
+
+[workspace.dependencies]
+image-core = { path = "crates/image-core" }
+raw = { path = "crates/raw" }
+renderer = { path = "crates/renderer" }
+cache = { path = "crates/cache" }
+jobs = { path = "crates/jobs" }
+export = { path = "crates/export" }
+jpeg-turbo = { path = "crates/jpeg-turbo" }
+app-core = { path = "crates/app-core" }
+fixtures = { path = "crates/fixtures" }
+
+rayon = "1.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+zune-jpeg = "0.5"
+jpeg-encoder = "0.7"
+png = "0.18"
+ts-rs = "12"
+cc = "1"
+libc = "0.2"
+
+[profile.dev]
+# Pixel loops are unusably slow at opt-level 0; keep debug builds interactive.
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+debug = "line-tables-only"

@@ -1,0 +1,10 @@
+[package]
+name = "image-core"
+description = "Internal image representations shared by decoders, renderer and export."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+rayon.workspace = true

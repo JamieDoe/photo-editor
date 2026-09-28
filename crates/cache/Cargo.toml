@@ -1,0 +1,9 @@
+[package]
+name = "cache"
+description = "Bounded, disposable caches and cache keys."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
