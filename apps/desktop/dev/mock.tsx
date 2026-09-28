@@ -8,6 +8,8 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { createRoot } from "react-dom/client";
 import { App } from "../src/app/App";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import "../src/styles.css";
 
 const specs = [

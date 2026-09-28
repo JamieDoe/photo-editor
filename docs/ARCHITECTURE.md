@@ -60,6 +60,9 @@ workspace; `renderer` and `raw` never know about each other, jobs, caches or Tau
 | `raw` | converting files into `LinearImage` | apply edits |
 | `jobs` | scheduling, cancellation, lane isolation | know what a job does |
 
+Visual design: design tokens in `apps/desktop/src/styles.css` and bundled Geist fonts,
+following the app design (ADR 0016). New screens reuse the tokens and components.
+
 ## 3. Data flow
 
 ### Browse (Library)
