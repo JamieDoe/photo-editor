@@ -40,3 +40,16 @@ pub fn self_test_request_close(app: AppHandle, state: State<'_, AppState>) {
         let _ = window.close();
     }
 }
+
+/// Self-test only: grants the folder containing the self-test image, as if the user
+/// had chosen it, so the test can exercise indexing. Returns the folder path.
+#[tauri::command]
+pub fn self_test_grant_folder(state: State<'_, AppState>) -> Option<String> {
+    let image = state.self_test.as_ref()?;
+    let folder = image.parent()?;
+    state
+        .folders
+        .grant(folder)
+        .ok()
+        .map(|p| p.display().to_string())
+}

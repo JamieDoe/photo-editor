@@ -1,6 +1,7 @@
 import * as ipc from "../../ipc/client";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
+import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { SelfTestConfigDto } from "../../ipc/generated/SelfTestConfigDto";
 import type { DisplayedFrame, Editor } from "../editor/useEditor";
 
@@ -165,6 +166,33 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       firstRenderMs: performance.now() - tReopen,
     };
 
+    // Library indexing through the real command and events: first pass, then a
+    // rescan that must take the fast path (everything unchanged).
+    const indexing = await (async () => {
+      const folder = await ipc.selfTestGrantFolder();
+      if (!folder) return null;
+      const runIndex = async () => {
+        let done: IndexEvent | null = null;
+        const unlisten = await ipc.onIndexEvent((e) => {
+          if (e.type !== "progress") done = e;
+        });
+        const t0 = performance.now();
+        await ipc.indexLibraryFolder(folder);
+        const result = await waitFor(() => done, 60_000, "index result");
+        unlisten();
+        return { event: result, wallMs: performance.now() - t0 };
+      };
+      const first = await runIndex();
+      const rescan = await runIndex();
+      return { folder, first, rescan };
+    })();
+    const indexOk =
+      indexing !== null &&
+      indexing.first.event.type === "finished" &&
+      indexing.first.event.found > 0 &&
+      indexing.rescan.event.type === "finished" &&
+      indexing.rescan.event.new + indexing.rescan.event.changed === 0;
+
     // Quit guard: closing the window while an export runs must be held for
     // confirmation. The final shutdown (self_test_report) then cancels the export.
     let quitRequested: { exportsRunning: number } | null = null;
@@ -184,6 +212,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       previewOrdering: !embeddedAfterRender,
       noSchedulerErrors: stats.errors === 0,
       quitHeldDuringExport: quitGuard.held,
+      libraryIndexed: indexOk,
     };
     // Named so that a failing run explains itself.
     const failed = Object.entries(checks)
@@ -206,6 +235,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       embeddedAfterRender,
       reopen,
       quitGuard,
+      indexing,
       detailFrame: { size: `${detail.frame.width}x${detail.frame.height}`, rustRenderMs: detail.frame.renderMs, roundTripMs: detail.info.roundTripMs },
       baselineUiFrameGapMs: summarise(baselineGaps),
       idleDrag,

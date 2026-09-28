@@ -3,13 +3,14 @@
 use std::path::{Path, PathBuf};
 
 use folders::FolderListing;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use super::IpcResult;
 use crate::AppState;
 use crate::ipc::{
-    FolderCrumbDto, FolderListingDto, IpcError, IpcErrorKind, PhotoEntryDto, SettingsViewDto,
+    FolderCrumbDto, FolderListingDto, INDEX_EVENT, IndexEvent, IpcError, IpcErrorKind,
+    LibraryStatusDto, PhotoEntryDto, SettingsViewDto,
 };
 
 /// Error for a folder that is not (or no longer) available: moved, deleted, on an
@@ -168,4 +169,90 @@ mod tests {
             ["nef", "cr3"]
         );
     }
+}
+
+/// Indexes the granted library folder containing `path` (the whole tree, in the
+/// background). Progress and the result arrive as `library://index` events.
+#[tauri::command]
+pub fn index_library_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> IpcResult<()> {
+    let root = state
+        .folders
+        .root_of(Path::new(&path))
+        .ok_or_else(|| folder_unavailable(&path))?;
+    let root_str = root.display().to_string();
+    let progress_app = app.clone();
+    let progress_root = root_str.clone();
+    let handle =
+        state
+            .engine
+            .index_folder(std::sync::Arc::clone(&state.catalogue), root, move |p| {
+                let _ = progress_app.emit(
+                    INDEX_EVENT,
+                    IndexEvent::Progress {
+                        root: progress_root.clone(),
+                        found: p.found as u32,
+                        processed: p.processed as u32,
+                    },
+                );
+            });
+    state
+        .indexing
+        .lock()
+        .expect("indexing lock")
+        .insert(root_str.clone(), handle.token().clone());
+
+    tauri::async_runtime::spawn(async move {
+        let result = super::wait(handle).await;
+        if let Some(state) = app.try_state::<AppState>() {
+            state
+                .indexing
+                .lock()
+                .expect("indexing lock")
+                .remove(&root_str);
+        }
+        let event = match result {
+            Ok(s) => IndexEvent::Finished {
+                root: root_str,
+                found: s.found as u32,
+                new: s.new as u32,
+                changed: s.changed as u32,
+                moved: s.moved as u32,
+                missing: s.missing as u32,
+                skipped: s.skipped as u32,
+                total_ms: s.total_ms,
+            },
+            // Superseded by a newer pass of the same folder: nothing to report.
+            Err(e) if e.kind == crate::ipc::IpcErrorKind::Cancelled => return,
+            Err(error) => IndexEvent::Failed {
+                root: root_str,
+                error,
+            },
+        };
+        let _ = app.emit(INDEX_EVENT, event);
+    });
+    Ok(())
+}
+
+/// Library totals and any catalogue notice.
+#[tauri::command]
+pub async fn library_status(state: State<'_, AppState>) -> IpcResult<LibraryStatusDto> {
+    let catalogue = std::sync::Arc::clone(&state.catalogue);
+    let (photos, folders) = tauri::async_runtime::spawn_blocking(move || {
+        Ok::<_, app_core::CatalogueError>((catalogue.photo_count()?, catalogue.folders()?))
+    })
+    .await
+    .map_err(IpcError::internal)?
+    .map_err(IpcError::internal)?;
+    Ok(LibraryStatusDto {
+        photos: photos as u64,
+        folders: folders
+            .into_iter()
+            .map(|f| f.path.display().to_string())
+            .collect(),
+        notice: state.catalogue_notice.clone(),
+    })
 }

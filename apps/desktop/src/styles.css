@@ -132,3 +132,7 @@ button.link:hover { text-decoration: underline; }
 .modal h2 { margin: 0 0 8px; font-size: 15px; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+.index-status { color: var(--muted); font-variant-numeric: tabular-nums; }
+.library-notice { margin: 8px 12px 0; }
+.library-total { margin: 10px 0 0; font-size: 12px; }

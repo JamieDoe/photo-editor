@@ -84,6 +84,10 @@ mockIPC((cmd, payload) => {
       lib.recentFolders = ["/Users/me/Photos/2026 Iceland", ...lib.recentFolders.filter((f) => f !== "/Users/me/Photos/2026 Iceland")];
       return mockListing("/Users/me/Photos/2026 Iceland");
     }
+    case "index_library_folder":
+      return null;
+    case "library_status":
+      return { photos: 1284, folders: ["/Users/me/Photos/2026 Iceland"], notice: null };
     case "list_folder":
       return mockListing((payload as { path: string }).path);
     case "set_default_folder":

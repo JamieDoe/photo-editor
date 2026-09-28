@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import * as ipc from "../../ipc/client";
 import { formatBytes, formatDateTime } from "../../lib/format";
 import type { SettingsApi } from "../settings/useSettings";
+import { indexStatusText } from "./indexStatus";
 import type { LibraryApi } from "./useLibrary";
 
 interface Props {
@@ -25,6 +26,8 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
     void library.openFolder(defaultFolder);
   }, [defaultFolder, listing, library]);
 
+  const indexText = indexStatusText(library.indexing, library.lastIndex);
+
   const choose = async () => {
     const result = await library.chooseFolder();
     if (result) await settings.reload(); // recent folders changed in Rust
@@ -45,6 +48,9 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
         <button className="primary" onClick={() => void choose()}>
           Choose folder…
         </button>
+        {library.status && library.status.photos > 0 && (
+          <p className="muted library-total">{library.status.photos.toLocaleString()} photos in library</p>
+        )}
         {s && s.library.recentFolders.length > 0 && (
           <>
             <h3>Recent</h3>
@@ -67,6 +73,7 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
       </aside>
 
       <section className="library-main">
+        {library.status?.notice && <p className="notice library-notice">{library.status.notice}</p>}
         {!listing ? (
           <div className="empty">
             <p>{loading ? "Loading…" : "Choose a folder of photos to browse."}</p>
@@ -90,9 +97,10 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
                 ))}
               </nav>
               <span className="muted">
-                {listing.photos.length} photo{listing.photos.length === 1 ? "" : "s"}
+                {listing.photos.length} photo{listing.photos.length === 1 ? "" : "s"} here
                 {loading ? " · loading…" : ""}
               </span>
+              {indexText && <span className="index-status">{indexText}</span>}
               <span className="spacer" />
               <button onClick={() => void library.refresh()}>Refresh</button>
               {listing.path !== defaultFolder && <button onClick={() => void makeDefault()}>Set as default</button>}

@@ -31,7 +31,7 @@ pub struct Engine {
     shared: Arc<Shared>,
     // Owned outside `Shared` so job closures (which hold `Arc<Shared>`) never keep the
     // job system alive; dropping the engine stops the workers.
-    jobs: JobSystem,
+    pub(crate) jobs: JobSystem,
 }
 
 struct Shared {

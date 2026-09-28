@@ -17,6 +17,8 @@ image-core.workspace = true
 raw = { path = "../raw", default-features = false }
 renderer.workspace = true
 cache.workspace = true
+catalogue.workspace = true
+folders.workspace = true
 jobs.workspace = true
 export = { path = "../export", default-features = false }
 rayon.workspace = true
@@ -24,4 +26,5 @@ log.workspace = true
 
 [dev-dependencies]
 fixtures.workspace = true
+catalogue.workspace = true
 png.workspace = true

@@ -8,6 +8,7 @@
 //! Each file runs in a child process so peak memory (max RSS) is per file. Results
 //! are printed as a markdown table and written as JSON for comparison over time.
 
+mod index_bench;
 mod measure;
 mod report;
 
@@ -23,6 +24,7 @@ fn main() {
     let mut single: Option<PathBuf> = None;
     let mut memory: Option<PathBuf> = None;
     let mut decode_peak: Option<PathBuf> = None;
+    let mut index_scale: Option<usize> = None;
     let mut inputs = Vec::new();
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
@@ -34,6 +36,7 @@ fn main() {
             "--single" => single = it.next().map(PathBuf::from),
             "--memory" => memory = it.next().map(PathBuf::from),
             "--decode-peak" => decode_peak = it.next().map(PathBuf::from),
+            "--index-scale" => index_scale = it.next().and_then(|v| v.parse().ok()),
             "-h" | "--help" => {
                 println!("bench [--iterations N] [--out DIR] [FILE|DIR ...]");
                 return;
@@ -42,6 +45,15 @@ fn main() {
         }
     }
 
+    if let Some(n) = index_scale {
+        // Library indexing at scale (see index_bench.rs).
+        let result = index_bench::run(n);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).expect("serialisable result")
+        );
+        return;
+    }
     if let Some(file) = decode_peak {
         println!(
             "{}",

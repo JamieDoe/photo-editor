@@ -43,7 +43,12 @@ fn main() {
             // Needs the app handle for the platform config directory, so the state is
             // created here rather than before the builder.
             let settings_path = app.path().app_config_dir()?.join("settings.json");
-            app.manage(AppState::new(settings_path, self_test.clone()));
+            let catalogue_path = app.path().app_data_dir()?.join("catalogue.sqlite");
+            app.manage(AppState::new(
+                settings_path,
+                catalogue_path,
+                self_test.clone(),
+            ));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -56,6 +61,8 @@ fn main() {
             commands::library::choose_folder,
             commands::library::list_folder,
             commands::library::set_default_folder,
+            commands::library::index_library_folder,
+            commands::library::library_status,
             commands::images::open_image_dialog,
             commands::images::open_image_path,
             commands::images::render_preview,
@@ -63,6 +70,7 @@ fn main() {
             commands::selftest::self_test_config,
             commands::selftest::self_test_report,
             commands::selftest::self_test_request_close,
+            commands::selftest::self_test_grant_folder,
             lifecycle::quit,
         ])
         .on_window_event(lifecycle::on_window_event)

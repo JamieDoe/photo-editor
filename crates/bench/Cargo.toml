@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 app-core.workspace = true
+fixtures.workspace = true
 export.workspace = true
 image-core.workspace = true
 raw.workspace = true

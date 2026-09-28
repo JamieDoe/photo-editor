@@ -375,3 +375,48 @@ pub struct FolderListingDto {
     /// Entries that could not be read.
     pub skipped: u32,
 }
+
+/// Name of the Tauri event carrying [`IndexEvent`]s.
+pub const INDEX_EVENT: &str = "library://index";
+
+/// Background indexing of a library folder.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export)]
+pub enum IndexEvent {
+    Progress {
+        root: String,
+        found: u32,
+        processed: u32,
+    },
+    Finished {
+        root: String,
+        found: u32,
+        new: u32,
+        changed: u32,
+        moved: u32,
+        missing: u32,
+        skipped: u32,
+        total_ms: f64,
+    },
+    Failed {
+        root: String,
+        error: IpcError,
+    },
+}
+
+/// Library-wide facts for the Library screen.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct LibraryStatusDto {
+    #[ts(type = "number")]
+    pub photos: u64,
+    pub folders: Vec<String>,
+    /// Set if the catalogue was reset or could not be opened (shown once).
+    pub notice: Option<String>,
+}

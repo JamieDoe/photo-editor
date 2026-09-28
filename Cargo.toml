@@ -10,6 +10,7 @@ members = [
     "crates/jpeg-turbo",
     "crates/platform",
     "crates/folders",
+    "crates/catalogue",
     "crates/settings",
     "crates/app-core",
     "crates/fixtures",
@@ -28,6 +29,7 @@ default-members = [
     "crates/jpeg-turbo",
     "crates/platform",
     "crates/folders",
+    "crates/catalogue",
     "crates/settings",
     "crates/app-core",
     "crates/fixtures",
@@ -51,6 +53,7 @@ export = { path = "crates/export" }
 jpeg-turbo = { path = "crates/jpeg-turbo" }
 platform = { path = "crates/platform" }
 folders = { path = "crates/folders" }
+catalogue = { path = "crates/catalogue" }
 settings = { path = "crates/settings" }
 app-core = { path = "crates/app-core" }
 fixtures = { path = "crates/fixtures" }

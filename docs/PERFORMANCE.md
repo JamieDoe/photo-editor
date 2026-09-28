@@ -231,3 +231,21 @@ memory after open is ~166–173 MB for 24–26 MP files (+10–14 MB for the pre
 
 Export totals now (decode / render / encode / write, ms): Nikon 806 / 36 / 81 / 8;
 61 MP Sony 1457 / 85 / 210 / 11. Decode is now ~80% of export for Bayer files.
+
+## 10. Library indexing (Phase 2; ADR 0013)
+
+`cargo run -p bench --release -- --index-scale 10000` generates 10,000 distinct 70 KB
+files in 100 folders and indexes them into an on-disk catalogue (warm OS cache):
+
+| Pass | Time | Throughput |
+|---|---|---|
+| First index (all new) | 491 ms | ~20,000 files/s |
+| Rescan, nothing changed | 47 ms | ~210,000 files/s |
+| Rescan, 1% changed | 59 ms | ~170,000 files/s |
+
+- The directory walk takes ~9 ms, and the catalogue including WAL is ~11 MB.
+- Catalogue writes alone (in memory, 5,000 files): 57 ms first time, 40 ms rescan.
+- In the app, indexing the 8 camera samples through IPC takes 2–8 ms, with a rescan
+  under 1 ms.
+- Not yet measured: a cold OS cache, spinning disks and network drives. The first
+  index reads 128 KB per new file there.
