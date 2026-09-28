@@ -37,7 +37,8 @@ pub struct Engine {
 pub(crate) struct Shared {
     config: EngineConfig,
     pub(crate) decoders: DecoderRegistry,
-    renderer: CpuRenderer,
+    pub(crate) renderer: CpuRenderer,
+    pub(crate) thumbnails: Option<cache::DiskCache>,
     images: Mutex<OpenImages>,
     previews: Mutex<PreviewCache>,
     next_image_id: AtomicU64,
@@ -53,6 +54,10 @@ impl Engine {
         let shared = Arc::new(Shared {
             images: Mutex::new(OpenImages::new(config.max_open_images)),
             previews: Mutex::new(PreviewCache::new(config.preview_cache_bytes)),
+            thumbnails: config
+                .thumbnail_cache_dir
+                .clone()
+                .map(|dir| cache::DiskCache::new(dir, "jpg", config.thumbnail_cache_bytes)),
             config,
             decoders,
             renderer: CpuRenderer,

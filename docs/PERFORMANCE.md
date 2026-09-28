@@ -257,3 +257,39 @@ catalogue.
   details), and a rescan under 1 ms.
 - Not yet measured: a cold OS cache, spinning disks and network drives. The first
   index reads 128 KB per new file (fingerprint) plus the file headers.
+
+## 11. Library thumbnails (Phase 2; ADR 0015)
+
+`cargo run -p bench --release -- --thumbnails` covers each fixture file and a
+"screenful" of 48 thumbnails requested at once: hard links to the camera files, cold
+cache, warm OS cache.
+
+| File | Made from | Cold | Cached | Size |
+|---|---|---|---|---|
+| Nikon Z 6 NEF | embedded preview | 5.2 ms | 0.03 ms | 30 KB |
+| Canon EOS R6 CR3 | embedded preview | 11.7 ms | 0.03 ms | 40 KB |
+| Sony A7R IV ARW (61 MP) | embedded preview | 12.6 ms | 0.03 ms | 30 KB |
+| Sony A7 III ARW | embedded preview | 16.7 ms | 0.03 ms | 56 KB |
+| Fujifilm X-T3 RAF | embedded preview | 34.4 ms | 0.03 ms | 34 KB |
+| Ricoh GR III DNG | embedded preview | 43.7 ms | 0.03 ms | 36 KB |
+| synthetic 24 MP JPEG | DCT-scaled decode | 20.7 ms | 0.03 ms | 15 KB |
+| synthetic 24 MP DNG | decode + render (no preview) | 182 ms | 0.03 ms | 15 KB |
+
+| Screenful (48) | First | All | Rate |
+|---|---|---|---|
+| Browse lane, 3 workers (default on 10 cores) | 12 ms | 341 ms | 141/s |
+| 1 worker (low-end stand-in) | 12 ms | 995 ms | 48/s |
+| 3 workers while indexing 3,000 files | 11 ms | 344 ms | 139/s |
+
+- **In the app** (self-test, real IPC): the 8 fixture photos take ~230 ms together,
+  dominated by the 182 ms synthetic DNG. A cached thumbnail's round trip is ~1 ms.
+- **Indexing no longer delays thumbnails:** they run on their own lane, and the
+  concurrent index pass finished normally (538 ms).
+- **Worth investigating:** the Fuji and Ricoh cases are 3–8x slower than Nikon. That
+  is likely LibRaw's container parsing or a larger embedded JPEG. Not yet profiled.
+- **Not yet measured:**
+  - a cold OS cache (the embedded preview is read from the RAW file);
+  - network drives;
+  - a real low-end machine;
+  - UI frame times while 48 thumbnails decode in the webview.
+

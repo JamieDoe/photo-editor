@@ -40,6 +40,7 @@ impl AppState {
     pub fn new(
         settings_path: PathBuf,
         catalogue_path: PathBuf,
+        thumbnail_dir: PathBuf,
         self_test: Option<PathBuf>,
     ) -> Self {
         // Self-test runs must never touch the user's library.
@@ -72,7 +73,10 @@ impl AppState {
             catalogue: Arc::new(catalogue),
             catalogue_notice,
             indexing: Mutex::new(HashMap::new()),
-            engine: Engine::new(engine_config(&current)),
+            engine: Engine::new(EngineConfig {
+                thumbnail_cache_dir: Some(thumbnail_dir),
+                ..engine_config(&current)
+            }),
             startup_background_intensity: current.performance.background_intensity,
             settings_recovered_from: match outcome {
                 LoadOutcome::Recovered { backup } => Some(backup),

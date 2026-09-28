@@ -88,6 +88,14 @@ export const indexLibraryFolder = (path: string) => invoke<void>("index_library_
 
 export const libraryStatus = () => invoke<LibraryStatusDto>("library_status");
 
+/** A photo's thumbnail as JPEG bytes (long edge at most 512 px). */
+export async function libraryThumbnail(path: string): Promise<ArrayBuffer> {
+  return toArrayBuffer(await invoke<ArrayBuffer | number[]>("library_thumbnail", { path }));
+}
+
+/** Cancels a pending `libraryThumbnail` request; it then rejects as cancelled. */
+export const cancelThumbnail = (path: string) => invoke<void>("cancel_thumbnail", { path });
+
 export async function onIndexEvent(handler: (e: IndexEvent) => void): Promise<UnlistenFn> {
   return listen<IndexEvent>(INDEX_EVENT, (event) => handler(event.payload));
 }

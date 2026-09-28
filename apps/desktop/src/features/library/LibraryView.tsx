@@ -3,6 +3,7 @@ import * as ipc from "../../ipc/client";
 import { formatBytes, formatCaptured, formatDateTime } from "../../lib/format";
 import type { SettingsApi } from "../settings/useSettings";
 import { indexStatusText } from "./indexStatus";
+import { PhotoThumbnail } from "./PhotoThumbnail";
 import type { LibraryApi } from "./useLibrary";
 
 interface Props {
@@ -13,7 +14,7 @@ interface Props {
 
 let defaultFolderTried = false;
 
-/** Library mode: browse granted folders and open a photo. No catalogue yet (Phase 2). */
+/** Library mode: browse granted folders and open a photo. */
 export function LibraryView({ library, settings, onOpenPhoto }: Props) {
   const { listing, loading } = library;
   const s = settings.settings;
@@ -122,6 +123,7 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
                 <table className="photos">
                   <thead>
                     <tr>
+                      <th aria-label="Thumbnail" />
                       <th>Name</th>
                       <th>Taken</th>
                       <th>Camera</th>
@@ -132,6 +134,11 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
                   <tbody>
                     {listing.photos.map((p) => (
                       <tr key={p.path}>
+                        <td className="thumb-cell">
+                          <button className="thumb-button" onClick={() => onOpenPhoto(p.path)} aria-label={`Open ${p.name} in Edit`}>
+                            <PhotoThumbnail path={p.path} />
+                          </button>
+                        </td>
                         <td>
                           <button className="link" onClick={() => onOpenPhoto(p.path)} title="Open in Edit">
                             {p.name}

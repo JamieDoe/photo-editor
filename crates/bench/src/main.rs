@@ -11,6 +11,7 @@
 mod index_bench;
 mod measure;
 mod report;
+mod thumb_bench;
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -26,6 +27,7 @@ fn main() {
     let mut decode_peak: Option<PathBuf> = None;
     let mut index_scale: Option<usize> = None;
     let mut index_links: Option<usize> = None;
+    let mut thumbnails = false;
     let mut inputs = Vec::new();
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
@@ -39,6 +41,7 @@ fn main() {
             "--decode-peak" => decode_peak = it.next().map(PathBuf::from),
             "--index-scale" => index_scale = it.next().and_then(|v| v.parse().ok()),
             "--index-links" => index_links = it.next().and_then(|v| v.parse().ok()),
+            "--thumbnails" => thumbnails = true,
             "-h" | "--help" => {
                 println!("bench [--iterations N] [--out DIR] [FILE|DIR ...]");
                 return;
@@ -47,20 +50,18 @@ fn main() {
         }
     }
 
+    if thumbnails {
+        let fixtures = workspace_root().join("tests/fixtures");
+        let files = collect_files(&[fixtures.join("synthetic"), fixtures.join("local")]);
+        let result = thumb_bench::run(&files, &camera_files());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).expect("serialisable result")
+        );
+        return;
+    }
     if let Some(n) = index_links {
-        let local = workspace_root().join("tests/fixtures/local");
-        let registry = raw::DecoderRegistry::with_defaults();
-        let mut sources: Vec<PathBuf> = std::fs::read_dir(&local)
-            .map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path())).collect())
-            .unwrap_or_default();
-        sources.retain(|p| {
-            registry
-                .decoder_for(p)
-                .is_some_and(|d| d.name() == "libraw")
-                && !p.to_string_lossy().contains("synthetic")
-        });
-        sources.sort();
-        let result = index_bench::run_links(n, &sources);
+        let result = index_bench::run_links(n, &camera_files());
         println!(
             "{}",
             serde_json::to_string_pretty(&result).expect("serialisable result")
@@ -168,6 +169,23 @@ fn run_child(exe: &Path, args: &[&str]) -> Option<Value> {
         );
     }
     parsed
+}
+
+/// Real camera RAW files in `tests/fixtures/local` (git-ignored; may be empty).
+fn camera_files() -> Vec<PathBuf> {
+    let local = workspace_root().join("tests/fixtures/local");
+    let registry = raw::DecoderRegistry::with_defaults();
+    let mut sources: Vec<PathBuf> = std::fs::read_dir(&local)
+        .map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path())).collect())
+        .unwrap_or_default();
+    sources.retain(|p| {
+        registry
+            .decoder_for(p)
+            .is_some_and(|d| d.name() == "libraw")
+            && !p.to_string_lossy().contains("synthetic")
+    });
+    sources.sort();
+    sources
 }
 
 fn workspace_root() -> PathBuf {

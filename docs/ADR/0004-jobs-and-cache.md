@@ -14,13 +14,16 @@ not starve interactive editing. Caches must be bounded and disposable.
 ### Jobs (`crates/jobs`)
 
 - **Lanes with dedicated workers:** `Interactive` (open, previews) and `Background`
-  (export; later thumbnails and indexing). Background work can never occupy the worker
-  interactive renders need.
+  (export, indexing). Background work can never occupy the worker interactive renders
+  need. Phase 2 added `Browse` for library thumbnails (ADR 0015), so they never
+  wait behind an indexing pass either.
 - **Priority queue per lane** (`Interactive < VisiblePreview < VisibleThumbnail <
   Indexing < Export < Idle`), FIFO within a priority.
 - **Supersede keys:** submitting with a key cancels the previous job with the same key;
   queued jobs are skipped, running jobs see their `CancelToken` and return early. The
   result of a job that noticed cancellation is always reported as `Cancelled`.
+  Since Phase 2, a finished job removes its key (unless a newer job holds it), so
+  per-item keys such as one per thumbnail do not accumulate.
 - **Bounded compute:** background jobs run inside a rayon pool of `cores/2` threads;
   interactive jobs use the global pool.
 - Panics are caught per job and reported as `JobError::Panicked`; the worker survives.

@@ -264,6 +264,36 @@ pub fn index_library_folder(
     Ok(())
 }
 
+/// The thumbnail of a photo inside a granted folder, as JPEG bytes. Cached on disk;
+/// otherwise made on the browse lane, so it never waits for indexing or export.
+#[tauri::command]
+pub async fn library_thumbnail(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    path: String,
+) -> IpcResult<tauri::ipc::Response> {
+    let file = state
+        .folders
+        .check(Path::new(&path))
+        .ok_or_else(|| folder_unavailable(&path))?;
+    // A cache hit is a small file read; keep it off the async runtime's threads too.
+    let handle = tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().engine.thumbnail(file)
+    })
+    .await
+    .map_err(IpcError::internal)?;
+    let thumbnail = super::wait(handle).await?;
+    Ok(tauri::ipc::Response::new(thumbnail.jpeg))
+}
+
+/// Cancels a pending thumbnail request (its row scrolled out of view).
+#[tauri::command]
+pub fn cancel_thumbnail(state: State<'_, AppState>, path: String) {
+    if let Some(file) = state.folders.check(Path::new(&path)) {
+        state.engine.cancel_thumbnail(&file);
+    }
+}
+
 /// Library totals and any catalogue notice.
 #[tauri::command]
 pub async fn library_status(state: State<'_, AppState>) -> IpcResult<LibraryStatusDto> {

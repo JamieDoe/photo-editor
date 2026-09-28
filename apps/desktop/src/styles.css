@@ -123,6 +123,10 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 .photos th { text-align: left; font-weight: 500; color: var(--muted); border-bottom: 1px solid var(--line); padding: 4px 8px; }
 .photos td { padding: 3px 8px; border-bottom: 1px solid var(--line); }
 .photos .num { text-align: right; font-variant-numeric: tabular-nums; }
+.photos .thumb-cell { width: 80px; padding: 3px 4px; }
+.thumb-button { display: block; padding: 0; border: 0; background: none; }
+.thumb { display: flex; align-items: center; justify-content: center; width: 72px; height: 48px; border-radius: 3px; background: var(--raised); overflow: hidden; }
+.thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
 button.link { background: none; border: 0; padding: 0; color: var(--accent); text-align: left; }
 button.link:hover { text-decoration: underline; }
 

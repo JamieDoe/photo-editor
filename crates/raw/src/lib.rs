@@ -9,8 +9,7 @@ mod jpeg;
 #[cfg(feature = "libraw")]
 mod libraw;
 mod metadata;
-// Helpers for embedded previews; only camera RAW decoders have them today.
-#[cfg(feature = "libraw")]
+// Helpers for display previews: embedded RAW previews and reduced JPEG decodes.
 mod preview;
 
 use std::path::Path;
@@ -22,7 +21,8 @@ pub use jpeg::JpegDecoder;
 pub use libraw::LibRawDecoder;
 pub use metadata::{PhotoMetadata, rotation_from_exif, rotation_from_flip};
 
-/// Which JPEG decoder handles embedded RAW previews in this build.
+/// Which JPEG decoder handles display previews (embedded RAW previews, JPEG
+/// thumbnails) in this build.
 pub const fn embedded_jpeg_decoder() -> &'static str {
     if cfg!(feature = "turbojpeg") {
         "libjpeg-turbo (DCT-scaled)"
@@ -137,6 +137,19 @@ pub trait Decoder: Send + Sync {
     ) -> Result<Option<EmbeddedPreview>, DecodeError> {
         Ok(None)
     }
+
+    /// A camera-rendered image for display at about `min_long_edge` (thumbnails),
+    /// without decoding the image data at full size: the embedded preview for camera
+    /// RAW formats, a reduced-scale decode of the file itself for rendered formats.
+    /// `Ok(None)` if there is no such image; callers then decode and render instead.
+    fn display_preview(
+        &self,
+        path: &Path,
+        min_long_edge: u32,
+        cancel: &dyn Cancellation,
+    ) -> Result<Option<EmbeddedPreview>, DecodeError> {
+        self.embedded_preview(path, min_long_edge, cancel)
+    }
 }
 
 /// Ordered set of decoders; the first that handles a path wins.
@@ -195,6 +208,18 @@ impl DecoderRegistry {
             Some(d) => d.embedded_preview(path, min_long_edge, cancel),
             None => Ok(None),
         }
+    }
+
+    /// Display preview via the decoder for `path` (see [`Decoder::display_preview`]).
+    pub fn display_preview(
+        &self,
+        path: &Path,
+        min_long_edge: u32,
+        cancel: &dyn Cancellation,
+    ) -> Result<Option<EmbeddedPreview>, DecodeError> {
+        self.decoder_for(path)
+            .ok_or_else(|| DecodeError::Unsupported(format!("no decoder for {}", path.display())))?
+            .display_preview(path, min_long_edge, cancel)
     }
 
     pub fn names(&self) -> Vec<&'static str> {

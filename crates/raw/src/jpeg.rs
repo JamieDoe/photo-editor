@@ -10,7 +10,8 @@ use zune_jpeg::zune_core::colorspace::ColorSpace;
 use zune_jpeg::zune_core::options::DecoderOptions;
 
 use crate::{
-    DecodeError, DecodeOptions, DecodeScale, DecodedImage, Decoder, SourceInfo, SourceKind,
+    DecodeError, DecodeOptions, DecodeScale, DecodedImage, Decoder, EmbeddedPreview, SourceInfo,
+    SourceKind, preview,
 };
 
 pub(crate) const EXTENSIONS: &[&str] = &["jpg", "jpeg"];
@@ -33,6 +34,30 @@ impl Decoder for JpegDecoder {
 
     fn read_metadata(&self, path: &Path) -> Result<crate::PhotoMetadata, DecodeError> {
         crate::metadata::read_jpeg(path)
+    }
+
+    /// The JPEG itself, decoded at reduced scale (DCT scaling with libjpeg-turbo, so
+    /// a 24 MP file is never decoded at full size). EXIF orientation is ignored, as in
+    /// [`JpegDecoder::decode`].
+    fn display_preview(
+        &self,
+        path: &Path,
+        min_long_edge: u32,
+        cancel: &dyn Cancellation,
+    ) -> Result<Option<EmbeddedPreview>, DecodeError> {
+        let bytes = std::fs::read(path)?;
+        if cancel.is_cancelled() {
+            return Err(DecodeError::Cancelled);
+        }
+        let (mut rgb, (width, height)) = preview::decode_jpeg(&bytes, min_long_edge)?;
+        while rgb.width.max(rgb.height) / 2 >= min_long_edge.max(1) {
+            rgb = preview::downsample_2x(&rgb);
+        }
+        Ok(Some(EmbeddedPreview {
+            image: preview::orient_to_rgba(&rgb, 0),
+            embedded_width: width,
+            embedded_height: height,
+        }))
     }
 
     fn decode(
@@ -102,6 +127,20 @@ mod tests {
         let path = dir.join("test.jpg");
         std::fs::write(&path, fixtures::chart_jpeg(w, h, 95)).unwrap();
         path
+    }
+
+    #[test]
+    fn display_preview_is_a_reduced_decode_of_the_file() {
+        let dir = fixtures::TempDir::new("jpeg-display");
+        let path = write_fixture(dir.path(), 2048, 1536);
+        let p = JpegDecoder
+            .display_preview(&path, 512, &NeverCancel)
+            .unwrap()
+            .expect("a JPEG is its own display image");
+        let long = p.image.width().max(p.image.height());
+        assert!((512..1024).contains(&long), "long edge {long}");
+        assert_eq!((p.embedded_width, p.embedded_height), (2048, 1536));
+        assert_eq!(p.image.format(), image_core::PixelFormat::Rgba8);
     }
 
     #[test]

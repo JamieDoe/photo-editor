@@ -69,6 +69,7 @@ cargo run -p bench --release -- --iterations 7                   # markdown + be
 cargo run -p gpu-spike --release --bin gpu-bench -- [file]       # CPU vs wgpu comparison
 cargo run -p bench --release -- --index-scale 10000              # library indexing at scale
 cargo run -p bench --release -- --index-links 10000              # same, real RAW headers (hard links)
+cargo run -p bench --release -- --thumbnails                     # library thumbnails
 ```
 
 ## Regenerate the TypeScript IPC types

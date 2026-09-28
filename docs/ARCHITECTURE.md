@@ -1,7 +1,7 @@
 # Architecture
 
-Status: **Phase 2 in progress** (catalogue, background indexing, photo details) on
-top of the Phase 1 desktop shell. This document describes the system as it exists
+Status: **Phase 2 in progress** (catalogue, background indexing, photo details,
+thumbnails) on top of the Phase 1 desktop shell. This document describes the system as it exists
 today. Product intent lives in `PRODUCT.md`;
 rendering detail in `RENDERING.md`; measurements in `PERFORMANCE.md`; decisions in
 `ADR/`.
@@ -28,8 +28,9 @@ crates/catalogue        SQLite catalogue: library folders, photos, files, identi
 crates/folders          folder listings and recursive walks; FolderAccess scope
 crates/platform         OS-level helpers (atomic file writes)
 crates/app-core         Engine: open / render_preview / export / close
-   ├── jobs             lanes, priority, supersession, cooperative cancellation
-   ├── cache            bounded LRU (byte budget), stable render keys
+   ├── jobs             lanes (interactive, browse, background), priority,
+   │                    supersession, cooperative cancellation
+   ├── cache            bounded LRU (byte budget), stable render keys, disk cache
    ├── raw              Decoder trait + registry: LibRaw (RAW), zune-jpeg (JPEG)
    ├── renderer         EditRecipe -> RenderPlan -> RenderBackend (CPU)
    ├── export           encode + atomic write, never over the source
@@ -84,6 +85,17 @@ choose_folder / Refresh ─► index_library_folder(path) ─► granted root co
        read details for the queue (new/changed photos): headers only, parallel,
          batches of 256 ─► set_details (one transaction)          [stage ReadingDetails]
   ◄─ library://index events: progress (stage, n of total), finished (counts) or failed
+```
+
+### Thumbnails (Library)
+
+```text
+row scrolls into view ─► library_thumbnail(path)       // must be inside a grant
+  ─► disk cache hit (path + size + mtime + versions) ─► JPEG bytes, ~1 ms
+  ─► miss: Engine::thumbnail [browse lane, VisibleThumbnail, supersedes same path]
+       display_preview (embedded RAW preview / reduced JPEG decode)
+         or reduced decode + default render ─► fit to 512 px ─► JPEG ─► disk cache
+row scrolls away first ─► cancel_thumbnail(path) (queued job skipped)
 ```
 
 ### Open
@@ -226,8 +238,9 @@ See `PERFORMANCE.md` for measured consequences.
   the LibRaw DLL is not bundled.
 - The recipe is not persisted and there is no undo history yet.
 - Library: the photo list still comes from the filesystem, one folder level at a
-  time, with no thumbnails or sort options. The catalogue is used for indexing and
-  totals so far; the catalogue-backed grid is a later Phase 2 milestone.
+  time, as a list with small thumbnails and no sort options. The catalogue supplies
+  indexing, totals and photo details; the catalogue-backed grid is a later Phase 2
+  milestone. Thumbnails are made on demand only (no pre-generation after indexing).
 - A granted folder that is later moved is not followed; the user chooses it again.
 - Recent folders cannot be removed from the list yet.
 - Background intensity changes need a restart (thread pools are created at start-up).

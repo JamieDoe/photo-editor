@@ -193,6 +193,40 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       indexing.rescan.event.type === "finished" &&
       indexing.rescan.event.new + indexing.rescan.event.changed === 0;
 
+    // Library thumbnails through the real command: every photo in the folder at once
+    // (the self-test cache starts empty), then the test image again from the cache.
+    // Each must decode as an image whose long edge is at most 512 px.
+    const thumbnails = await (async () => {
+      if (!indexing) return null;
+      const listing = await ipc.listFolder(indexing.folder);
+      const longEdge = async (bytes: ArrayBuffer) => {
+        const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
+        const edge = Math.max(bitmap.width, bitmap.height);
+        bitmap.close();
+        return edge;
+      };
+      const t0 = performance.now();
+      const all = await Promise.all(listing.photos.map((p) => ipc.libraryThumbnail(p.path)));
+      const allMs = performance.now() - t0;
+      const edges = await Promise.all(all.map(longEdge));
+      const t1 = performance.now();
+      const again = await ipc.libraryThumbnail(config.imagePath);
+      const cachedMs = performance.now() - t1;
+      return {
+        photos: listing.photos.length,
+        allMs,
+        cachedMs,
+        maxKb: Math.max(...all.map((b) => b.byteLength)) / 1024,
+        longEdges: [...new Set(edges)],
+        cachedLongEdge: await longEdge(again),
+      };
+    })();
+    const thumbnailsOk =
+      thumbnails !== null &&
+      thumbnails.photos > 0 &&
+      thumbnails.longEdges.every((e) => e > 0 && e <= 512) &&
+      thumbnails.cachedLongEdge > 0;
+
     // Quit guard: closing the window while an export runs must be held for
     // confirmation. The final shutdown (self_test_report) then cancels the export.
     let quitRequested: { exportsRunning: number } | null = null;
@@ -213,6 +247,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       noSchedulerErrors: stats.errors === 0,
       quitHeldDuringExport: quitGuard.held,
       libraryIndexed: indexOk,
+      libraryThumbnails: thumbnailsOk,
     };
     // Named so that a failing run explains itself.
     const failed = Object.entries(checks)
@@ -236,6 +271,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       reopen,
       quitGuard,
       indexing,
+      thumbnails,
       detailFrame: { size: `${detail.frame.width}x${detail.frame.height}`, rustRenderMs: detail.frame.renderMs, roundTripMs: detail.info.roundTripMs },
       baselineUiFrameGapMs: summarise(baselineGaps),
       idleDrag,

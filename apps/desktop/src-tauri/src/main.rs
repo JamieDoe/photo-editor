@@ -44,9 +44,18 @@ fn main() {
             // created here rather than before the builder.
             let settings_path = app.path().app_config_dir()?.join("settings.json");
             let catalogue_path = app.path().app_data_dir()?.join("catalogue.sqlite");
+            let thumbnail_dir = if self_test.is_some() {
+                // Self-test runs start cold and never touch the user's cache.
+                let dir = std::env::temp_dir().join("photo-editor-self-test-thumbnails");
+                let _ = std::fs::remove_dir_all(&dir);
+                dir
+            } else {
+                app.path().app_cache_dir()?.join("thumbnails")
+            };
             app.manage(AppState::new(
                 settings_path,
                 catalogue_path,
+                thumbnail_dir,
                 self_test.clone(),
             ));
             Ok(())
@@ -63,6 +72,8 @@ fn main() {
             commands::library::set_default_folder,
             commands::library::index_library_folder,
             commands::library::library_status,
+            commands::library::library_thumbnail,
+            commands::library::cancel_thumbnail,
             commands::images::open_image_dialog,
             commands::images::open_image_path,
             commands::images::render_preview,

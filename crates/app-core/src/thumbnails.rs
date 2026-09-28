@@ -1,0 +1,269 @@
+//! Library thumbnails: small JPEGs made from the camera's embedded preview (or, if a
+//! file has none, a reduced decode and default render), kept in a bounded disk cache.
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Instant, UNIX_EPOCH};
+
+use cache::{DiskCache, Fnv64};
+use export::ExportFormat;
+use image_core::resize::fit_long_edge;
+use image_core::{OutputImage, PixelFormat};
+use jobs::{CancelToken, JobError, JobHandle, JobSpec, Lane, Priority};
+use raw::{DecodeError, DecodeOptions, DecodeScale};
+use renderer::{EditRecipe, RENDERER_VERSION, RenderBackend, RenderPlan};
+
+use crate::engine::Shared;
+use crate::{Engine, EngineError, ErrorKind};
+
+/// Long edge of library thumbnails, in pixels. Sharp on a high-DPI screen for grid
+/// tiles up to ~256 CSS pixels.
+pub const THUMBNAIL_LONG_EDGE: u32 = 512;
+/// Bump whenever thumbnail output changes, so cached thumbnails are regenerated.
+pub const THUMBNAIL_VERSION: u64 = 1;
+const JPEG_QUALITY: u8 = 80;
+
+/// How a thumbnail was obtained.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThumbnailSource {
+    /// Read from the disk cache.
+    Cache,
+    /// Made from the camera's embedded preview (or a reduced JPEG decode).
+    Embedded,
+    /// The file had no usable embedded preview: decoded and rendered with default
+    /// settings.
+    Rendered,
+}
+
+#[derive(Debug, Clone)]
+pub struct Thumbnail {
+    /// A JPEG, long edge at most [`THUMBNAIL_LONG_EDGE`].
+    pub jpeg: Vec<u8>,
+    pub source: ThumbnailSource,
+    /// Time to produce it (zero for cache hits).
+    pub ms: f64,
+}
+
+impl Engine {
+    /// The thumbnail of `path` (a canonical path). A disk-cache hit completes
+    /// immediately, after a small blocking read, so call this off the UI thread.
+    /// Otherwise it is generated on the browse lane. Requesting the same path again
+    /// supersedes the earlier request, and [`Engine::cancel_thumbnail`] cancels it.
+    pub fn thumbnail(&self, path: PathBuf) -> JobHandle<Thumbnail, EngineError> {
+        let key = match thumbnail_key(&path) {
+            Ok(key) => key,
+            Err(e) => return JobHandle::ready(self.jobs.next_id(), Err(JobError::Failed(e))),
+        };
+        if let Some(hit) = self.shared.cached_thumbnail(key) {
+            return JobHandle::ready(self.jobs.next_id(), Ok(hit));
+        }
+        let shared = Arc::clone(&self.shared);
+        let spec = JobSpec::new(Lane::Browse, Priority::VisibleThumbnail, "thumbnail")
+            .superseding(supersede_key(&path));
+        self.jobs
+            .submit(spec, move |token| shared.make_thumbnail(&path, key, token))
+    }
+
+    /// Cancels a pending thumbnail request for `path` (it scrolled out of view).
+    pub fn cancel_thumbnail(&self, path: &Path) {
+        self.jobs.cancel_key(&supersede_key(path));
+    }
+
+    /// Entries and bytes in the thumbnail cache (scans its directory).
+    pub fn thumbnail_cache_stats(&self) -> Option<cache::DiskCacheStats> {
+        self.shared.thumbnails.as_ref().map(DiskCache::stats)
+    }
+}
+
+impl Shared {
+    fn cached_thumbnail(&self, key: u64) -> Option<Thumbnail> {
+        let cache = self.thumbnails.as_ref()?;
+        let jpeg = cache.get(key)?;
+        if !is_complete_jpeg(&jpeg) {
+            // Left half-written by a crash or power loss: regenerate.
+            cache.remove(key);
+            return None;
+        }
+        Some(Thumbnail {
+            jpeg,
+            source: ThumbnailSource::Cache,
+            ms: 0.0,
+        })
+    }
+
+    fn make_thumbnail(
+        &self,
+        path: &Path,
+        key: u64,
+        token: &CancelToken,
+    ) -> Result<Thumbnail, EngineError> {
+        // An earlier request may have produced it while this one was queued.
+        if let Some(hit) = self.cached_thumbnail(key) {
+            return Ok(hit);
+        }
+        let start = Instant::now();
+        let (image, source) = match self
+            .decoders
+            .display_preview(path, THUMBNAIL_LONG_EDGE, token)
+        {
+            Ok(Some(p)) if p.image.width().max(p.image.height()) >= THUMBNAIL_LONG_EDGE => {
+                (p.image, ThumbnailSource::Embedded)
+            }
+            Err(DecodeError::Cancelled) => return Err(EngineError::cancelled()),
+            // Missing, too small or unreadable: the real decode below decides.
+            other => {
+                if let Err(e) = other {
+                    log::debug!("no display preview for {}: {e}", path.display());
+                }
+                (
+                    self.render_thumbnail(path, token)?,
+                    ThumbnailSource::Rendered,
+                )
+            }
+        };
+        if token.is_cancelled() {
+            return Err(EngineError::cancelled());
+        }
+        let image = fit_long_edge(image, THUMBNAIL_LONG_EDGE);
+        let jpeg = export::encode(
+            &image,
+            ExportFormat::Jpeg {
+                quality: JPEG_QUALITY,
+            },
+        )
+        .map_err(|e| {
+            EngineError::new(
+                ErrorKind::Internal,
+                "The thumbnail could not be created.",
+                e.to_string(),
+            )
+        })?;
+        if let Some(cache) = &self.thumbnails
+            && let Err(e) = cache.put(key, &jpeg)
+        {
+            // Still usable this time; it is regenerated next time.
+            log::warn!("thumbnail cache write failed: {e}");
+        }
+        Ok(Thumbnail {
+            jpeg,
+            source,
+            ms: start.elapsed().as_secs_f64() * 1000.0,
+        })
+    }
+
+    /// Fallback for files without a usable embedded preview: a reduced-resolution
+    /// decode rendered with default settings.
+    fn render_thumbnail(
+        &self,
+        path: &Path,
+        token: &CancelToken,
+    ) -> Result<OutputImage, EngineError> {
+        let options = DecodeOptions::new(DecodeScale::AtLeast(THUMBNAIL_LONG_EDGE))
+            .with_max_threads(rayon::current_num_threads());
+        let decoded = self.decoders.decode(path, options, token)?;
+        let plan = RenderPlan::from_recipe(&EditRecipe::default());
+        Ok(self
+            .renderer
+            .render(&plan, &decoded.image, PixelFormat::Rgb8, token)?)
+    }
+}
+
+/// Cache key: the source's identity (path, size, modification time), the thumbnail
+/// size and the versions of everything that shapes the output. No edit recipe yet:
+/// thumbnails show the original until recipes are saved (a later milestone adds the
+/// recipe hash here).
+fn thumbnail_key(path: &Path) -> Result<u64, EngineError> {
+    let meta = std::fs::metadata(path).map_err(DecodeError::from)?;
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_nanos());
+    let mut h = Fnv64::new();
+    h.write(path.as_os_str().as_encoded_bytes())
+        .write_u64(meta.len())
+        .write(&modified.to_le_bytes())
+        .write_u64(u64::from(THUMBNAIL_LONG_EDGE))
+        .write_u64(THUMBNAIL_VERSION)
+        .write_u64(u64::from(RENDERER_VERSION));
+    Ok(h.finish())
+}
+
+fn supersede_key(path: &Path) -> String {
+    format!("library-thumbnail:{}", path.display())
+}
+
+/// Starts with a JPEG start-of-image marker and ends with end-of-image.
+fn is_complete_jpeg(bytes: &[u8]) -> bool {
+    bytes.len() > 4 && bytes.starts_with(&[0xFF, 0xD8]) && bytes.ends_with(&[0xFF, 0xD9])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn key_changes_with_content_and_path() {
+        let dir = fixtures::TempDir::new("thumb-key");
+        let a = dir.path().join("a.jpg");
+        let b = dir.path().join("b.jpg");
+        std::fs::write(&a, b"one").unwrap();
+        std::fs::write(&b, b"one").unwrap();
+        let ka = thumbnail_key(&a).unwrap();
+        assert_eq!(ka, thumbnail_key(&a).unwrap());
+        assert_ne!(ka, thumbnail_key(&b).unwrap());
+        std::fs::write(&a, b"longer").unwrap();
+        assert_ne!(ka, thumbnail_key(&a).unwrap());
+        assert!(thumbnail_key(&dir.path().join("missing.jpg")).is_err());
+    }
+
+    /// Occupies the browse lane's only worker until the returned sender is dropped.
+    fn block_browse_lane(engine: &Engine) -> (std::sync::mpsc::Sender<()>, JobHandle<(), ()>) {
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let (started_tx, started_rx) = std::sync::mpsc::channel::<()>();
+        let handle = engine.jobs.submit(
+            JobSpec::new(Lane::Browse, Priority::Interactive, "blocker"),
+            move |_| {
+                started_tx.send(()).unwrap();
+                let _ = release_rx.recv();
+                Ok(())
+            },
+        );
+        started_rx.recv().unwrap();
+        (release_tx, handle)
+    }
+
+    fn one_browse_worker() -> Engine {
+        let mut config = crate::EngineConfig::default();
+        config.jobs.browse.workers = 1;
+        Engine::new(config)
+    }
+
+    #[test]
+    fn cancelled_and_superseded_requests_do_no_work() {
+        let dir = fixtures::TempDir::new("thumb-cancel");
+        let path = dir.path().join("a.jpg");
+        std::fs::write(&path, fixtures::chart_jpeg(1024, 768, 90)).unwrap();
+        let engine = one_browse_worker();
+        let (release, blocker) = block_browse_lane(&engine);
+
+        let scrolled_away = engine.thumbnail(path.clone());
+        engine.cancel_thumbnail(&path);
+        let superseded = engine.thumbnail(path.clone());
+        let current = engine.thumbnail(path.clone());
+        drop(release);
+        blocker.wait().unwrap();
+
+        assert!(matches!(scrolled_away.wait(), Err(JobError::Cancelled)));
+        assert!(matches!(superseded.wait(), Err(JobError::Cancelled)));
+        assert_eq!(current.wait().unwrap().source, ThumbnailSource::Embedded);
+        assert_eq!(engine.jobs.keyed_jobs(), 0, "no supersede keys left behind");
+    }
+
+    #[test]
+    fn truncated_jpegs_are_rejected() {
+        assert!(is_complete_jpeg(&[0xFF, 0xD8, 0, 0, 0xFF, 0xD9]));
+        assert!(!is_complete_jpeg(&[0xFF, 0xD8, 0, 0, 0, 0]));
+        assert!(!is_complete_jpeg(&[]));
+    }
+}

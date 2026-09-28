@@ -10,6 +10,7 @@ mod error;
 mod library;
 mod previews;
 mod session;
+mod thumbnails;
 mod types;
 
 pub use catalogue::{Catalogue, CatalogueError, PhotoDetails, SourceIdentity};
@@ -17,12 +18,14 @@ pub use config::EngineConfig;
 pub use engine::Engine;
 pub use error::{EngineError, ErrorKind};
 pub use library::{IndexProgress, IndexStage, IndexSummary};
+pub use thumbnails::{THUMBNAIL_LONG_EDGE, Thumbnail, ThumbnailSource};
 pub use types::{
     EmbeddedFrame, EngineInfo, ExportProgress, ExportRequest, ExportStage, ExportSummary, ImageId,
     ImageSummary, PreviewFrame, PreviewRequest,
 };
 
 // Re-exported so shells depend on one crate for the engine API.
+pub use cache::DiskCacheStats;
 pub use export::ExportFormat;
 pub use jobs::{CancelToken, JobError, JobHandle};
 pub use raw::SourceKind;
