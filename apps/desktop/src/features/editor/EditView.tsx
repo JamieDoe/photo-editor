@@ -1,3 +1,4 @@
+import { formatExposure } from "../../lib/format";
 import { AdjustmentPanel } from "./AdjustmentPanel";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
@@ -17,7 +18,13 @@ export function EditView({ editor }: { editor: Editor }) {
         <button onClick={() => void editor.exportImage()} disabled={!image || exporting}>
           {exporting ? "Exporting…" : "Export JPEG…"}
         </button>
-        {image && <span className="muted">{image.fileName}</span>}
+        {image && (
+          <span className="photo-meta">
+            <span>{image.fileName}</span>
+            {image.camera && <span className="muted">{image.camera}</span>}
+            {formatExposure(image) && <span className="mono muted">{formatExposure(image)}</span>}
+          </span>
+        )}
       </div>
       <main className="workspace">
         <Viewer

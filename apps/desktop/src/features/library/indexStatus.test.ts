@@ -10,18 +10,18 @@ const finished = (over: Partial<Record<string, number>> = {}) => ({
   moved: 0,
   missing: 0,
   skipped: 0,
+  detailsRead: 0,
   totalMs: 120,
   ...over,
 });
 
 describe("indexStatusText", () => {
   it("shows progress while indexing", () => {
-    expect(indexStatusText({ type: "progress", root: "/p", found: 600, processed: 0 }, null)).toBe(
-      "Indexing… found 600 photos",
-    );
-    expect(indexStatusText({ type: "progress", root: "/p", found: 600, processed: 256 }, null)).toBe(
-      "Indexing 256 of 600…",
-    );
+    const progress = (stage: "recording" | "readingDetails", processed: number) =>
+      ({ type: "progress", root: "/p", stage, total: 600, processed }) as const;
+    expect(indexStatusText(progress("recording", 0), null)).toBe("Indexing… found 600 photos");
+    expect(indexStatusText(progress("recording", 256), null)).toBe("Indexing 256 of 600…");
+    expect(indexStatusText(progress("readingDetails", 256), null)).toBe("Reading photo details 256 of 600…");
   });
 
   it("summarises only what changed", () => {

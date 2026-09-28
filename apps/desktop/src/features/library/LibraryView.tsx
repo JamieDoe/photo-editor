@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import * as ipc from "../../ipc/client";
-import { formatBytes, formatDateTime } from "../../lib/format";
+import { formatBytes, formatCaptured, formatDateTime } from "../../lib/format";
 import type { SettingsApi } from "../settings/useSettings";
 import { indexStatusText } from "./indexStatus";
 import type { LibraryApi } from "./useLibrary";
@@ -123,9 +123,10 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
                   <thead>
                     <tr>
                       <th>Name</th>
+                      <th>Taken</th>
+                      <th>Camera</th>
                       <th>Type</th>
                       <th className="num">Size</th>
-                      <th>Modified</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -136,9 +137,12 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
                             {p.name}
                           </button>
                         </td>
+                        <td title={p.details?.capturedAt ? "Capture time recorded by the camera" : "File date (not indexed yet)"}>
+                          {formatCaptured(p.details?.capturedAt) ?? <span className="muted">{formatDateTime(p.modifiedMs)}</span>}
+                        </td>
+                        <td title={p.details?.lens ?? undefined}>{p.details?.camera ?? <span className="muted">—</span>}</td>
                         <td>{p.raw ? "RAW" : "JPEG"}</td>
                         <td className="num">{formatBytes(p.sizeBytes)}</td>
-                        <td>{formatDateTime(p.modifiedMs)}</td>
                       </tr>
                     ))}
                   </tbody>

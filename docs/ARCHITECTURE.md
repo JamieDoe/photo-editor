@@ -1,6 +1,6 @@
 # Architecture
 
-Status: **Phase 2 in progress** (catalogue data layer and background indexing) on
+Status: **Phase 2 in progress** (catalogue, background indexing, photo details) on
 top of the Phase 1 desktop shell. This document describes the system as it exists
 today. Product intent lives in `PRODUCT.md`;
 rendering detail in `RENDERING.md`; measurements in `PERFORMANCE.md`; decisions in
@@ -81,7 +81,9 @@ choose_folder / Refresh ─► index_library_folder(path) ─► granted root co
        per batch of 256: stat ─► touch_unchanged (fast path, no reads)
                          fingerprint the rest (parallel) ─► record_files (one transaction)
        finish_scan: files not seen ─► missing (only for complete passes)
-  ◄─ library://index events: progress, finished (counts) or failed
+       read details for the queue (new/changed photos): headers only, parallel,
+         batches of 256 ─► set_details (one transaction)          [stage ReadingDetails]
+  ◄─ library://index events: progress (stage, n of total), finished (counts) or failed
 ```
 
 ### Open
@@ -201,9 +203,10 @@ within half the machine.
 
 - Persisted:
   - settings (including default and recent folders), window state, logs;
-  - the catalogue (`catalogue.sqlite` in the OS app-data directory; ADR 0012). It
-    holds library folders, photos and their files. It is rebuildable by re-indexing,
-    and a corrupt file is moved aside and rebuilt.
+  - the catalogue (`catalogue.sqlite` in the OS app-data directory; ADRs 0012–0014).
+    It holds library folders, photos, their files and photo details (camera, lens,
+    capture time, exposure, dimensions, GPS). It is rebuildable by re-indexing, and a
+    corrupt file is moved aside and rebuilt.
 - Not persisted yet: edit recipes live in UI state for the session (a later Phase 2
   milestone). `EditRecipe` is already versioned and serialisable.
 

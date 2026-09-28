@@ -35,6 +35,7 @@ function mockListing(path: string) {
     sizeBytes: 24_000_000 + i * 731_000,
     modifiedMs: Date.UTC(2026, 7, 14, 9, i * 3),
     raw: i % 5 !== 4,
+    details: i % 3 === 2 ? null : { camera: "Nikon Z 6", lens: "NIKKOR Z 24-70mm f/4 S", capturedAt: `2026-09-24T06:${String(10 + i).padStart(2, "0")}:12`, iso: 100, aperture: 8, shutterSeconds: 1 / 125, focalLengthMm: 35, width: 6048, height: 4024 },
   }));
   return {
     path,
@@ -67,7 +68,7 @@ mockIPC((cmd, payload) => {
       return { rendererVersion: 1, recipeVersion: 1, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs };
     case "open_image_dialog":
     case "open_image_path":
-      return { id: 1, fileName: "mock.nef", decoder: "libraw", cameraRaw: true, camera: "Mock Camera", fullWidth: 6000, fullHeight: 4000, levels: [[3000, 2000], [1500, 1000], [750, 500], [375, 250]], pyramidBytes: 0, identityMs: 0.5, decodeMs: 380, pyramidMs: 2, embeddedPreviewMs: 12 };
+      return { id: 1, fileName: "mock.nef", decoder: "libraw", cameraRaw: true, camera: "Mock Camera", iso: 100, aperture: 6.7, shutterSeconds: 1, focalLengthMm: 52, fullWidth: 6000, fullHeight: 4000, levels: [[3000, 2000], [1500, 1000], [750, 500], [375, 250]], pyramidBytes: 0, identityMs: 0.5, decodeMs: 380, pyramidMs: 2, embeddedPreviewMs: 12 };
     case "render_preview":
       return placeholderFrame(600, 400);
     case "self_test_config":

@@ -232,20 +232,28 @@ memory after open is ~166–173 MB for 24–26 MP files (+10–14 MB for the pre
 Export totals now (decode / render / encode / write, ms): Nikon 806 / 36 / 81 / 8;
 61 MP Sony 1457 / 85 / 210 / 11. Decode is now ~80% of export for Bayer files.
 
-## 10. Library indexing (Phase 2; ADR 0013)
+## 10. Library indexing (Phase 2; ADRs 0013, 0014)
 
 `cargo run -p bench --release -- --index-scale 10000` generates 10,000 distinct 70 KB
-files in 100 folders and indexes them into an on-disk catalogue (warm OS cache):
+files in 100 folders. `--index-links 10000` indexes 10,000 hard links to the six real
+camera samples, so it parses real RAW headers. Both use warm OS cache and an on-disk
+catalogue.
 
-| Pass | Time | Throughput |
+| Pass (10,000 files) | Distinct synthetic files | Real RAW headers (hard links) |
 |---|---|---|
-| First index (all new) | 491 ms | ~20,000 files/s |
-| Rescan, nothing changed | 47 ms | ~210,000 files/s |
-| Rescan, 1% changed | 59 ms | ~170,000 files/s |
+| First index (record + read details) | 817 ms | 1,864 ms (details: 978 ms) |
+| Rescan, nothing changed | 74 ms | 101 ms |
+| Rescan, 1% changed | 88 ms | — |
 
 - The directory walk takes ~9 ms, and the catalogue including WAL is ~11 MB.
-- Catalogue writes alone (in memory, 5,000 files): 57 ms first time, 40 ms rescan.
-- In the app, indexing the 8 camera samples through IPC takes 2–8 ms, with a rescan
-  under 1 ms.
+- Reading details from real RAW headers costs ~0.25–0.4 ms per file warm (~2 ms for
+  a first read); JPEG EXIF ~0.13 ms. In parallel that's ~1 s per 10,000 photos.
+- The first `--index-links` run exposed quadratic move detection with many identical
+  files: **36.8 s**. It's fixed by migration 3 plus bounded candidates; see ADR 0014.
+- That index costs rescans ~25 ms per 10,000 files (A/B: 50 → 76 ms), a deliberate
+  trade for a linear worst case. In the synthetic first index, reading details takes
+  218 ms: every file is tried and rejected as not a RAW file.
+- In the app, indexing the 8 camera samples through IPC takes 2–8 ms (4–5 ms with
+  details), and a rescan under 1 ms.
 - Not yet measured: a cold OS cache, spinning disks and network drives. The first
-  index reads 128 KB per new file there.
+  index reads 128 KB per new file (fingerprint) plus the file headers.

@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use app_core::{Catalogue, Engine, EngineConfig, IndexProgress, JobError};
+use app_core::{Catalogue, Engine, EngineConfig, IndexProgress, IndexStage, JobError};
 
 fn photo(path: &Path, seed: u16) {
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -100,9 +100,45 @@ fn reports_progress_to_completion() {
         .unwrap();
     let seen = seen.lock().unwrap();
     assert_eq!(summary.found, 600);
-    assert_eq!(seen.first().unwrap().processed, 0);
-    assert_eq!(seen.last().unwrap().processed, 600);
-    assert!(seen.windows(2).all(|w| w[0].processed <= w[1].processed));
+    for stage in [IndexStage::Recording, IndexStage::ReadingDetails] {
+        let events: Vec<_> = seen.iter().filter(|p| p.stage == stage).collect();
+        assert_eq!(events.first().unwrap().processed, 0, "{stage:?}");
+        assert_eq!(events.last().unwrap().processed, 600, "{stage:?}");
+        assert!(events.windows(2).all(|w| w[0].processed <= w[1].processed));
+    }
+    // Recording finishes before details start.
+    let first_details = seen
+        .iter()
+        .position(|p| p.stage == IndexStage::ReadingDetails)
+        .unwrap();
+    assert!(
+        seen[..first_details]
+            .iter()
+            .all(|p| p.stage == IndexStage::Recording)
+    );
+}
+
+#[test]
+fn details_are_read_during_indexing_and_not_again_on_rescan() {
+    let s = setup("index-details");
+    photo(&s.root.join("a.jpg"), 1);
+    photo(&s.root.join("sub/b.jpg"), 2);
+    let first = s.index();
+    assert_eq!(first.details_read, 2);
+    let files = s.catalogue.files_in(&s.root, true).unwrap();
+    let details = s
+        .catalogue
+        .details(files[0].photo)
+        .unwrap()
+        .expect("details stored");
+    assert_eq!((details.width, details.height), (Some(65), Some(48)));
+    assert_eq!(
+        s.index().details_read,
+        0,
+        "unchanged photos keep their details"
+    );
+    photo(&s.root.join("a.jpg"), 40); // new content
+    assert_eq!(s.index().details_read, 1);
 }
 
 #[test]

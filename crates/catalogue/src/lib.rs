@@ -8,11 +8,13 @@
 //! follow a photograph when it is moved or renamed ([`Catalogue::record_file`]).
 
 mod catalogue;
+mod details;
 mod error;
 mod identity;
 mod schema;
 
 pub use catalogue::{Catalogue, FileRecord, FileStatus, LibraryFolder, RecordOutcome, ScanId};
+pub use details::{METADATA_VERSION, PhotoDetails, camera_name};
 pub use error::CatalogueError;
 pub use identity::SourceIdentity;
 pub use schema::SCHEMA_VERSION;

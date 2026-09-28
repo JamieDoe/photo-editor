@@ -12,11 +12,11 @@ mod previews;
 mod session;
 mod types;
 
-pub use catalogue::{Catalogue, CatalogueError, SourceIdentity};
+pub use catalogue::{Catalogue, CatalogueError, PhotoDetails, SourceIdentity};
 pub use config::EngineConfig;
 pub use engine::Engine;
 pub use error::{EngineError, ErrorKind};
-pub use library::{IndexProgress, IndexSummary};
+pub use library::{IndexProgress, IndexStage, IndexSummary};
 pub use types::{
     EmbeddedFrame, EngineInfo, ExportProgress, ExportRequest, ExportStage, ExportSummary, ImageId,
     ImageSummary, PreviewFrame, PreviewRequest,

@@ -69,6 +69,31 @@ int pe_raw_thumbnail(const char *path, uint32_t min_long_edge, pe_raw_thumb **ou
                      const uint8_t **data, size_t *len);
 void pe_raw_thumb_release(pe_raw_thumb *thumb);
 
+/* ---- Metadata (headers only, no decode) ---- */
+
+typedef struct pe_raw_meta {
+    char make[64];
+    char model[64];
+    char lens[128];
+    /* Capture time as the camera recorded it (local wall-clock, no zone):
+     * "YYYY-MM-DDTHH:MM:SS", or empty if unknown. */
+    char captured_at[20];
+    float iso;
+    float aperture;
+    float shutter;
+    float focal_length;
+    /* Output dimensions at full scale, after orientation. */
+    uint32_t width;
+    uint32_t height;
+    int32_t flip;
+    int32_t has_gps;
+    double latitude;
+    double longitude;
+} pe_raw_meta;
+
+/* Parses `path`'s headers (no raw data unpacking). Returns 0 or a LibRaw error. */
+int pe_raw_metadata(const char *path, pe_raw_meta *out);
+
 const char *pe_raw_strerror(int code);
 const char *pe_raw_libraw_version(void);
 

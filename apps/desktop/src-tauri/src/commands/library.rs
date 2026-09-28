@@ -10,7 +10,7 @@ use super::IpcResult;
 use crate::AppState;
 use crate::ipc::{
     FolderCrumbDto, FolderListingDto, INDEX_EVENT, IndexEvent, IpcError, IpcErrorKind,
-    LibraryStatusDto, PhotoEntryDto, SettingsViewDto,
+    LibraryStatusDto, PhotoDetailsDto, PhotoEntryDto, SettingsViewDto,
 };
 
 /// Error for a folder that is not (or no longer) available: moved, deleted, on an
@@ -84,12 +84,26 @@ async fn list(state: &AppState, dir: PathBuf) -> IpcResult<FolderListingDto> {
     let raw_extensions = raw_extensions(&extensions);
     let root = state.folders.root_of(&dir).unwrap_or_else(|| dir.clone());
     let target = dir.clone();
-    let listing =
-        tauri::async_runtime::spawn_blocking(move || folders::list_folder(&target, &extensions))
-            .await
-            .map_err(IpcError::internal)?
-            .map_err(|_| folder_unavailable(&dir.display().to_string()))?;
-    Ok(to_dto(listing, &root, &raw_extensions))
+    let catalogue = std::sync::Arc::clone(&state.catalogue);
+    let (listing, details) = tauri::async_runtime::spawn_blocking(move || {
+        let listing = folders::list_folder(&target, &extensions);
+        // Details exist once the folder has been indexed; a catalogue problem must not
+        // stop browsing, so it only costs the extra columns.
+        let details = catalogue.details_in_dir(&target).unwrap_or_else(|e| {
+            log::warn!(
+                "catalogue details unavailable for {}: {e}",
+                target.display()
+            );
+            Vec::new()
+        });
+        (listing, details)
+    })
+    .await
+    .map_err(IpcError::internal)?;
+    let listing = listing.map_err(|_| folder_unavailable(&dir.display().to_string()))?;
+    let details: std::collections::HashMap<PathBuf, app_core::PhotoDetails> =
+        details.into_iter().collect();
+    Ok(to_dto(listing, &root, &raw_extensions, &details))
 }
 
 /// Extensions of camera RAW formats (everything the registry accepts except JPEG).
@@ -100,7 +114,12 @@ fn raw_extensions(all: &[&'static str]) -> Vec<&'static str> {
         .collect()
 }
 
-fn to_dto(listing: FolderListing, root: &Path, raw_extensions: &[&str]) -> FolderListingDto {
+fn to_dto(
+    listing: FolderListing,
+    root: &Path,
+    raw_extensions: &[&str],
+    details: &std::collections::HashMap<PathBuf, app_core::PhotoDetails>,
+) -> FolderListingDto {
     let crumb = |p: &Path| FolderCrumbDto {
         name: p.file_name().map_or_else(
             || p.display().to_string(),
@@ -126,6 +145,7 @@ fn to_dto(listing: FolderListing, root: &Path, raw_extensions: &[&str]) -> Folde
             .into_iter()
             .map(|p| PhotoEntryDto {
                 raw: raw_extensions.contains(&p.extension.as_str()),
+                details: details.get(&p.path).map(PhotoDetailsDto::from),
                 name: p.name,
                 path: p.path.display().to_string(),
                 size_bytes: p.size_bytes,
@@ -149,7 +169,12 @@ mod tests {
         std::fs::write(deep.join("A.NEF"), b"x").unwrap();
         std::fs::write(deep.join("b.jpg"), b"x").unwrap();
         let listing = folders::list_folder(&deep, &["nef", "jpg"]).unwrap();
-        let dto = to_dto(listing, &root.canonicalize().unwrap(), &["nef"]);
+        let dto = to_dto(
+            listing,
+            &root.canonicalize().unwrap(),
+            &["nef"],
+            &Default::default(),
+        );
         let names: Vec<_> = dto.breadcrumbs.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["Photos", "2024", "Trip"]);
         assert_eq!(dto.name, "Trip");
@@ -194,7 +219,8 @@ pub fn index_library_folder(
                     INDEX_EVENT,
                     IndexEvent::Progress {
                         root: progress_root.clone(),
-                        found: p.found as u32,
+                        stage: p.stage.into(),
+                        total: p.total as u32,
                         processed: p.processed as u32,
                     },
                 );
@@ -223,6 +249,7 @@ pub fn index_library_folder(
                 moved: s.moved as u32,
                 missing: s.missing as u32,
                 skipped: s.skipped as u32,
+                details_read: s.details_read as u32,
                 total_ms: s.total_ms,
             },
             // Superseded by a newer pass of the same folder: nothing to report.

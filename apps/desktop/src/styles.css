@@ -136,3 +136,6 @@ button.danger { background: var(--danger); border-color: var(--danger); color: #
 .index-status { color: var(--muted); font-variant-numeric: tabular-nums; }
 .library-notice { margin: 8px 12px 0; }
 .library-total { margin: 10px 0 0; font-size: 12px; }
+
+.photo-meta { display: flex; gap: 12px; align-items: baseline; min-width: 0; overflow: hidden; white-space: nowrap; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; }

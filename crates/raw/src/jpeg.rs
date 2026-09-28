@@ -31,6 +31,10 @@ impl Decoder for JpegDecoder {
         crate::has_extension(path, EXTENSIONS)
     }
 
+    fn read_metadata(&self, path: &Path) -> Result<crate::PhotoMetadata, DecodeError> {
+        crate::metadata::read_jpeg(path)
+    }
+
     fn decode(
         &self,
         path: &Path,

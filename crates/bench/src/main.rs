@@ -25,6 +25,7 @@ fn main() {
     let mut memory: Option<PathBuf> = None;
     let mut decode_peak: Option<PathBuf> = None;
     let mut index_scale: Option<usize> = None;
+    let mut index_links: Option<usize> = None;
     let mut inputs = Vec::new();
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
@@ -37,6 +38,7 @@ fn main() {
             "--memory" => memory = it.next().map(PathBuf::from),
             "--decode-peak" => decode_peak = it.next().map(PathBuf::from),
             "--index-scale" => index_scale = it.next().and_then(|v| v.parse().ok()),
+            "--index-links" => index_links = it.next().and_then(|v| v.parse().ok()),
             "-h" | "--help" => {
                 println!("bench [--iterations N] [--out DIR] [FILE|DIR ...]");
                 return;
@@ -45,6 +47,26 @@ fn main() {
         }
     }
 
+    if let Some(n) = index_links {
+        let local = workspace_root().join("tests/fixtures/local");
+        let registry = raw::DecoderRegistry::with_defaults();
+        let mut sources: Vec<PathBuf> = std::fs::read_dir(&local)
+            .map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path())).collect())
+            .unwrap_or_default();
+        sources.retain(|p| {
+            registry
+                .decoder_for(p)
+                .is_some_and(|d| d.name() == "libraw")
+                && !p.to_string_lossy().contains("synthetic")
+        });
+        sources.sort();
+        let result = index_bench::run_links(n, &sources);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).expect("serialisable result")
+        );
+        return;
+    }
     if let Some(n) = index_scale {
         // Library indexing at scale (see index_bench.rs).
         let result = index_bench::run(n);

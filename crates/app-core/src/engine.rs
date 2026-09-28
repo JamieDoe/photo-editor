@@ -28,15 +28,15 @@ const INTERACTIVE_UNDERSAMPLE_PERCENT: u32 = 85;
 
 /// The application engine. Cheap to share behind an `Arc`; all methods take `&self`.
 pub struct Engine {
-    shared: Arc<Shared>,
+    pub(crate) shared: Arc<Shared>,
     // Owned outside `Shared` so job closures (which hold `Arc<Shared>`) never keep the
     // job system alive; dropping the engine stops the workers.
     pub(crate) jobs: JobSystem,
 }
 
-struct Shared {
+pub(crate) struct Shared {
     config: EngineConfig,
-    decoders: DecoderRegistry,
+    pub(crate) decoders: DecoderRegistry,
     renderer: CpuRenderer,
     images: Mutex<OpenImages>,
     previews: Mutex<PreviewCache>,
@@ -317,7 +317,11 @@ impl Shared {
                 .unwrap_or_default(),
             decoder: info.decoder,
             kind: info.kind,
-            camera: format!("{} {}", info.make, info.model).trim().to_owned(),
+            camera: catalogue::camera_name(Some(&info.make), Some(&info.model)).unwrap_or_default(),
+            iso: info.iso,
+            aperture: info.aperture,
+            shutter_seconds: info.shutter_seconds,
+            focal_length_mm: info.focal_length_mm,
             full_width: info.full_width,
             full_height: info.full_height,
             levels: pyramid

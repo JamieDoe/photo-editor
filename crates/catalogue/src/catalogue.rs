@@ -6,7 +6,10 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::{CatalogueError, FolderId, PhotoId, SourceIdentity, schema};
 
-type Result<T> = std::result::Result<T, CatalogueError>;
+pub(crate) type Result<T> = std::result::Result<T, CatalogueError>;
+
+/// Most same-content files checked on disk when looking for a move source.
+const MAX_MOVE_CANDIDATES: i64 = 32;
 
 /// Identifies one indexing pass; files not seen during a pass are marked missing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -90,7 +93,11 @@ impl Catalogue {
         })
     }
 
-    fn with_tx<T>(&self, f: impl FnOnce(&Transaction<'_>) -> Result<T>) -> Result<T> {
+    pub(crate) fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
+        self.conn.lock().expect("catalogue lock")
+    }
+
+    pub(crate) fn with_tx<T>(&self, f: impl FnOnce(&Transaction<'_>) -> Result<T>) -> Result<T> {
         let mut conn = self.conn.lock().expect("catalogue lock");
         let tx = conn.transaction()?;
         let out = f(&tx)?;
@@ -289,19 +296,33 @@ fn record(
         let outcome = if unchanged {
             RecordOutcome::Unchanged
         } else {
+            // New content: its details must be read again.
+            tx.execute(
+                "UPDATE photos SET metadata_version = 0 WHERE id = ?1",
+                [photo],
+            )?;
             RecordOutcome::Changed
         };
         return Ok((PhotoId(photo), outcome));
     }
 
     // 2. Same content at a path that no longer exists: moved or renamed.
+    //
+    // A file already recorded in this scan exists, so it cannot be where this one moved
+    // from. Scan ids only increase, so "not seen in this scan" is `last_seen_scan <
+    // current`: a range on the (size, fingerprint, last_seen_scan) index. That keeps
+    // libraries with many identical copies linear. Missing files are the likeliest
+    // sources, so they come first, and the number of on-disk checks is bounded.
     let mut stmt = tx.prepare_cached(
-        "SELECT id, photo_id, path FROM files WHERE size = ?1 AND fingerprint = ?2",
+        "SELECT id, photo_id, path FROM files
+         WHERE size = ?1 AND fingerprint = ?2 AND last_seen_scan < ?3
+         ORDER BY missing DESC LIMIT ?4",
     )?;
     let candidates: Vec<(i64, i64, String)> = stmt
-        .query_map(params![size, fingerprint], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        })?
+        .query_map(
+            params![size, fingerprint, scan.0, MAX_MOVE_CANDIDATES],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?
         .collect::<rusqlite::Result<_>>()?;
     if let Some((file_id, photo, old_path)) = candidates
         .into_iter()
@@ -331,7 +352,7 @@ fn record(
     Ok((PhotoId(photo), RecordOutcome::New))
 }
 
-fn text(path: &Path) -> Result<&str> {
+pub(crate) fn text(path: &Path) -> Result<&str> {
     path.to_str()
         .ok_or_else(|| CatalogueError::NonUnicodePath(path.to_path_buf()))
 }

@@ -72,6 +72,10 @@ pub struct ImageSummaryDto {
     pub decoder: String,
     pub camera_raw: bool,
     pub camera: String,
+    pub iso: Option<f32>,
+    pub aperture: Option<f32>,
+    pub shutter_seconds: Option<f32>,
+    pub focal_length_mm: Option<f32>,
     pub full_width: u32,
     pub full_height: u32,
     pub levels: Vec<(u32, u32)>,
@@ -91,6 +95,10 @@ impl From<ImageSummary> for ImageSummaryDto {
             decoder: s.decoder.to_owned(),
             camera_raw: s.kind == app_core::SourceKind::CameraRaw,
             camera: s.camera,
+            iso: s.iso,
+            aperture: s.aperture,
+            shutter_seconds: s.shutter_seconds,
+            focal_length_mm: s.focal_length_mm,
             full_width: s.full_width,
             full_height: s.full_height,
             levels: s.levels,
@@ -359,6 +367,41 @@ pub struct PhotoEntryDto {
     pub modified_ms: u64,
     /// Camera RAW (as opposed to an already-rendered format such as JPEG).
     pub raw: bool,
+    /// From the catalogue, once the folder has been indexed.
+    pub details: Option<PhotoDetailsDto>,
+}
+
+/// Photo details read from file headers during indexing.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PhotoDetailsDto {
+    pub camera: Option<String>,
+    pub lens: Option<String>,
+    /// Camera wall-clock time, ISO 8601 without zone.
+    pub captured_at: Option<String>,
+    pub iso: Option<u32>,
+    pub aperture: Option<f32>,
+    pub shutter_seconds: Option<f32>,
+    pub focal_length_mm: Option<f32>,
+    pub width: Option<u32>,
+    pub height: Option<u32>,
+}
+
+impl From<&app_core::PhotoDetails> for PhotoDetailsDto {
+    fn from(d: &app_core::PhotoDetails) -> Self {
+        Self {
+            camera: d.camera(),
+            lens: d.lens.clone(),
+            captured_at: d.captured_at.clone(),
+            iso: d.iso,
+            aperture: d.aperture,
+            shutter_seconds: d.shutter_seconds,
+            focal_length_mm: d.focal_length_mm,
+            width: d.width,
+            height: d.height,
+        }
+    }
 }
 
 /// A one-level folder listing for the Library.
@@ -390,7 +433,8 @@ pub const INDEX_EVENT: &str = "library://index";
 pub enum IndexEvent {
     Progress {
         root: String,
-        found: u32,
+        stage: IndexStageDto,
+        total: u32,
         processed: u32,
     },
     Finished {
@@ -401,12 +445,30 @@ pub enum IndexEvent {
         moved: u32,
         missing: u32,
         skipped: u32,
+        details_read: u32,
         total_ms: f64,
     },
     Failed {
         root: String,
         error: IpcError,
     },
+}
+
+#[derive(Debug, Clone, Copy, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum IndexStageDto {
+    Recording,
+    ReadingDetails,
+}
+
+impl From<app_core::IndexStage> for IndexStageDto {
+    fn from(s: app_core::IndexStage) -> Self {
+        match s {
+            app_core::IndexStage::Recording => Self::Recording,
+            app_core::IndexStage::ReadingDetails => Self::ReadingDetails,
+        }
+    }
 }
 
 /// Library-wide facts for the Library screen.

@@ -3,9 +3,9 @@ import type { IndexFinished, IndexProgress } from "./useLibrary";
 /** One-line indexing status for the Library toolbar, or null when there is nothing to say. */
 export function indexStatusText(indexing: IndexProgress | null, last: IndexFinished | null): string | null {
   if (indexing) {
-    return indexing.processed === 0
-      ? `Indexing… found ${indexing.found.toLocaleString()} photos`
-      : `Indexing ${indexing.processed.toLocaleString()} of ${indexing.found.toLocaleString()}…`;
+    const of = `${indexing.processed.toLocaleString()} of ${indexing.total.toLocaleString()}`;
+    if (indexing.stage === "readingDetails") return `Reading photo details ${of}…`;
+    return indexing.processed === 0 ? `Indexing… found ${indexing.total.toLocaleString()} photos` : `Indexing ${of}…`;
   }
   if (!last) return null;
   const parts = [`${last.found.toLocaleString()} photo${last.found === 1 ? "" : "s"} indexed`];

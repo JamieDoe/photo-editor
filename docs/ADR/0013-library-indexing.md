@@ -53,6 +53,10 @@ opened or refreshed.
 | Rescan, nothing changed | 47 ms | ~210,000 files/s |
 | Rescan, 1% changed | 59 ms | ~170,000 files/s |
 
+These figures predate milestone 3, which added the details stage (ADR 0014) and
+raised the synthetic figures (first 817 ms, of which details 218 ms; rescan 74 ms,
+~25 ms of that from migration 3's index). PERFORMANCE.md §10 has the current numbers.
+
 The directory walk takes ~9 ms, and the catalogue including WAL is ~11 MB. Cold-cache
 and spinning-disk runs are still to be measured, and the first index will be slower
 there because fingerprinting reads 128 KB per file.

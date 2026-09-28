@@ -1,24 +1,37 @@
-//! Library indexing: walks a folder tree and records its photos in the catalogue.
+//! Library indexing: walks a folder tree, records its photos in the catalogue and
+//! reads their details (camera, lens, capture time) from file headers.
 
 use std::ops::ControlFlow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use catalogue::{Catalogue, CatalogueError, RecordOutcome, SourceIdentity};
+use catalogue::{
+    Catalogue, CatalogueError, FolderId, PhotoDetails, PhotoId, RecordOutcome, SourceIdentity,
+};
 use jobs::{CancelToken, JobHandle, JobSpec, Lane, Priority};
 use rayon::prelude::*;
 
+use crate::engine::Shared;
 use crate::{Engine, EngineError, ErrorKind};
 
 /// Files handled per catalogue transaction and progress report.
 const BATCH: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IndexStage {
+    /// Recording files in the catalogue.
+    Recording,
+    /// Reading camera, lens and capture details of new or changed photos.
+    ReadingDetails,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IndexProgress {
-    /// Photos found by the folder walk.
-    pub found: usize,
-    /// Photos recorded so far.
+    pub stage: IndexStage,
+    /// Items in this stage: photos found by the walk, or photos needing details.
+    pub total: usize,
+    /// Items handled so far in this stage.
     pub processed: usize,
 }
 
@@ -34,7 +47,10 @@ pub struct IndexSummary {
     pub missing: usize,
     /// Files or folders that could not be read.
     pub skipped: usize,
+    /// Photos whose details were read in this pass.
+    pub details_read: usize,
     pub walk_ms: f64,
+    pub details_ms: f64,
     pub total_ms: f64,
 }
 
@@ -52,8 +68,9 @@ impl From<CatalogueError> for EngineError {
 
 impl Engine {
     /// Indexes `root` (a canonical, user-granted folder) and everything beneath it,
-    /// on the background lane. Re-indexing the same folder supersedes a pass still
-    /// running. A cancelled pass marks nothing missing.
+    /// on the background lane, then reads details of new or changed photos.
+    /// Re-indexing the same folder supersedes a pass still running. A cancelled pass
+    /// marks nothing missing, and details it did not reach stay queued.
     pub fn index_folder(
         &self,
         catalogue: Arc<Catalogue>,
@@ -61,15 +78,17 @@ impl Engine {
         progress: impl Fn(IndexProgress) + Send + 'static,
     ) -> JobHandle<IndexSummary, EngineError> {
         let extensions = self.info().extensions;
+        let shared = Arc::clone(&self.shared);
         let spec = JobSpec::new(Lane::Background, Priority::Indexing, "index")
             .superseding(format!("index:{}", root.display()));
         self.jobs.submit(spec, move |token| {
-            index(&catalogue, &root, &extensions, token, &progress)
+            index(&shared, &catalogue, &root, &extensions, token, &progress)
         })
     }
 }
 
 fn index(
+    shared: &Shared,
     catalogue: &Catalogue,
     root: &Path,
     extensions: &[&str],
@@ -98,7 +117,8 @@ fn index(
     let walk_ms = ms(start);
     let found = paths.len();
     progress(IndexProgress {
-        found,
+        stage: IndexStage::Recording,
+        total: found,
         processed: 0,
     });
 
@@ -113,7 +133,9 @@ fn index(
         unchanged: 0,
         missing: 0,
         skipped: walk.skipped,
+        details_read: 0,
         walk_ms,
+        details_ms: 0.0,
         total_ms: 0.0,
     };
 
@@ -154,15 +176,20 @@ fn index(
             }
         }
         progress(IndexProgress {
-            found,
+            stage: IndexStage::Recording,
+            total: found,
             processed: ((i + 1) * BATCH).min(found),
         });
     }
-
     summary.missing = catalogue.finish_scan(folder, scan, None)?;
+
+    let details_start = Instant::now();
+    summary.details_read = read_details(shared, catalogue, folder, token, progress)?;
+    summary.details_ms = ms(details_start);
     summary.total_ms = ms(start);
     log::info!(
-        "indexed {} in {:.0} ms: {} found, {} new, {} changed, {} moved, {} unchanged, {} missing, {} skipped",
+        "indexed {} in {:.0} ms: {} found, {} new, {} changed, {} moved, {} unchanged, {} missing, {} skipped; \
+         details read for {} in {:.0} ms",
         root.display(),
         summary.total_ms,
         summary.found,
@@ -171,9 +198,73 @@ fn index(
         summary.moved,
         summary.unchanged,
         summary.missing,
-        summary.skipped
+        summary.skipped,
+        summary.details_read,
+        summary.details_ms
     );
     Ok(summary)
+}
+
+/// Reads details for every present photo in `folder` that needs them, in parallel
+/// batches of [`BATCH`], each stored in one transaction. Resumable: whatever a
+/// cancelled pass did not reach stays queued in the catalogue.
+fn read_details(
+    shared: &Shared,
+    catalogue: &Catalogue,
+    folder: FolderId,
+    token: &CancelToken,
+    progress: &dyn Fn(IndexProgress),
+) -> Result<usize, EngineError> {
+    let pending = catalogue.photos_needing_details(folder, usize::MAX)?;
+    let total = pending.len();
+    if total == 0 {
+        return Ok(0);
+    }
+    progress(IndexProgress {
+        stage: IndexStage::ReadingDetails,
+        total,
+        processed: 0,
+    });
+    let mut done = 0;
+    for batch in pending.chunks(BATCH) {
+        if token.is_cancelled() {
+            return Err(EngineError::cancelled());
+        }
+        let details: Vec<(PhotoId, Option<PhotoDetails>)> = batch
+            .par_iter()
+            .map(|(photo, path)| {
+                (
+                    *photo,
+                    shared.decoders.read_metadata(path).ok().map(to_details),
+                )
+            })
+            .collect();
+        catalogue.set_details(&details)?;
+        done += details.len();
+        progress(IndexProgress {
+            stage: IndexStage::ReadingDetails,
+            total,
+            processed: done,
+        });
+    }
+    Ok(done)
+}
+
+fn to_details(m: raw::PhotoMetadata) -> PhotoDetails {
+    PhotoDetails {
+        camera_make: m.camera_make,
+        camera_model: m.camera_model,
+        lens: m.lens,
+        captured_at: m.captured_at,
+        iso: m.iso,
+        aperture: m.aperture,
+        shutter_seconds: m.shutter_seconds,
+        focal_length_mm: m.focal_length_mm,
+        width: m.width,
+        height: m.height,
+        rotation: m.rotation,
+        gps: m.gps,
+    }
 }
 
 fn ms(since: Instant) -> f64 {

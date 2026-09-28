@@ -302,3 +302,129 @@ fn from_known_matches_from_path() {
         full
     );
 }
+
+#[test]
+fn details_are_read_once_and_again_after_content_changes() {
+    let l = library("cat-details");
+    let path = l.root.join("a.nef");
+    let (photo, _) = l
+        .cat
+        .record_file(l.folder, &write(&path, &photo_bytes(50)), ScanId(1))
+        .unwrap();
+    assert_eq!(
+        l.cat.photos_needing_details(l.folder, 10).unwrap(),
+        [(photo, path.canonicalize().unwrap())]
+    );
+
+    let details = crate::PhotoDetails {
+        camera_make: Some("Nikon".into()),
+        camera_model: Some("Z 6".into()),
+        captured_at: Some("2026-09-24T06:41:12".into()),
+        iso: Some(100),
+        aperture: Some(8.0),
+        width: Some(6048),
+        height: Some(4024),
+        rotation: 90,
+        gps: Some((54.52, -3.01)),
+        ..Default::default()
+    };
+    l.cat
+        .set_details(&[(photo, Some(details.clone()))])
+        .unwrap();
+    assert!(
+        l.cat
+            .photos_needing_details(l.folder, 10)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(l.cat.details(photo).unwrap(), Some(details.clone()));
+    let in_dir = l.cat.details_in_dir(&l.root).unwrap();
+    assert_eq!(in_dir, [(path.canonicalize().unwrap(), details)]);
+
+    // Unchanged rescan keeps them; changed content queues a re-read.
+    l.cat
+        .record_file(
+            l.folder,
+            &SourceIdentity::from_path(&path).unwrap(),
+            ScanId(2),
+        )
+        .unwrap();
+    assert!(
+        l.cat
+            .photos_needing_details(l.folder, 10)
+            .unwrap()
+            .is_empty()
+    );
+    l.cat
+        .record_file(l.folder, &write(&path, &photo_bytes(51)), ScanId(3))
+        .unwrap();
+    assert_eq!(l.cat.photos_needing_details(l.folder, 10).unwrap().len(), 1);
+}
+
+#[test]
+fn unreadable_details_are_not_retried_and_missing_files_are_skipped() {
+    let l = library("cat-details-none");
+    let a = write(&l.root.join("a.nef"), &photo_bytes(52));
+    let b = write(&l.root.join("b.nef"), &photo_bytes(53));
+    let out = l
+        .cat
+        .record_files(l.folder, &[a.clone(), b.clone()], ScanId(1))
+        .unwrap();
+    // `a` could not be read: stored as empty, not queued again.
+    l.cat.set_details(&[(out[0].0, None)]).unwrap();
+    // `b` disappears: marked missing, so not queued either.
+    std::fs::remove_file(&b.canonical_path).unwrap();
+    let s2 = l.cat.begin_scan().unwrap();
+    l.cat
+        .touch_unchanged(
+            &[(a.canonical_path.clone(), a.size, a.modified_unix_ns)],
+            s2,
+        )
+        .unwrap();
+    l.cat.finish_scan(l.folder, s2, None).unwrap();
+    assert!(
+        l.cat
+            .photos_needing_details(l.folder, 10)
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        l.cat.details(out[0].0).unwrap(),
+        Some(crate::PhotoDetails::default())
+    );
+}
+
+#[test]
+fn many_identical_copies_stay_fast() {
+    // 2,000 identical copies in one scan: each must be recorded as a new photo without
+    // checking all earlier copies on disk (that was quadratic).
+    let l = library("cat-copies");
+    let original = write(&l.root.join("orig.nef"), &photo_bytes(60));
+    let ids: Vec<SourceIdentity> = (0..2_000)
+        .map(|i| {
+            let p = l.root.join(format!("copies/c{i}.nef"));
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::hard_link(&original.canonical_path, &p).unwrap();
+            SourceIdentity::from_path(&p).unwrap()
+        })
+        .collect();
+    let t = std::time::Instant::now();
+    let out = l.cat.record_files(l.folder, &ids, ScanId(1)).unwrap();
+    let elapsed = t.elapsed();
+    assert!(out.iter().all(|(_, o)| *o == RecordOutcome::New));
+    assert!(elapsed.as_secs_f64() < 2.0, "2,000 copies took {elapsed:?}");
+
+    // A real move among the copies is still detected in the next scan.
+    let moved_from = ids[5].canonical_path.clone();
+    let moved_to = l.root.join("moved.nef");
+    std::fs::rename(&moved_from, &moved_to).unwrap();
+    let (_, o) = l
+        .cat
+        .record_file(
+            l.folder,
+            &SourceIdentity::from_path(&moved_to).unwrap(),
+            ScanId(2),
+        )
+        .unwrap();
+    assert!(matches!(o, RecordOutcome::Moved { .. }), "{o:?}");
+}

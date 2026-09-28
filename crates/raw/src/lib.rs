@@ -8,6 +8,7 @@ mod error;
 mod jpeg;
 #[cfg(feature = "libraw")]
 mod libraw;
+mod metadata;
 // Helpers for embedded previews; only camera RAW decoders have them today.
 #[cfg(feature = "libraw")]
 mod preview;
@@ -19,6 +20,7 @@ use image_core::{Cancellation, LinearImage, OutputImage};
 pub use jpeg::JpegDecoder;
 #[cfg(feature = "libraw")]
 pub use libraw::LibRawDecoder;
+pub use metadata::{PhotoMetadata, rotation_from_exif, rotation_from_flip};
 
 /// Which JPEG decoder handles embedded RAW previews in this build.
 pub const fn embedded_jpeg_decoder() -> &'static str {
@@ -119,6 +121,11 @@ pub trait Decoder: Send + Sync {
         cancel: &dyn Cancellation,
     ) -> Result<DecodedImage, DecodeError>;
 
+    /// Reads metadata from the file's headers without decoding the image.
+    fn read_metadata(&self, _path: &Path) -> Result<PhotoMetadata, DecodeError> {
+        Ok(PhotoMetadata::default())
+    }
+
     /// Extracts an embedded preview whose long edge is at least `min_long_edge` if
     /// possible (downscaled towards it), without decoding the image data. Decoders for
     /// formats without embedded previews keep the default.
@@ -168,6 +175,13 @@ impl DecoderRegistry {
             DecodeError::Unsupported(format!("no decoder for {}", path.display()))
         })?;
         decoder.decode(path, options, cancel)
+    }
+
+    /// Metadata via the decoder for `path`.
+    pub fn read_metadata(&self, path: &Path) -> Result<PhotoMetadata, DecodeError> {
+        self.decoder_for(path)
+            .ok_or_else(|| DecodeError::Unsupported(format!("no decoder for {}", path.display())))?
+            .read_metadata(path)
     }
 
     /// Embedded preview via the decoder for `path`; `Ok(None)` if there is none.

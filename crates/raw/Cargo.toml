@@ -20,6 +20,8 @@ turbojpeg = ["dep:jpeg-turbo"]
 [dependencies]
 image-core.workspace = true
 zune-jpeg.workspace = true
+# EXIF for JPEGs (BSD-2-Clause, pure Rust). RAW metadata comes from LibRaw.
+kamadak-exif = "0.6"
 jpeg-turbo = { workspace = true, optional = true }
 
 [build-dependencies]

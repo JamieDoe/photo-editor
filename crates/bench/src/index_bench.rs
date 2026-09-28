@@ -80,6 +80,8 @@ fn summary(s: &IndexSummary) -> Value {
         "changed": s.changed,
         "unchanged": s.unchanged,
         "missing": s.missing,
+        "details_read": s.details_read,
+        "details_ms": s.details_ms,
         "files_per_sec": s.found as f64 / (s.total_ms / 1000.0),
     })
 }
@@ -101,4 +103,42 @@ fn write_file(path: &Path, seed: u64, generation: u64) {
 
 fn ms(t: Instant) -> f64 {
     t.elapsed().as_secs_f64() * 1000.0
+}
+
+/// `bench --index-links N`: N hard links to the real camera files in
+/// `tests/fixtures/local` (no extra disk space), so metadata reading exercises real
+/// RAW headers. Hard links share content, so all but one per source are recorded as
+/// copies (new photos) — identical work to distinct files for the catalogue.
+pub fn run_links(n: usize, sources: &[std::path::PathBuf]) -> Value {
+    assert!(
+        !sources.is_empty(),
+        "no camera files in tests/fixtures/local"
+    );
+    let dir = fixtures::TempDir::new("index-links");
+    let root = dir.path().join("Library");
+    for i in 0..n {
+        let src = &sources[i % sources.len()];
+        let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("raw");
+        let dest = root.join(format!("{:04}/IMG_{i:06}.{ext}", i / 100));
+        std::fs::create_dir_all(dest.parent().expect("parent")).expect("mkdir");
+        std::fs::hard_link(src, &dest).expect("hard link (same volume as the fixtures)");
+    }
+    let root = root.canonicalize().expect("root");
+    let catalogue =
+        Arc::new(Catalogue::open(&dir.path().join("catalogue.sqlite")).expect("catalogue"));
+    let engine = Engine::new(EngineConfig::default());
+    let index = || -> IndexSummary {
+        engine
+            .index_folder(Arc::clone(&catalogue), root.clone(), |_| {})
+            .wait()
+            .expect("index")
+    };
+    let first = index();
+    let rescan = index();
+    json!({
+        "files": n,
+        "sources": sources.len(),
+        "first": summary(&first),
+        "rescan_unchanged": summary(&rescan),
+    })
 }
