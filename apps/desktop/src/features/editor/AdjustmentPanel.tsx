@@ -3,14 +3,18 @@ import { ChevronIcon, ColourIcon, DetailIcon, LightIcon } from "../../components
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { Look } from "../../ipc/generated/Look";
+import type { MixerSpec } from "../../ipc/generated/MixerSpec";
 import type { TemperatureScale } from "../../ipc/generated/TemperatureScale";
 import { PanelSection } from "./PanelSection";
-import { isAdjustmentKey } from "./recipe";
-import { formatSliderValue, sliderTrack } from "./sliderTrack";
+import { ColourMixerControls } from "./ColourMixerControls";
+import { isAdjustmentKey, mixerEdited, mixerOf } from "./recipe";
+import { Slider } from "./Slider";
+import { formatSliderValue } from "./sliderTrack";
 import { formatKelvin, kelvinAt, WHITE_BALANCE_TRACKS } from "./whiteBalance";
 
 interface Props {
   specs: AdjustmentSpec[];
+  mixerSpec: MixerSpec;
   recipe: EditRecipe;
   onChange: (r: EditRecipe) => void;
   disabled: boolean;
@@ -33,7 +37,7 @@ const GROUP_ICONS: Record<string, ReactNode> = {
  * An edited value can be reset by clicking it (it reads “Reset” on hover) or by
  * double-clicking the slider.
  */
-export function AdjustmentPanel({ specs, recipe, onChange, disabled, temperatureScale }: Props) {
+export function AdjustmentPanel({ specs, mixerSpec, recipe, onChange, disabled, temperatureScale }: Props) {
   const groups = [...new Set(specs.map((s) => s.group))];
   const valueOf = (spec: AdjustmentSpec) => (isAdjustmentKey(spec.key) ? recipe[spec.key] : spec.default);
   // As in the design, Temperature reads as the light it assumes ("5650 K").
@@ -65,13 +69,29 @@ export function AdjustmentPanel({ specs, recipe, onChange, disabled, temperature
       </div>
       {groups.map((group) => {
         const groupSpecs = specs.filter((s) => s.group === group && isAdjustmentKey(s.key));
-        const edited = groupSpecs.some((s) => valueOf(s) !== s.default);
+        // As in the design, the colour mixer is the Colour section's "More controls".
+        const mixer =
+          group === "Colour"
+            ? {
+                edited: mixerEdited(recipe),
+                content: (
+                  <ColourMixerControls
+                    spec={mixerSpec}
+                    mixer={mixerOf(recipe)}
+                    disabled={disabled}
+                    onChange={(m) => onChange({ ...recipe, mixer: m })}
+                  />
+                ),
+              }
+            : undefined;
+        const edited = groupSpecs.some((s) => valueOf(s) !== s.default) || (mixer?.edited ?? false);
         return (
           <PanelSection key={group} title={group} icon={GROUP_ICONS[group] ?? <DetailIcon />} edited={edited}>
             <GroupSliders
               specs={groupSpecs}
               valueOf={valueOf}
               format={format}
+              extra={mixer}
               disabled={disabled}
               onChange={(key, v) => {
                 if (isAdjustmentKey(key)) onChange({ ...recipe, [key]: v });
@@ -93,26 +113,32 @@ function GroupSliders({
   specs,
   valueOf,
   format,
+  extra,
   disabled,
   onChange,
 }: {
   specs: AdjustmentSpec[];
   valueOf: (s: AdjustmentSpec) => number;
   format: (s: AdjustmentSpec, v: number) => string;
+  /** More controls that are not plain sliders (the colour mixer). */
+  extra?: { content: ReactNode; edited: boolean };
   disabled: boolean;
   onChange: (key: string, v: number) => void;
 }) {
   const basic = specs.filter((s) => !s.more);
   const more = specs.filter((s) => s.more);
-  const moreEdited = more.some((s) => valueOf(s) !== s.default);
+  const moreEdited = more.some((s) => valueOf(s) !== s.default) || (extra?.edited ?? false);
   const [open, setOpen] = useState(false);
   const showMore = open || moreEdited;
   const slider = (spec: AdjustmentSpec) => (
     <Slider
       key={spec.key}
+      id={`adjust-${spec.key}`}
       spec={spec}
       value={valueOf(spec)}
       shown={format(spec, valueOf(spec))}
+      // White balance sliders show their colours instead of a fill, as in the design.
+      track={WHITE_BALANCE_TRACKS[spec.key]}
       disabled={disabled}
       onChange={(v) => onChange(spec.key, v)}
     />
@@ -120,9 +146,14 @@ function GroupSliders({
   return (
     <>
       {basic.map(slider)}
-      {more.length > 0 && (
+      {(more.length > 0 || extra) && (
         <>
-          {showMore && <div className="more-controls">{more.map(slider)}</div>}
+          {showMore && (
+            <div className="more-controls">
+              {more.map(slider)}
+              {extra?.content}
+            </div>
+          )}
           <button
             className="more-toggle"
             aria-expanded={showMore}
@@ -136,62 +167,5 @@ function GroupSliders({
         </>
       )}
     </>
-  );
-}
-
-function Slider({
-  spec,
-  value,
-  shown,
-  disabled,
-  onChange,
-}: {
-  spec: AdjustmentSpec;
-  value: number;
-  shown: string;
-  disabled: boolean;
-  onChange: (v: number) => void;
-}) {
-  const id = `adjust-${spec.key}`;
-  const edited = value !== spec.default;
-  const track = sliderTrack(value, spec.min, spec.max);
-  // White balance sliders show their colours instead of a fill, as in the design.
-  const background = WHITE_BALANCE_TRACKS[spec.key] ?? track.background;
-  return (
-    <div className={edited ? "slider edited" : "slider"}>
-      <div className="slider-head">
-        <label htmlFor={id}>{spec.label}</label>
-        {edited ? (
-          <button
-            className="slider-value"
-            title={`Reset ${spec.label}`}
-            aria-label={`${spec.label} ${shown}. Reset`}
-            disabled={disabled}
-            onClick={() => onChange(spec.default)}
-          >
-            <span className="value">{shown}</span>
-            <span className="reset">Reset</span>
-          </button>
-        ) : (
-          <span className="slider-value">{shown}</span>
-        )}
-      </div>
-      <div className="slider-track">
-        {track.zeroPercent !== null && <span className="slider-zero" style={{ left: `${track.zeroPercent}%` }} />}
-        <input
-          id={id}
-          className="range"
-          type="range"
-          min={spec.min}
-          max={spec.max}
-          step={spec.step}
-          value={value}
-          disabled={disabled}
-          style={{ background }}
-          onDoubleClick={() => onChange(spec.default)}
-          onChange={(e) => onChange(Number(e.currentTarget.value))}
-        />
-      </div>
-    </div>
   );
 }

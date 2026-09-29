@@ -73,7 +73,8 @@ existing screens to the design now, and to match it for every screen built from 
 | Floating photo toolbar under the photo: rating stars, pick, reject | as designed (zoom, crop, masks and compare to follow) |
 | Panel: exposure strip, collapsible sections, sliders with reset-on-hover | as designed |
 | Light section: Exposure (in EV), Contrast, Highlights, Shadows; Whites and Blacks behind "More controls" | as designed (tone curve and Dehaze to follow) |
-| Colour section: Temperature in kelvin on a blue–amber track, Tint on a green–magenta track, Vibrance, Saturation | as designed (colour mixer behind "More controls" to follow) |
+| Colour section: Temperature in kelvin on a blue–amber track, Tint on a green–magenta track, Vibrance, Saturation | as designed |
+| Colour mixer behind "More controls": label and range name, eight dots (Blues first), Hue / Saturation / Luminance | as designed |
 
 ### Deliberate deviations
 
@@ -88,12 +89,12 @@ existing screens to the design now, and to match it for every screen built from 
 | Stage | Dimmed photo and "Loading…" pill while the next photo opens | ADR 0020; the design shows no loading state |
 | Light section | Exposure range ±5 EV (design ±4); "More controls" opens itself when a hidden slider is edited | Existing edits are never clamped; an edit is never out of sight |
 | Colour section | Temperature shows its relative value (e.g. "+20") on JPEGs | A JPEG has no as-shot light to express in kelvin (ADR 0024) |
+| Colour mixer | Accent mark on the dots of edited ranges | Otherwise an edit in a range not on screen is invisible |
 | Settings | Whole screen (grouped cards, segmented controls) | The design has no settings; built from its tokens and components |
 
 ### Not built yet (and so not shown)
 
-Search, Recently imported, albums, histogram, presets and Auto, tone curve, colour
-mixer, detail, crop, masks, compare, zoom, the filmstrip, batch selection and Export
+Search, Recently imported, albums, histogram, presets and Auto, tone curve, detail, crop, masks, compare, zoom, the filmstrip, batch selection and Export
 dialog.
 
 ## Consequences

@@ -10,7 +10,7 @@
 use std::path::PathBuf;
 
 use image_core::{NeverCancel, PixelFormat};
-use renderer::{CpuRenderer, EditRecipe, Look, RenderBackend, RenderPlan};
+use renderer::{ColourMixer, CpuRenderer, EditRecipe, HslShift, Look, RenderBackend, RenderPlan};
 
 /// Allowed per-channel difference, absorbing libm differences across platforms.
 const TOLERANCE: u8 = 1;
@@ -77,6 +77,29 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
             "vibrance_plus80",
             EditRecipe {
                 vibrance: 80.0,
+                ..r
+            },
+        ),
+        (
+            // Darker, richer blues; oranges towards yellow; greens muted.
+            "colour_mixer",
+            EditRecipe {
+                mixer: Some(ColourMixer {
+                    blue: HslShift {
+                        hue: 0.0,
+                        saturation: 40.0,
+                        luminance: -60.0,
+                    },
+                    orange: HslShift {
+                        hue: 60.0,
+                        ..Default::default()
+                    },
+                    green: HslShift {
+                        saturation: -80.0,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }),
                 ..r
             },
         ),

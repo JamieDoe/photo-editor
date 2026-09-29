@@ -2,7 +2,7 @@
 //! (`cargo test -p desktop`), so the UI never hand-maintains copies.
 
 use app_core::{EngineError, EngineInfo, ErrorKind, ExportStage, ExportSummary, ImageSummary};
-use renderer::adjustments::AdjustmentSpec;
+use renderer::adjustments::{AdjustmentSpec, MixerSpec};
 use renderer::{EditRecipe, PreviewQuality, TemperatureScale};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
@@ -41,6 +41,8 @@ pub struct EngineInfoDto {
     pub embedded_jpeg_decoder: String,
     pub cpu_threads: u32,
     pub adjustments: Vec<AdjustmentSpec>,
+    /// The colour mixer's bands and per-band controls (ADR 0025).
+    pub mixer: MixerSpec,
 }
 
 impl From<EngineInfo> for EngineInfoDto {
@@ -56,6 +58,7 @@ impl From<EngineInfo> for EngineInfoDto {
             embedded_jpeg_decoder: i.embedded_jpeg_decoder.to_owned(),
             cpu_threads: std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
             adjustments: i.adjustments,
+            mixer: i.mixer,
         }
     }
 }

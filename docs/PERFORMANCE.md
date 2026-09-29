@@ -354,3 +354,19 @@ Stage costs on the 1516×1010 interactive level (Nikon Z 6, bench recipe, three 
   - Median render: 3.2 ms (Nikon), 2.8 ms (Canon), 3.3 ms (Fuji).
   - Preview: 30 fps on all three.
 
+## 15. Colour mixer (ADR 0025)
+
+Mixer stage on the 1516×1010 interactive level (Nikon Z 6, three runs):
+
+| Version | One band edited | All eight bands |
+|---|---|---|
+| First | +3.5 to +3.9 ms | not measured |
+| Untouched hues skip the work; no `rem_euclid` | +1.48 to +1.55 ms | +3.0 to +3.9 ms |
+
+- **Whole bench recipe** (every Light and Colour control plus one mixer band): about
+  6.4 ms.
+- **Release self-test** (mixer, Temperature, Tint and Vibrance dragged together):
+  median render 4.9–5.8 ms, 30 fps on Nikon, Canon and Fuji.
+- **Low-end hardware:** not yet measured. If it needs it, a branch-free SIMD version is
+  the next step.
+

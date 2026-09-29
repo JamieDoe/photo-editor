@@ -2,6 +2,7 @@ use image_core::LinearImage;
 use image_core::color::REC709_LUMA;
 
 use super::lut::CurveLut;
+use crate::ops::colour_mixer::{self, MixerTable};
 use crate::ops::tone::{self, ToneBase, ToneParams};
 use crate::ops::{contrast, look, vibrance};
 use crate::{RenderPlan, Stage};
@@ -21,6 +22,7 @@ pub(super) enum Kernel {
     Curve(Box<CurveLut>),
     Saturation(f32),
     Vibrance(f32),
+    Mixer(Box<MixerTable>),
     /// Highlights/shadows (with the surroundings map) and whites/blacks, with the
     /// gains as lookup tables over "stops below white".
     Tone(Box<ToneKernel>),
@@ -162,6 +164,11 @@ impl Kernel {
                     px[2] = (y + (px[2] - y) * f).max(0.0);
                 }
             }
+            Self::Mixer(table) => {
+                for px in rgb.as_chunks_mut::<3>().0 {
+                    *px = colour_mixer::apply(*px, table);
+                }
+            }
             Self::Vibrance(amount) => {
                 for px in rgb.as_chunks_mut::<3>().0 {
                     *px = vibrance::apply(*px, *amount);
@@ -214,6 +221,9 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
             )))),
             Stage::Saturation { factor } => out.push(Kernel::Saturation(factor)),
             Stage::Vibrance { amount } => out.push(Kernel::Vibrance(amount)),
+            Stage::ColourMixer { bands } => {
+                out.push(Kernel::Mixer(Box::new(MixerTable::new(&bands))))
+            }
             Stage::WhiteBalance { .. } | Stage::Exposure { .. } => unreachable!("handled above"),
         }
     }

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use export::ExportFormat;
 use image_core::OutputImage;
 use raw::SourceKind;
-use renderer::adjustments::AdjustmentSpec;
+use renderer::adjustments::{AdjustmentSpec, MixerSpec};
 use renderer::{EditRecipe, PreviewQuality};
 
 /// Session-scoped handle to an open image.
@@ -114,4 +114,5 @@ pub struct EngineInfo {
     /// JPEG decoder used for embedded RAW previews.
     pub embedded_jpeg_decoder: &'static str,
     pub adjustments: Vec<AdjustmentSpec>,
+    pub mixer: MixerSpec,
 }

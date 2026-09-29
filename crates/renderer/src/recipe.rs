@@ -7,6 +7,7 @@ use crate::adjustments::{
     BLACKS, CONTRAST, EXPOSURE, HIGHLIGHTS, SATURATION, SHADOWS, TEMPERATURE, TINT, VIBRANCE,
     WHITES,
 };
+use crate::ops::colour_mixer::ColourMixer;
 
 /// Current edit recipe schema version.
 ///
@@ -16,7 +17,9 @@ use crate::adjustments::{
 /// - 3: adds highlights, shadows, whites and blacks (ADR 0023). Older recipes read them
 ///   as 0, which renders exactly as before.
 /// - 4: adds tint and vibrance (ADR 0024); older recipes read them as 0.
-pub const RECIPE_VERSION: u32 = 4;
+/// - 5: adds the colour mixer (ADR 0025), written only when used; older recipes have
+///   none.
+pub const RECIPE_VERSION: u32 = 5;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -49,6 +52,11 @@ pub struct EditRecipe {
     pub vibrance: f32,
     /// Colour saturation, -100 (monochrome) .. 100.
     pub saturation: f32,
+    /// Hue, saturation and luminance per colour band. `None` (and omitted from the
+    /// JSON) when unused, so recipes without it read and hash as before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub mixer: Option<ColourMixer>,
     /// The base look the adjustments start from.
     pub look: Look,
 }
@@ -67,6 +75,7 @@ impl Default for EditRecipe {
             tint: 0.0,
             vibrance: 0.0,
             saturation: 0.0,
+            mixer: None,
             look: Look::Standard,
         }
     }
@@ -111,7 +120,7 @@ impl EditRecipe {
             .sanitized()),
             // Later fields are missing from older versions and read as 0, which is
             // exact.
-            2..=4 => Ok(Self {
+            2..=5 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -139,6 +148,7 @@ impl EditRecipe {
             tint: TINT.clamp(self.tint),
             vibrance: VIBRANCE.clamp(self.vibrance),
             saturation: SATURATION.clamp(self.saturation),
+            mixer: self.mixer.map(sanitize_mixer).filter(|m| !m.is_identity()),
             look: self.look,
         }
     }
@@ -169,8 +179,19 @@ impl EditRecipe {
             && s.tint == 0.0
             && s.vibrance == 0.0
             && s.saturation == 0.0
+            && s.mixer.is_none()
             && s.look == Look::default()
     }
+}
+
+fn sanitize_mixer(mut m: ColourMixer) -> ColourMixer {
+    use crate::adjustments::{MIXER_HUE, MIXER_LUMINANCE, MIXER_SATURATION};
+    for b in m.bands_mut() {
+        b.hue = MIXER_HUE.clamp(b.hue);
+        b.saturation = MIXER_SATURATION.clamp(b.saturation);
+        b.luminance = MIXER_LUMINANCE.clamp(b.luminance);
+    }
+    m
 }
 
 #[cfg(test)]
@@ -202,7 +223,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":4,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"look":"standard"}"#
+            r#"{"version":5,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"look":"standard"}"#
         );
     }
 
@@ -253,6 +274,36 @@ mod tests {
         assert_eq!(r.version, RECIPE_VERSION);
         assert_eq!((r.tint, r.vibrance), (0.0, 0.0));
         assert_eq!((r.temperature, r.shadows), (20.0, 10.0));
+    }
+
+    #[test]
+    fn the_mixer_is_written_only_when_used() {
+        let mut r = EditRecipe {
+            mixer: Some(ColourMixer::default()),
+            ..Default::default()
+        };
+        // An unused mixer is no edit and leaves the JSON (and cache keys) unchanged.
+        assert!(r.is_identity());
+        assert_eq!(r.canonical_bytes(), EditRecipe::default().canonical_bytes());
+        assert!(!r.to_json().contains("mixer"));
+
+        r.mixer.as_mut().unwrap().blue.luminance = -30.0;
+        r.mixer.as_mut().unwrap().red.hue = f32::NAN;
+        r.mixer.as_mut().unwrap().green.saturation = 900.0;
+        let json = r.to_json();
+        assert!(json.contains(r#""blue":{"hue":0.0,"saturation":0.0,"luminance":-30.0}"#));
+        let back = EditRecipe::from_json(&json).unwrap();
+        let m = back.mixer.unwrap();
+        assert_eq!((m.red.hue, m.green.saturation), (0.0, 100.0));
+        assert_eq!(back, r.sanitized());
+
+        // Version 4 recipes have no mixer.
+        let old = EditRecipe::from_json(r#"{"version":4,"vibrance":10.0}"#).unwrap();
+        assert_eq!(old.mixer, None);
+        assert!(matches!(
+            EditRecipe::from_json(r#"{"version":5,"mixer":{"teal":{}}}"#),
+            Err(RecipeError::Invalid(_))
+        ));
     }
 
     #[test]

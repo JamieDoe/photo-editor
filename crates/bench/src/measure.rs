@@ -27,6 +27,14 @@ fn bench_recipe(i: usize) -> EditRecipe {
         tint: 5.0,
         vibrance: 25.0,
         saturation: 20.0,
+        mixer: Some(renderer::ColourMixer {
+            blue: renderer::HslShift {
+                hue: 10.0,
+                saturation: 20.0,
+                luminance: -30.0,
+            },
+            ..Default::default()
+        }),
         ..EditRecipe::default()
     }
 }

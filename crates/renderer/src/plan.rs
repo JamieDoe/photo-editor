@@ -1,5 +1,6 @@
 use crate::EditRecipe;
 use crate::Look;
+use crate::ops::colour_mixer::HslShift;
 use crate::ops::tone::ToneParams;
 use crate::ops::{contrast, saturation, white_balance};
 use image_core::Chromaticity;
@@ -25,6 +26,8 @@ pub enum Stage {
     Contrast { gamma: f32 },
     /// The Standard base look's tone curve, per channel (ADR 0022).
     BaseCurve,
+    /// Hue, saturation and luminance per colour band (ADR 0025), in band order.
+    ColourMixer { bands: [HslShift; 8] },
     /// Chroma boost weighted towards muted colours, sparing skin (-1..1).
     Vibrance { amount: f32 },
     /// Blend towards/away from Rec.709 luminance.
@@ -39,6 +42,7 @@ impl Stage {
             Self::Tone { .. } => "tone",
             Self::Contrast { .. } => "contrast",
             Self::BaseCurve => "base_curve",
+            Self::ColourMixer { .. } => "colour_mixer",
             Self::Vibrance { .. } => "vibrance",
             Self::Saturation { .. } => "saturation",
         }
@@ -72,7 +76,7 @@ impl RenderPlan {
     /// Identity stages are omitted.
     ///
     /// Order: white balance -> exposure -> tone (highlights, shadows, whites, blacks)
-    /// -> contrast -> base look (scene to display tones) -> colour (vibrance,
+    /// -> contrast -> base look (scene to display tones) -> colour (mixer, vibrance,
     /// saturation) -> output transform, matching the conceptual pipeline in CLAUDE.md.
     /// Exposure and contrast act on scene-referred values, so the base look's shoulder
     /// still rolls off highlights they push up.
@@ -100,6 +104,11 @@ impl RenderPlan {
         }
         if r.look == Look::Standard {
             stages.push(Stage::BaseCurve);
+        }
+        if let Some(mixer) = r.mixer {
+            stages.push(Stage::ColourMixer {
+                bands: mixer.bands(),
+            });
         }
         if r.vibrance != 0.0 {
             stages.push(Stage::Vibrance {
@@ -141,6 +150,13 @@ mod tests {
             temperature: 10.0,
             vibrance: 10.0,
             saturation: 10.0,
+            mixer: Some(crate::ops::colour_mixer::ColourMixer {
+                red: HslShift {
+                    hue: 10.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
             ..Default::default()
         };
         let names: Vec<_> = RenderPlan::from_recipe(&r, None)
@@ -156,6 +172,7 @@ mod tests {
                 "tone",
                 "contrast",
                 "base_curve",
+                "colour_mixer",
                 "vibrance",
                 "saturation"
             ]

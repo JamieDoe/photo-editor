@@ -17,6 +17,7 @@ mod recipe;
 
 pub use backend::{RenderBackend, RenderError};
 pub use cpu::CpuRenderer;
+pub use ops::colour_mixer::{ColourMixer, HslShift};
 pub use ops::look::Look;
 pub use ops::white_balance::TemperatureScale;
 pub use plan::{OutputTransform, RenderPlan, Stage};
