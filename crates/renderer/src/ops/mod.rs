@@ -6,4 +6,5 @@
 pub mod contrast;
 pub mod look;
 pub mod saturation;
+pub mod tone;
 pub mod white_balance;

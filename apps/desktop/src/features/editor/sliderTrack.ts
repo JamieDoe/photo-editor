@@ -24,8 +24,10 @@ export function sliderTrack(value: number, min: number, max: number): SliderTrac
   };
 }
 
-/** Value as shown beside the slider: signed for bipolar ranges, two decimals for fine steps. */
-export function formatSliderValue(value: number, min: number, step: number): string {
+/** Value as shown beside the slider: signed for bipolar ranges, two decimals for fine
+ *  steps, then the unit if any ("+0.50 EV", as in the design). */
+export function formatSliderValue(value: number, min: number, step: number, unit = ""): string {
   const text = step < 1 ? value.toFixed(2) : String(Math.round(value));
-  return min < 0 && value > 0 ? `+${text}` : text;
+  const signed = min < 0 && value > 0 ? `+${text}` : text;
+  return unit ? `${signed} ${unit}` : signed;
 }

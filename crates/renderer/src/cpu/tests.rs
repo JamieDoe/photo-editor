@@ -22,11 +22,31 @@ fn render(recipe: &EditRecipe, img: &LinearImage) -> OutputImage {
 
 /// Reference renderer: scalar ops per pixel, no LUTs or fusion.
 fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
+    // The tone stage's surroundings map, from the gains before it.
+    let mut gains = [1.0f32; 3];
+    let mut base = None;
+    for stage in &plan.stages {
+        match *stage {
+            Stage::WhiteBalance { gains: g } => (0..3).for_each(|c| gains[c] *= g[c]),
+            Stage::Exposure { multiplier } => gains.iter_mut().for_each(|g| *g *= multiplier),
+            Stage::Tone { .. } => base = Some(ops::tone::ToneBase::build(img, gains)),
+            _ => {}
+        }
+    }
+    let (w, h) = (img.width() as usize, img.height() as usize);
     let mut out = Vec::new();
-    for px in img.data().as_chunks::<3>().0 {
+    for (k, px) in img.data().as_chunks::<3>().0.iter().enumerate() {
         let mut rgb = [px[0], px[1], px[2]].map(|v| f32::from(v) / 65535.0);
         for stage in &plan.stages {
             rgb = match *stage {
+                Stage::Tone { params } => {
+                    let [wr, wg, wb] = image_core::color::REC709_LUMA;
+                    let log_y = (rgb[0] * wr + rgb[1] * wg + rgb[2] * wb).max(1e-6).log2();
+                    let d = base
+                        .as_ref()
+                        .map_or(0.0, |b| b.stops_at(k % w, k / w, w, h, log_y));
+                    ops::tone::apply(rgb, d, &params)
+                }
                 Stage::WhiteBalance { gains } => {
                     [rgb[0] * gains[0], rgb[1] * gains[1], rgb[2] * gains[2]]
                 }
@@ -47,6 +67,10 @@ fn matches_scalar_reference_for_all_stages() {
     let recipe = EditRecipe {
         exposure: 0.6,
         contrast: 45.0,
+        highlights: -40.0,
+        shadows: 50.0,
+        whites: 20.0,
+        blacks: -30.0,
         temperature: -35.0,
         saturation: 30.0,
         ..Default::default()
@@ -158,7 +182,35 @@ fn consecutive_gains_are_fused() {
         Stage::Exposure { multiplier: 2.0 },
         Stage::Saturation { factor: 1.0 },
     ]);
-    let kernels = kernels::compile(&plan);
+    let kernels = kernels::compile(&plan, &chart());
     assert_eq!(kernels.len(), 2);
     assert!(matches!(kernels[0], kernels::Kernel::Gain([4.0, 2.0, 1.0])));
+}
+
+#[test]
+fn the_cached_surroundings_map_never_leaks_between_images() {
+    // Two different images of the same size, rendered one after the other with the
+    // same shadows setting: each must match its own reference, not the other's map.
+    let recipe = EditRecipe {
+        shadows: 80.0,
+        highlights: -50.0,
+        ..Default::default()
+    };
+    let plan = RenderPlan::from_recipe(&recipe);
+    let a = chart();
+    let b = LinearImage::new(96, 64, a.data().iter().rev().copied().collect()).unwrap();
+    for img in [&a, &b, &a] {
+        let fast = CpuRenderer
+            .render(&plan, img, PixelFormat::Rgb8, &NeverCancel)
+            .unwrap();
+        let slow = reference(&plan, img);
+        let max_diff = fast
+            .data()
+            .iter()
+            .zip(&slow)
+            .map(|(x, y)| x.abs_diff(*y))
+            .max()
+            .unwrap();
+        assert!(max_diff <= 1, "max diff {max_diff}");
+    }
 }

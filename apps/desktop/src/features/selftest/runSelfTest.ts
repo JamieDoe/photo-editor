@@ -3,6 +3,7 @@ import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { SelfTestConfigDto } from "../../ipc/generated/SelfTestConfigDto";
+import { neutralRecipe } from "../editor/recipe";
 import type { DisplayedFrame, Editor } from "../editor/useEditor";
 
 type RenderedFrame = DisplayedFrame;
@@ -271,7 +272,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const target = config.imagePath;
       const before = await ipc.libraryThumbnail(target);
       // Known values: earlier steps left other adjustments changed.
-      const original = { version: info.recipeVersion, exposure: 0, contrast: 0, temperature: 0, saturation: 0, look: "standard" as const };
+      const original = neutralRecipe(info.recipeVersion);
       const recipe = { ...original, exposure: 1, saturation: -40 };
       const saved = await ipc.saveEdit(target, recipe);
       const listed = (await ipc.listFolder(indexing.folder)).photos.find((p) => p.path === target)?.edited ?? null;

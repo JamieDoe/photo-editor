@@ -19,6 +19,10 @@ fn bench_recipe(i: usize) -> EditRecipe {
     EditRecipe {
         exposure: 0.35 + i as f32 * 1e-4,
         contrast: 25.0,
+        highlights: -40.0,
+        shadows: 35.0,
+        whites: 10.0,
+        blacks: -10.0,
         temperature: 15.0,
         saturation: 20.0,
         ..EditRecipe::default()

@@ -22,6 +22,22 @@ exposure: number,
  */
 contrast: number, 
 /**
+ * Highlights, -100..100: darkens (recovers) or brightens bright areas.
+ */
+highlights: number, 
+/**
+ * Shadows, -100..100: lifts or deepens dark areas, keeping their texture.
+ */
+shadows: number, 
+/**
+ * Whites, -100..100: moves the white end of the tonal range.
+ */
+whites: number, 
+/**
+ * Blacks, -100..100: moves the black end of the tonal range.
+ */
+blacks: number, 
+/**
  * Warm/cool shift relative to the as-shot white balance, -100..100.
  */
 temperature: number, 

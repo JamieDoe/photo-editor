@@ -312,6 +312,12 @@ button.section-header:hover .section-name { color: var(--text); }
 
 /* Adjustment slider */
 .slider { display: flex; flex-direction: column; gap: 9px; }
+.more-controls { display: flex; flex-direction: column; gap: 16px; padding-top: 16px; border-top: 1px dashed var(--hairline-strong); animation: slide-in 0.22s var(--ease); }
+button.more-toggle { align-self: flex-start; height: 26px; padding: 0 8px 0 6px; margin: -6px 0 0 -6px; border: 0; border-radius: 6px; background: transparent; color: var(--text-3); font-size: 12px; font-weight: 400; gap: 4px; }
+button.more-toggle:hover:not(:disabled) { background: var(--hover-strong); color: var(--text); }
+button.more-toggle:disabled { opacity: 1; cursor: default; }
+button.more-toggle .chevron { transition: transform 0.2s; }
+button.more-toggle[aria-expanded="true"] .chevron { transform: rotate(180deg); }
 .slider-head { display: flex; justify-content: space-between; align-items: baseline; }
 .slider-head label { font-size: 12.5px; color: var(--text-2); }
 .slider.edited .slider-head label { color: var(--text); }

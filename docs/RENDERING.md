@@ -41,7 +41,9 @@ RAW decode (LibRaw)            camera WB (as shot), demosaic, camera matrix -> l
     ▼
 White balance (temperature)    per-channel gains, relative to as-shot
 Exposure                       multiply by 2^EV
-Tone (contrast)                S-curve around mid grey (scene-referred)
+Tone (highlights, shadows,     local gains from an edge-aware surroundings map, and
+      whites, blacks)          end-point gains (ADR 0023)
+Contrast                       S-curve around mid grey (scene-referred)
 Base look (Standard)           camera-like tone curve: lift, toe, shoulder (ADR 0022)
 Colour (saturation)            chroma scale around Rec.709 luminance
     ▼
@@ -56,6 +58,13 @@ Output transform               clip [0,1], sRGB OETF, 8-bit quantise
   *Simplification:* applied in linear sRGB after the camera matrix, not in camera
   space before it. Absolute Kelvin/tint needs camera-space WB (see §7).
 - **Exposure** (`-5..5 EV`): linear multiply.
+- **Highlights / Shadows** (`-100..100`): local and hue-stable (equal gain on R, G, B).
+  - The gain in stops comes from the surroundings' brightness: a fast guided filter
+    of log luminance on a fixed 256-px map, so preview and export match.
+  - Shadows gives up to 2 stops, from mid grey down. Highlights gives up to 1.5 stops,
+    within 3 stops of white.
+- **Whites / Blacks** (`-100..100`): the gain comes from the pixel's own brightness,
+  in the top 1.5 stops (1 stop) or from 4 stops below white down (1.5 stops).
 - **Contrast** (`-100..100`): per channel, in a gamma-2.2 perceptual domain; curve
   fixes 0, mid grey (0.18) and 1; slope at the pivot is `2^(±0.8)` at the extremes;
   values above 1 pass through, so contrast alone never clips highlights.
@@ -86,12 +95,17 @@ Cancellation is checked once per chunk.
 
 `render_into` accepts a caller-owned output buffer for reuse.
 
-### Future stages that are not point operations
+### Stages that look at neighbourhoods
 
-Sharpening, noise reduction, local contrast and masks read neighbourhoods. The plan
-stays a flat list, but the CPU backend will group consecutive point stages into
-fused *segments* separated by neighbourhood stages (which need tiles with apron
-borders). The recipe/plan/backend split does not change.
+The tone stage (ADR 0023) is the first. It needs only a *low-resolution* view of the
+whole image, built once per render before the parallel pass and cached while it
+cannot change. Kernels receive each chunk's row span (`RowSpan`) to look it up, so
+it still runs in the single fused pass.
+
+Sharpening, noise reduction and clarity need full-resolution neighbourhoods. The CPU
+backend will then group point stages into fused *segments*, separated by
+neighbourhood stages that need tiles with apron borders. The recipe/plan/backend
+split does not change.
 
 ## 5. Resolution levels
 

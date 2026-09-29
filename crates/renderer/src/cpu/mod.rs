@@ -13,7 +13,7 @@ use image_core::{Cancellation, LinearImage, OutputImage, PixelFormat};
 use rayon::prelude::*;
 
 use crate::{RenderBackend, RenderError, RenderPlan};
-use kernels::{Kernel, compile};
+use kernels::{Kernel, RowSpan, compile};
 use lut::output_lut;
 
 /// Target pixels per parallel work item: large enough to amortise scheduling, small
@@ -39,8 +39,9 @@ impl CpuRenderer {
                 "output size does not match source".into(),
             ));
         }
-        let kernels = compile(plan);
+        let kernels = compile(plan, source);
         let width = source.width() as usize;
+        let height = source.height() as usize;
         let channels = out.format().channels();
         let rows_per_chunk = (CHUNK_PIXELS / width).max(1);
         let src = source.data();
@@ -54,7 +55,12 @@ impl CpuRenderer {
                 }
                 let first = i * rows_per_chunk * width * 3;
                 let src_chunk = &src[first..first + out_chunk.len() / channels * 3];
-                process_chunk(&kernels, src_chunk, scratch, out_chunk, channels);
+                let span = RowSpan {
+                    first_row: i * rows_per_chunk,
+                    width,
+                    height,
+                };
+                process_chunk(&kernels, src_chunk, scratch, out_chunk, channels, span);
                 Ok(())
             })
     }
@@ -85,12 +91,13 @@ fn process_chunk(
     scratch: &mut Vec<f32>,
     out: &mut [u8],
     channels: usize,
+    span: RowSpan,
 ) {
     const INV: f32 = 1.0 / 65535.0;
     scratch.clear();
     scratch.extend(src.iter().map(|&v| f32::from(v) * INV));
     for k in kernels {
-        k.apply(scratch);
+        k.apply(scratch, span);
     }
     let lut = output_lut();
     let pixels = scratch.as_chunks::<3>().0;

@@ -72,6 +72,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Edit header: name, mono file details, "● Edited", "N of M" counter | as designed |
 | Floating photo toolbar under the photo: rating stars, pick, reject | as designed (zoom, crop, masks and compare to follow) |
 | Panel: exposure strip, collapsible sections, sliders with reset-on-hover | as designed |
+| Light section: Exposure (in EV), Contrast, Highlights, Shadows; Whites and Blacks behind "More controls" | as designed (tone curve and Dehaze to follow) |
 
 ### Deliberate deviations
 
@@ -84,6 +85,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Edit header | Reset (whole photo) and save notes ("Not saved…", "Couldn't save") | Honest save state for photos outside the library; one-step reset |
 | Edit panel top | "Look: Standard / Flat" row where the design has Presets | Base looks (ADR 0022) are profile choices; presets are not built yet |
 | Stage | Dimmed photo and "Loading…" pill while the next photo opens | ADR 0020; the design shows no loading state |
+| Light section | Exposure range ±5 EV (design ±4); "More controls" opens itself when a hidden slider is edited | Existing edits are never clamped; an edit is never out of sight |
 | Settings | Whole screen (grouped cards, segmented controls) | The design has no settings; built from its tokens and components |
 
 ### Not built yet (and so not shown)

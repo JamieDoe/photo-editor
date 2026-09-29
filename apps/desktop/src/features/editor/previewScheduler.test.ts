@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { neutralRecipe } from "./recipe";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { PreviewQuality } from "../../ipc/generated/PreviewQuality";
 import { PreviewScheduler, type FrameInfo, type SchedulerDeps } from "./previewScheduler";
 
-const recipe = (exposure: number): EditRecipe => ({ version: 1, exposure, contrast: 0, temperature: 0, saturation: 0, look: "standard" });
+const recipe = (exposure: number): EditRecipe => ({ ...neutralRecipe(1), exposure });
 
 interface Call {
   recipe: EditRecipe;

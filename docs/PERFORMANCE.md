@@ -320,3 +320,21 @@ units). `--flat` measures the old flat look.
 The base curve is one lookup-table pass (the same cost as contrast). Its effect on
 interactive render time is within noise.
 
+## 13. Highlights / Shadows / Whites / Blacks (ADR 0023)
+
+Per-stage cost on the 1516×1010 interactive level (Nikon Z 6, `bench --single`,
+median):
+
+| Cumulative stages | ms |
+|---|---|
+| none (u16→f32 + encode) | 0.9 |
+| + white balance + exposure | 1.0 |
+| + tone (map cached, as while dragging a tone slider) | 2.9 |
+| + contrast + base curve + saturation | 4.5 |
+
+- **First version:** per-pixel `exp2`, map rebuilt every frame, +6.6 ms.
+- **What brought it to +2.0 ms:** caching the map, per-row interpolation and
+  lookup-table gains.
+- **Building the map:** 2.8 ms for this size (needed again when exposure or white
+  balance change).
+
