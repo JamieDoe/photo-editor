@@ -82,7 +82,6 @@ Release self-test, which changes exposure and every other control on every frame
   this machine. Next options if single-slider drags need to be faster on low-end
   hardware: SIMD for the per-pixel map evaluations (tone, dehaze, detail), or the GPU
   backend (Phase 8).
-
 - Dehaze uses no extra full-image pass. Its model is built at map size.
 - The GPU spike does not implement the stage; it reports it as unsupported.
 - Lightroom's dehaze also shifts colour balance and saturation in some cases. Ours only
