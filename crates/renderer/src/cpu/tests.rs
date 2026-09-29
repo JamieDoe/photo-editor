@@ -69,7 +69,20 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                 }
                 *out = ops::detail::fast_log2(y);
             }
-            ops::detail::apply_reference(&mut image, &log_y, w, h, base.as_ref(), &params);
+            // The colour noise map, built from the source like the luminance.
+            let chroma = (params.noise != 0.0).then(|| {
+                let unit = ops::scene::SceneMap::unit_sized(img, ops::noise::CHROMA_MAP_LONG_EDGE);
+                ops::noise::ChromaMap::build(&unit, g, dehaze.as_ref(), &params.noise())
+            });
+            ops::detail::apply_reference(
+                &mut image,
+                &log_y,
+                chroma.as_ref(),
+                w,
+                h,
+                base.as_ref(),
+                &params,
+            );
             continue;
         }
         for (k, px) in image.as_chunks_mut::<3>().0.iter_mut().enumerate() {
@@ -124,6 +137,7 @@ fn matches_scalar_reference_for_all_stages() {
         texture: 60.0,
         clarity: 45.0,
         dehaze: 50.0,
+        noise_reduction: 70.0,
         ..Default::default()
     };
     let plan = RenderPlan::from_recipe(&recipe, None);
@@ -243,6 +257,7 @@ fn detail_matches_the_whole_image_reference_across_chunks() {
         texture: -70.0,
         clarity: 80.0,
         dehaze: -40.0,
+        noise_reduction: 100.0,
         look: crate::Look::Flat,
         ..Default::default()
     };

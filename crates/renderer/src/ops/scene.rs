@@ -49,9 +49,15 @@ impl SceneMap {
 
     /// The map of `source` as decoded (no gains).
     pub fn unit(source: &LinearImage) -> Self {
+        Self::unit_sized(source, MAP_LONG_EDGE)
+    }
+
+    /// Like [`SceneMap::unit`], with `long_edge` cells on the long edge (at most the
+    /// image's own size).
+    pub fn unit_sized(source: &LinearImage, long_edge: u32) -> Self {
         let (sw, sh) = (source.width() as usize, source.height() as usize);
         let long = sw.max(sh).max(1);
-        let scale = f64::from(MAP_LONG_EDGE).min(long as f64) / long as f64;
+        let scale = f64::from(long_edge).min(long as f64) / long as f64;
         let w = ((sw as f64 * scale).round() as usize).max(1);
         let h = ((sh as f64 * scale).round() as usize).max(1);
         let norm = 1.0 / 65535.0;

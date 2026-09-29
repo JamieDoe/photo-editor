@@ -53,16 +53,7 @@ describe("PreviewScheduler", () => {
     expect(h.calls.map((c) => [c.recipe.exposure, c.quality])).toEqual([[0.3, "interactive"]]);
   });
 
-  it("sends a new request without waiting for the previous one", () => {
-    const h = harness();
-    h.s.request(recipe(1));
-    h.tick();
-    h.s.request(recipe(2));
-    h.tick();
-    expect(h.calls).toHaveLength(2);
-  });
-
-  it("drops stale responses and counts superseded ones", async () => {
+  it("waits for the render in flight, then sends only the newest change", async () => {
     const h = harness();
     h.s.request(recipe(1));
     h.tick();
@@ -70,13 +61,48 @@ describe("PreviewScheduler", () => {
     h.tick();
     h.s.request(recipe(3));
     h.tick();
-    h.calls[2]!.resolve("third");
+    expect(h.calls).toHaveLength(1);
+    h.calls[0]!.resolve("first");
     await h.settle();
-    h.calls[0]!.reject("cancelled");
-    h.calls[1]!.resolve("second (late)");
+    h.tick();
+    expect(h.calls.map((c) => c.recipe.exposure)).toEqual([1, 3]);
+    h.calls[1]!.resolve("third");
     await h.settle();
-    expect(h.shown.map(([f]) => f)).toEqual(["third"]);
-    expect(h.s.stats()).toMatchObject({ requested: 3, shown: 1, superseded: 1, stale: 1, errors: 0 });
+    expect(h.shown.map(([f]) => f)).toEqual(["first", "third"]);
+  });
+
+  it("keeps showing frames when renders are slower than frames", async () => {
+    // Every frame brings a change, and every render outlasts several frames: each
+    // render still completes and is shown (no starvation).
+    const h = harness();
+    for (let i = 1; i <= 12; i++) {
+      h.s.request(recipe(i));
+      h.tick();
+      if (i % 3 === 0) {
+        h.calls.at(-1)!.resolve(`frame ${i}`);
+        await h.settle();
+      }
+    }
+    expect(h.shown.length).toBeGreaterThanOrEqual(3);
+    expect(h.s.stats().superseded).toBe(0);
+  });
+
+  it("drops stale responses and counts superseded ones", async () => {
+    const h = harness();
+    h.s.request(recipe(1));
+    h.tick();
+    h.fireTimers(); // settled: a detail render of recipe 1
+    h.s.request(recipe(2)); // a new change while both are in flight
+    h.tick();
+    h.calls[0]!.resolve("interactive 1");
+    await h.settle();
+    h.tick();
+    h.calls[2]!.resolve("interactive 2");
+    await h.settle();
+    h.calls[1]!.resolve("detail 1 (late)");
+    await h.settle();
+    expect(h.shown.map(([f]) => f)).toEqual(["interactive 1", "interactive 2"]);
+    expect(h.s.stats()).toMatchObject({ requested: 3, shown: 2, stale: 1, errors: 0 });
   });
 
   it("refines with a detail render once changes settle", () => {

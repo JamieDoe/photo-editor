@@ -97,6 +97,13 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
         ("dehaze_plus60", EditRecipe { dehaze: 60.0, ..r }),
         ("dehaze_minus60", EditRecipe { dehaze: -60.0, ..r }),
         ("texture_plus80", EditRecipe { texture: 80.0, ..r }),
+        (
+            "noise_reduction_80",
+            EditRecipe {
+                noise_reduction: 80.0,
+                ..r
+            },
+        ),
         ("clarity_plus80", EditRecipe { clarity: 80.0, ..r }),
         (
             "clarity_minus80",

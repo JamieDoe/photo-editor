@@ -5,8 +5,11 @@ import type { PreviewQuality } from "../../ipc/generated/PreviewQuality";
  * Decides *when* to ask Rust for a preview. No pixel work happens here.
  *
  * - Interactive requests are coalesced to at most one per animation frame.
- * - Each request is sent immediately; Rust cancels the superseded render, so the UI
- *   never waits for obsolete work to finish.
+ * - At most one interactive render is in flight. Changes made meanwhile replace each
+ *   other, and the newest is sent when the render returns. Frames therefore keep
+ *   arriving at whatever rate the machine renders. (Sending every change at once and
+ *   cancelling the render before it starved the preview whenever a render took longer
+ *   than a frame: none ever finished. ADR 0030.)
  * - Responses older than the newest displayed frame are dropped (stale).
  * - Once changes settle, one detail-quality render refines the preview.
  */
@@ -41,6 +44,8 @@ export class PreviewScheduler<F> {
   private lastShown = 0;
   private pending: EditRecipe | null = null;
   private frameRequested = false;
+  /** An interactive render has been sent and has not returned. */
+  private interactiveInFlight = false;
   private settleTimer: number | null = null;
   private disposed = false;
   private readonly counters: SchedulerStats = { requested: 0, shown: 0, superseded: 0, stale: 0, errors: 0 };
@@ -83,17 +88,31 @@ export class PreviewScheduler<F> {
 
   private flush(): void {
     this.frameRequested = false;
+    // Wait for the render in flight; its return flushes again.
+    if (this.interactiveInFlight) return;
     const recipe = this.pending;
     this.pending = null;
     if (recipe !== null && !this.disposed) this.send(recipe, "interactive");
+  }
+
+  /** An interactive render returned: send the newest waiting change, if any. */
+  private interactiveDone(): void {
+    this.interactiveInFlight = false;
+    if (this.pending !== null && !this.disposed && !this.frameRequested) {
+      this.frameRequested = true;
+      this.deps.requestFrame(() => this.flush());
+    }
   }
 
   private send(recipe: EditRecipe, quality: PreviewQuality): void {
     const seq = ++this.seq;
     const start = this.deps.now();
     this.counters.requested++;
+    const interactive = quality === "interactive";
+    if (interactive) this.interactiveInFlight = true;
     this.deps.render(recipe, quality).then(
       (frame) => {
+        if (interactive) this.interactiveDone();
         if (this.disposed) return;
         if (seq < this.lastShown) {
           this.counters.stale++;
@@ -104,6 +123,7 @@ export class PreviewScheduler<F> {
         this.deps.onFrame(frame, { seq, quality, roundTripMs: this.deps.now() - start });
       },
       (error: unknown) => {
+        if (interactive) this.interactiveDone();
         if (this.deps.isCancellation(error)) {
           this.counters.superseded++;
         } else if (!this.disposed) {

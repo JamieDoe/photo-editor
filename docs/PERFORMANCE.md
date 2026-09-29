@@ -434,3 +434,29 @@ Self-test worst case (exposure and everything change every frame):
 - **Why caching helps:** averaging is linear, so a white-balance or exposure change
   only rescales the 256-px map instead of re-reading the image.
 
+## 19. Noise reduction (ADR 0030)
+
+Nikon Z 6, `main` and this branch alternated three times each, bench recipe with
+Noise reduction 30, load average 7–13:
+
+| Measure | `main` | With noise reduction |
+|---|---|---|
+| Interactive, every control set | 11.8 ms | 15.3 – 16.7 ms |
+| Full-resolution render | 199 – 204 ms | 308 – 314 ms |
+| Export render | 321 – 323 ms | 488 – 569 ms |
+| Peak memory | 1483 – 1485 MB | 1549 – 1586 MB |
+
+Getting there:
+
+- **First version:** colour filtered per chunk at full resolution. +26 ms
+  interactive, ~900 ms at full resolution, 2.2 GB peak.
+- **Box blur:** the horizontal pass (1.3 ns/px, a dependent running sum) became
+  shifted-row sums for small radii and eight rows at once for large ones.
+- **Colour:** one 512-cell map per render, cached. It ignores exposure when there is
+  no dehaze.
+- **Memory:** kernel buffers now per render instead of per thread (−650 MB peak).
+- **Profiling tool:** macOS `sample` on a render loop.
+
+Preview scheduler: one interactive render in flight. Before, a drag whose renders
+took longer than a frame showed no frames at all.
+

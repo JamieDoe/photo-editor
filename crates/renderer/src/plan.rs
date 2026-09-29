@@ -153,6 +153,7 @@ mod tests {
                 texture: 0.0,
                 clarity: 0.0,
                 sharpening: 40.0,
+                noise: 0.0,
             },
         };
         assert_eq!(

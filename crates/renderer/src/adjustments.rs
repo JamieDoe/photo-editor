@@ -179,6 +179,16 @@ pub const SHARPENING: AdjustmentSpec = AdjustmentSpec {
     ..TEXTURE
 };
 
+/// Noise reduction (ADR 0030), after Sharpening as in the design.
+pub const NOISE_REDUCTION: AdjustmentSpec = AdjustmentSpec {
+    key: "noiseReduction",
+    label: "Noise reduction",
+    min: 0.0,
+    max: 100.0,
+    default: 0.0,
+    ..TEXTURE
+};
+
 /// The colour mixer's controls, per band (ADR 0025). Keys are `HslShift` fields.
 pub const MIXER_HUE: AdjustmentSpec = AdjustmentSpec {
     key: "hue",
@@ -239,7 +249,7 @@ pub fn mixer_spec() -> MixerSpec {
 
 /// In display order: the design's Light section (Exposure, Contrast, Highlights,
 /// Shadows; Whites, Blacks and Dehaze behind "More controls"), then Colour (Temperature, Tint,
-/// Vibrance, Saturation), then Detail (Texture, Clarity, Sharpening).
+/// Vibrance, Saturation), then Detail (Texture, Clarity, Sharpening, Noise reduction).
 pub fn specs() -> Vec<AdjustmentSpec> {
     vec![
         EXPOSURE,
@@ -256,6 +266,7 @@ pub fn specs() -> Vec<AdjustmentSpec> {
         TEXTURE,
         CLARITY,
         SHARPENING,
+        NOISE_REDUCTION,
     ]
 }
 

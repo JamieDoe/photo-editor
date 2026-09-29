@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::Look;
 use crate::adjustments::{
-    BLACKS, CLARITY, CONTRAST, DEHAZE, EXPOSURE, HIGHLIGHTS, SATURATION, SHADOWS, SHARPENING,
-    TEMPERATURE, TEXTURE, TINT, VIBRANCE, WHITES,
+    BLACKS, CLARITY, CONTRAST, DEHAZE, EXPOSURE, HIGHLIGHTS, NOISE_REDUCTION, SATURATION, SHADOWS,
+    SHARPENING, TEMPERATURE, TEXTURE, TINT, VIBRANCE, WHITES,
 };
 use crate::ops::colour_mixer::ColourMixer;
 
@@ -23,7 +23,8 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 7: adds sharpening (ADR 0027). New recipes default to 40, as in the design;
 ///   older recipes had none and keep none, so they render as they did.
 /// - 8: adds dehaze (ADR 0028); older recipes read it as 0.
-pub const RECIPE_VERSION: u32 = 8;
+/// - 9: adds noise reduction (ADR 0030); older recipes read it as 0.
+pub const RECIPE_VERSION: u32 = 9;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -64,6 +65,8 @@ pub struct EditRecipe {
     pub clarity: f32,
     /// Capture sharpening, 0..150 (default 40).
     pub sharpening: f32,
+    /// Noise reduction, 0..100.
+    pub noise_reduction: f32,
     /// Hue, saturation and luminance per colour band. `None` (and omitted from the
     /// JSON) when unused, so recipes without it read and hash as before.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -91,6 +94,7 @@ impl Default for EditRecipe {
             texture: 0.0,
             clarity: 0.0,
             sharpening: SHARPENING.default,
+            noise_reduction: 0.0,
             mixer: None,
             look: Look::Standard,
         }
@@ -144,7 +148,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7 | 8 => Ok(Self {
+            7..=9 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -176,6 +180,7 @@ impl EditRecipe {
             texture: TEXTURE.clamp(self.texture),
             clarity: CLARITY.clamp(self.clarity),
             sharpening: SHARPENING.clamp(self.sharpening),
+            noise_reduction: NOISE_REDUCTION.clamp(self.noise_reduction),
             mixer: self.mixer.map(sanitize_mixer).filter(|m| !m.is_identity()),
             look: self.look,
         }
@@ -197,6 +202,7 @@ impl EditRecipe {
             texture: self.texture,
             clarity: self.clarity,
             sharpening: self.sharpening,
+            noise: self.noise_reduction,
         }
     }
 
@@ -220,6 +226,7 @@ impl EditRecipe {
             && s.texture == 0.0
             && s.clarity == 0.0
             && s.sharpening == SHARPENING.default
+            && s.noise_reduction == 0.0
             && s.mixer.is_none()
             && s.look == Look::default()
     }
@@ -264,7 +271,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":8,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"look":"standard"}"#
+            r#"{"version":9,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"look":"standard"}"#
         );
     }
 

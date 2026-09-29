@@ -7,6 +7,7 @@ use super::lut::CurveLut;
 use crate::ops::colour_mixer::{self, MixerTable};
 use crate::ops::dehaze::DehazeModel;
 use crate::ops::detail::{self, DetailParams};
+use crate::ops::noise;
 use crate::ops::scene::{self, RowModel, SceneMap};
 use crate::ops::tone::{self, ToneBase, ToneParams};
 use crate::ops::{contrast, look, vibrance};
@@ -39,6 +40,8 @@ pub(super) enum Kernel {
 }
 
 /// The surroundings map with each pixel column's map columns and blend weight.
+/// The colour noise map with each pixel column's map columns and blend weight.
+type ChromaWithColumns = (Arc<noise::ChromaMap>, Vec<(u32, u32, f32)>);
 type BaseWithColumns = (std::sync::Arc<ToneBase>, Vec<(u32, u32, f32)>);
 
 pub(super) struct ToneKernel {
@@ -110,6 +113,10 @@ struct MapCache {
     key: Option<SourceKey>,
     unit: Option<Arc<SceneMap>>,
     scaled: Keyed<GainBits, SceneMap>,
+    /// The gain-free map at colour-noise resolution, and the smoothed colour map for
+    /// (gains, dehaze amount, noise amount).
+    chroma_unit: Option<Arc<SceneMap>>,
+    chroma: Keyed<(GainBits, Option<u32>, u32), noise::ChromaMap>,
     dehaze: Keyed<(GainBits, u32), DehazeModel>,
     tone: Keyed<(GainBits, Option<u32>), ToneBase>,
 }
@@ -210,27 +217,56 @@ fn cached_base(
     )
 }
 
+/// The colour noise map for the detail stage (ADR 0030), measured after `dehaze`.
+fn cached_chroma(
+    source: &LinearImage,
+    gains: [f32; 3],
+    dehaze: Option<(f32, &DehazeModel)>,
+    params: &noise::NoiseParams,
+) -> Arc<noise::ChromaMap> {
+    let key = source_key(source);
+    let effective = noise::ChromaMap::effective_gains(gains, dehaze.is_some());
+    let bits = (
+        effective.map(f32::to_bits),
+        dehaze.map(|(amount, _)| amount.to_bits()),
+        params.amount.to_bits(),
+    );
+    cached(
+        key,
+        |c| {
+            c.chroma
+                .as_ref()
+                .filter(|(b, _)| *b == bits)
+                .map(|(_, m)| Arc::clone(m))
+        },
+        || {
+            let unit = cached(
+                key,
+                |c| c.chroma_unit.clone(),
+                || SceneMap::unit_sized(source, noise::CHROMA_MAP_LONG_EDGE),
+                |c, m| c.chroma_unit = Some(m),
+            );
+            noise::ChromaMap::build(&unit, gains, dehaze.map(|(_, m)| m), params)
+        },
+        |c, m| c.chroma = Some((bits, m)),
+    )
+}
+
 /// Dehaze runs on the pixels as they are after white balance and exposure.
 pub(super) struct DehazeKernel {
     model: Arc<DehazeModel>,
     columns: Vec<(u32, u32, f32)>,
 }
 
-thread_local! {
-    static ROW_MODEL: std::cell::RefCell<RowModel> = std::cell::RefCell::default();
-}
-
 impl DehazeKernel {
-    fn apply(&self, rgb: &mut [f32], span: RowSpan<'_>) {
-        ROW_MODEL.with_borrow_mut(|rm| {
-            for (r, row) in rgb.chunks_mut(span.width * 3).enumerate() {
-                rm.load(self.model.map(), span.first_row + r, span.height);
-                for (x, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
-                    let t = rm.eval(self.columns[x], self.model.guide(scene::luma(*px)));
-                    *px = self.model.apply(*px, t);
-                }
+    fn apply(&self, rgb: &mut [f32], span: RowSpan<'_>, rm: &mut RowModel) {
+        for (r, row) in rgb.chunks_mut(span.width * 3).enumerate() {
+            rm.load(self.model.map(), span.first_row + r, span.height);
+            for (x, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+                let t = rm.eval(self.columns[x], self.model.guide(scene::luma(*px)));
+                *px = self.model.apply(*px, t);
             }
-        });
+        }
     }
 }
 
@@ -248,6 +284,11 @@ pub(super) struct DetailKernel {
     /// them (as the tone stage's map is).
     gains: [f32; 3],
     radius: usize,
+    /// Noise reduction radii (luminance in pixels, colour in blocks), for this image's
+    /// size, and each pixel column's colour blocks.
+    luma_radius: usize,
+    /// The colour noise map (whole image) and each pixel column's map columns.
+    chroma: Option<ChromaWithColumns>,
     /// Rows either side the stage reads (see `DetailParams::reach`).
     reach: usize,
     base: Option<BaseWithColumns>,
@@ -256,10 +297,15 @@ pub(super) struct DetailKernel {
     exp2: SignedStopsLut,
 }
 
-/// Per-thread buffers for the detail stage's luminance planes.
+/// Buffers for the detail stage's luminance planes, reused from chunk to chunk.
 #[derive(Default)]
 struct DetailScratch {
     log_y: Vec<f32>,
+    /// Denoised log luminance (when noise reduction is on).
+    denoised: Vec<f32>,
+    /// The smoothed colour ratios for the current row, per chroma map column.
+    chroma_row: Vec<(f32, f32)>,
+    guided: noise::GuidedScratch,
     small: Vec<f32>,
     sharp_row: Vec<f32>,
     vertical: Vec<f32>,
@@ -269,8 +315,12 @@ struct DetailScratch {
     b_row: Vec<f32>,
 }
 
-thread_local! {
-    static DETAIL_SCRATCH: std::cell::RefCell<DetailScratch> = std::cell::RefCell::default();
+/// Buffers kernels reuse from chunk to chunk within one render. They belong to the
+/// render (not to threads), so the memory is released when it finishes.
+#[derive(Default)]
+pub(super) struct KernelScratch {
+    detail: DetailScratch,
+    row_model: RowModel,
 }
 
 /// `2^s` for s in -MAX..MAX stops, every 1/256 stop (the detail gains).
@@ -304,7 +354,7 @@ impl DetailKernel {
     /// Rows a chunk should have so the band it measures (the chunk plus the blur's
     /// reach either side) is mostly the chunk itself.
     pub(super) fn min_chunk_rows(&self) -> usize {
-        4 * self.reach
+        2 * self.reach
     }
 
     fn new(
@@ -327,6 +377,17 @@ impl DetailKernel {
             params,
             gains,
             radius: detail::radius_for(w, h),
+            luma_radius: noise::luma_radius(w, h),
+            chroma: (params.noise != 0.0).then(|| {
+                let map = cached_chroma(
+                    source,
+                    gains,
+                    dehaze.as_ref().map(|d| (d.amount, &*d.model)),
+                    &params.noise(),
+                );
+                let cols = map.columns(w);
+                (map, cols)
+            }),
             reach: params.reach(w, h),
             base,
             dehaze,
@@ -334,7 +395,7 @@ impl DetailKernel {
         }
     }
 
-    fn apply(&self, rgb: &mut [f32], span: RowSpan<'_>) {
+    fn apply(&self, rgb: &mut [f32], span: RowSpan<'_>, scratch: &mut KernelScratch) {
         let w = span.width;
         let rows = rgb.len() / (w * 3);
         // Measure on a band reaching as far beyond the chunk as the blurs do, so
@@ -342,7 +403,8 @@ impl DetailKernel {
         let top = span.first_row.saturating_sub(self.reach);
         let bottom = (span.first_row + rows + self.reach).min(span.height);
         let band = bottom - top;
-        DETAIL_SCRATCH.with_borrow_mut(|s| {
+        {
+            let s = &mut scratch.detail;
             s.log_y.resize(band * w, 0.0);
             for (y, out) in (top..bottom).zip(s.log_y.chunks_mut(w)) {
                 let src = span.source.row(y as u32);
@@ -361,10 +423,22 @@ impl DetailKernel {
                     }
                 }
             }
+            // Noise reduction: the other controls measure the denoised luminance, and
+            // the colour ratios are smoothed (guided by the luminance as measured).
+            let np = self.params.noise();
+            let denoise = !np.is_identity();
+            let colour_step = noise::ColourStep::new(&np);
+            if denoise {
+                let rl = self.luma_radius;
+                noise::denoise_luma(&np, &s.log_y, w, band, rl, &mut s.guided, &mut s.denoised);
+            } else {
+                s.denoised.clear();
+                s.denoised.extend_from_slice(&s.log_y);
+            }
             let small_blur = self.params.uses_small_blur();
             if small_blur {
                 s.small.clear();
-                s.small.extend_from_slice(&s.log_y);
+                s.small.extend_from_slice(&s.denoised);
                 detail::blur_plane(&mut s.small, w, band, self.radius, &mut s.blur);
             }
             let sharpen = self.params.sharpening != 0.0;
@@ -373,12 +447,15 @@ impl DetailKernel {
             for (r, row) in rgb.chunks_mut(w * 3).enumerate() {
                 let y = span.first_row + r;
                 let offset = (y - top) * w;
+                if let Some((map, _)) = &self.chroma {
+                    map.load_row(y, span.height, &mut s.chroma_row);
+                }
                 if let Some((base, _)) = &self.base {
                     base.row(y, span.height, &mut s.a_row, &mut s.b_row);
                 }
                 if sharpen {
                     // Neighbouring rows are in the band (or clamped at the image's edges).
-                    let band_row = |by: usize| &s.log_y[by * w..(by + 1) * w];
+                    let band_row = |by: usize| &s.denoised[by * w..(by + 1) * w];
                     let by = y - top;
                     let (above, below) = (by.saturating_sub(1), (by + 1).min(band - 1));
                     detail::sharpen_blur_row(
@@ -390,7 +467,8 @@ impl DetailKernel {
                     );
                 }
                 for (x, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
-                    let log_y = s.log_y[offset + x];
+                    let raw = s.log_y[offset + x];
+                    let log_y = s.denoised[offset + x];
                     // Unused blurs read as the pixel itself, which zeroes their terms.
                     let small = if small_blur {
                         s.small[offset + x]
@@ -413,13 +491,17 @@ impl DetailKernel {
                     } else {
                         detail::sharpen_stops(&self.params, log_y, sharp)
                     };
-                    let gain = self.exp2.eval(stops);
+                    let gain = self.exp2.eval(stops + (log_y - raw));
                     px[0] *= gain;
                     px[1] *= gain;
                     px[2] *= gain;
+                    if let Some((_, cols)) = &self.chroma {
+                        let (qr, qb) = noise::ChromaMap::at(&s.chroma_row, cols[x]);
+                        *px = noise::denoise_colour(*px, qr, qb, &colour_step);
+                    }
                 }
             }
-        });
+        }
     }
 }
 
@@ -468,7 +550,7 @@ impl ToneKernel {
 }
 
 impl Kernel {
-    pub(super) fn apply(&self, rgb: &mut [f32], span: RowSpan<'_>) {
+    pub(super) fn apply(&self, rgb: &mut [f32], span: RowSpan<'_>, scratch: &mut KernelScratch) {
         match self {
             Self::Gain(g) => {
                 for px in rgb.as_chunks_mut::<3>().0 {
@@ -483,8 +565,8 @@ impl Kernel {
                 }
             }
             Self::Tone(k) => k.apply(rgb, span),
-            Self::Detail(k) => k.apply(rgb, span),
-            Self::Dehaze(k) => k.apply(rgb, span),
+            Self::Detail(k) => k.apply(rgb, span, scratch),
+            Self::Dehaze(k) => k.apply(rgb, span, &mut scratch.row_model),
             Self::Saturation(f) => {
                 let [wr, wg, wb] = REC709_LUMA;
                 for px in rgb.as_chunks_mut::<3>().0 {

@@ -8,6 +8,7 @@ pub mod contrast;
 pub mod dehaze;
 pub mod detail;
 pub mod look;
+pub mod noise;
 pub mod saturation;
 pub mod scene;
 pub mod tone;
