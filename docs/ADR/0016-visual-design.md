@@ -75,7 +75,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Light section: Exposure (in EV), Contrast, Highlights, Shadows; "More controls" with the tone curve graph, then Whites, Blacks and Dehaze | as designed (the curve is the renderer's real response, ADR 0029) |
 | Colour section: Temperature in kelvin on a blue–amber track, Tint on a green–magenta track, Vibrance, Saturation | as designed |
 | Detail section: Texture, Clarity, Sharpening (default 40), Noise reduction; "More controls" headed "Finishing" with Vignette and Grain | as designed |
-| Photo toolbar "Crop" button; crop mode (dimmed outside, thirds grid, handles, size label; toolbar with ratios, Straighten, Reset, Done); Geometry section (aspect ratio, Straighten, Crop) | as designed (Auto level next; "Perspective & lens" later) |
+| Photo toolbar "Crop" button; crop mode (dimmed outside, thirds grid, handles, size label; toolbar with ratios, Straighten, Reset, Done); Geometry section (aspect ratio, Straighten, Crop) | as designed, including Auto level ("Perspective & lens" later) |
 | Colour mixer behind "More controls": label and range name, eight dots (Blues first), Hue / Saturation / Luminance | as designed |
 
 ### Deliberate deviations
@@ -93,6 +93,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Colour section | Temperature shows its relative value (e.g. "+20") on JPEGs | A JPEG has no as-shot light to express in kelvin (ADR 0024) |
 | Colour mixer | Accent mark on the dots of edited ranges | Otherwise an edit in a range not on screen is invisible |
 | Crop mode | Handles sit just inside the rectangle (design: 3 px outside); the crop view is the largest straightened area in the photo's shape | Handles stay whole at the photo's edge; no empty corners can be chosen (ADR 0032) |
+| Auto level | A status line under the button / above the crop toolbar | The design shows a toast; the app has no toast system yet (ADR 0033) |
 | Settings | Whole screen (grouped cards, segmented controls) | The design has no settings; built from its tokens and components |
 
 ### Not built yet (and so not shown)

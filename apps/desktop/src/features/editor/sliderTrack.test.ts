@@ -31,4 +31,10 @@ describe("formatSliderValue", () => {
     expect(formatSliderValue(92, 50, 1)).toBe("92");
     expect(formatSliderValue(0.5, -5, 0.01, "EV")).toBe("+0.50 EV");
   });
+
+  it("shows as many decimals as the step, and attaches degrees", () => {
+    expect(formatSliderValue(-1.4, -15, 0.1, "°")).toBe("-1.4°");
+    expect(formatSliderValue(0.5, -5, 0.01, "EV")).toBe("+0.50 EV");
+    expect(formatSliderValue(40, 0, 1)).toBe("40");
+  });
 });

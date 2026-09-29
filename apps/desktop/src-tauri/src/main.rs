@@ -97,6 +97,7 @@ fn main() {
             commands::images::open_image_dialog,
             commands::images::open_image_path,
             commands::images::render_preview,
+            commands::images::auto_level,
             commands::export::export_image,
             commands::selftest::self_test_config,
             commands::selftest::self_test_report,

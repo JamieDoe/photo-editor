@@ -85,6 +85,8 @@ export const setPhotoMarks = (paths: string[], change: MarkChangeDto) =>
 
 /** Saves a library photo's edit (a default recipe removes it). */
 export const saveEdit = (path: string, recipe: EditRecipe) => invoke<EditSavedDto>("save_edit", { path, recipe });
+/** Auto level: the straighten angle that levels the open photo, or null (no clear horizon). */
+export const autoLevel = (imageId: number) => invoke<number | null>("auto_level", { imageId });
 /** The Light section's tone curve for `recipe`: display values of evenly spaced tones. */
 export const toneCurve = (recipe: EditRecipe) => invoke<number[]>("tone_curve", { recipe });
 

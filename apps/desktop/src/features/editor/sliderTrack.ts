@@ -27,7 +27,9 @@ export function sliderTrack(value: number, min: number, max: number): SliderTrac
 /** Value as shown beside the slider: signed for bipolar ranges, two decimals for fine
  *  steps, then the unit if any ("+0.50 EV", as in the design). */
 export function formatSliderValue(value: number, min: number, step: number, unit = ""): string {
-  const text = step < 1 ? value.toFixed(2) : String(Math.round(value));
+  // As many decimals as the step has: 0.01 -> 2 ("+0.50 EV"), 0.1 -> 1 ("+1.4°").
+  const decimals = step >= 1 ? 0 : Math.min(2, Math.ceil(-Math.log10(step) - 1e-9));
+  const text = decimals === 0 ? String(Math.round(value)) : value.toFixed(decimals);
   const signed = min < 0 && value > 0 ? `+${text}` : text;
   if (!unit) return signed;
   // Degrees attach to the number ("+1.4°", as in the design); other units are words.
