@@ -102,6 +102,12 @@ The base conversion and encode are about half the cost.
 A 120-step simulated drag at 60 Hz, then 90 more steps while an export runs.
 Round trip = slider request → frame received in JS (IPC + queue + render + transfer).
 
+The window must stay visible for the whole run. macOS stops delivering animation
+frames to a window that is covered, on another Space or on a sleeping display, and the
+editor paces its rendering on those frames. The self-test then fails within 2 s with
+"animation frames stopped (page visibility: hidden)" rather than hanging (before
+Phase 2 milestone 5 it hung).
+
 | File | First frame after open | Drag: frames shown | Round trip p50 / p95 / max | During export: shown, p50 / p95 / max | UI frame gap p50 / max (idle baseline) | Detail frame: render → round trip |
 |---|---|---|---|---|---|---|
 | Nikon Z 6 | 367 ms (1516x1010) | 119/120 | 4 / 5 / 5 ms | 89/90, 4 / 10 / 18 ms | 17 / 18 ms (17 / 21) | 5.3 → 21 ms (3032x2020) |
@@ -285,6 +291,10 @@ cache, warm OS cache.
   dominated by the 182 ms synthetic DNG. A cached thumbnail's round trip is ~1 ms.
 - **Indexing no longer delays thumbnails:** they run on their own lane, and the
   concurrent index pass finished normally (538 ms).
+- **Pre-generation after indexing** (ADR 0015 §7): 300 thumbnails (camera-file hard
+  links) at idle priority on the single background worker take 6.2 s (48/s), so about
+  3.5 min per 10,000 photos. An on-screen thumbnail requested mid-batch still takes
+  11.5 ms, because it runs on its own lane.
 - **Worth investigating:** the Fuji and Ricoh cases are 3–8x slower than Nikon. That
   is likely LibRaw's container parsing or a larger embedded JPEG. Not yet profiled.
 - **Not yet measured:**

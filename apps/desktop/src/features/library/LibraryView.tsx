@@ -1,10 +1,11 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { FolderIcon, ImportIcon, PhotosIcon, RefreshIcon, StarIcon } from "../../components/icons";
 import * as ipc from "../../ipc/client";
-import { formatBytes, formatCaptured, formatDateTime } from "../../lib/format";
+import { formatDateRange } from "../../lib/format";
 import type { SettingsApi } from "../settings/useSettings";
 import { indexStatusText } from "./indexStatus";
-import { PhotoThumbnail } from "./PhotoThumbnail";
+import { PhotoGrid } from "./PhotoGrid";
+import { PhotoList } from "./PhotoList";
 import type { LibraryApi } from "./useLibrary";
 
 interface Props {
@@ -46,9 +47,11 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
     }
   };
 
+  const scrollRef = useRef<HTMLDivElement>(null);
   const recent = s?.library.recentFolders ?? [];
   const currentRoot = listing?.breadcrumbs[0]?.path;
-  const photoCount = listing ? `${listing.photos.length} photo${listing.photos.length === 1 ? "" : "s"}` : "";
+  const photoCount = listing ? `${listing.photos.length.toLocaleString()} photo${listing.photos.length === 1 ? "" : "s"}` : "";
+  const dateRange = listing ? formatDateRange(listing.photos.map((p) => p.details?.capturedAt)) : null;
 
   return (
     <div className="library-view">
@@ -139,7 +142,7 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
                 <div className="page-title-row">
                   <h1>{listing.name}</h1>
                   <span className="subtle">
-                    {photoCount}
+                    {[photoCount, dateRange].filter(Boolean).join(" · ")}
                     {loading ? " · loading…" : ""}
                   </span>
                 </div>
@@ -155,10 +158,25 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
                     Set as default
                   </button>
                 )}
+                <div className="segmented small" role="radiogroup" aria-label="Layout">
+                  {(["grid", "list"] as const).map((l) => (
+                    <label key={l}>
+                      <input
+                        className="sr-only"
+                        type="radio"
+                        name="library-layout"
+                        checked={library.layout === l}
+                        onChange={() => library.setLayout(l)}
+                      />
+                      {l === "grid" ? "Grid" : "List"}
+                    </label>
+                  ))}
+                </div>
               </div>
             </header>
 
-            <div className="library-scroll scroll">
+            {/* Keyed by folder: a newly opened folder starts at the top. */}
+            <div className="library-scroll scroll" ref={scrollRef} key={listing.path}>
               {listing.folders.length > 0 && (
                 <div className="chips">
                   {listing.folders.map((f) => (
@@ -171,41 +189,10 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
               )}
               {listing.photos.length === 0 ? (
                 <p className="muted">No supported photos in this folder.</p>
+              ) : library.layout === "grid" ? (
+                <PhotoGrid photos={listing.photos} scrollRef={scrollRef} onOpen={onOpenPhoto} />
               ) : (
-                <table className="photo-table">
-                  <thead>
-                    <tr>
-                      <th aria-label="Thumbnail" />
-                      <th>Name</th>
-                      <th>Taken</th>
-                      <th>Camera</th>
-                      <th>Type</th>
-                      <th className="num">Size</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {listing.photos.map((p) => (
-                      <tr key={p.path}>
-                        <td className="thumb-cell">
-                          <button className="thumb-button" onClick={() => onOpenPhoto(p.path)} aria-label={`Open ${p.name} in Edit`}>
-                            <PhotoThumbnail path={p.path} />
-                          </button>
-                        </td>
-                        <td>
-                          <button className="text-button name" onClick={() => onOpenPhoto(p.path)} title="Open in Edit">
-                            {p.name}
-                          </button>
-                        </td>
-                        <td title={p.details?.capturedAt ? "Capture time recorded by the camera" : "File date (not indexed yet)"}>
-                          {formatCaptured(p.details?.capturedAt) ?? <span className="file-date">{formatDateTime(p.modifiedMs)}</span>}
-                        </td>
-                        <td title={p.details?.lens ?? undefined}>{p.details?.camera ?? <span className="muted">—</span>}</td>
-                        <td className="type">{p.raw ? "RAW" : "JPEG"}</td>
-                        <td className="num">{formatBytes(p.sizeBytes)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <PhotoList photos={listing.photos} scrollRef={scrollRef} onOpen={onOpenPhoto} />
               )}
               {listing.skipped > 0 && <p className="muted">{listing.skipped} item(s) couldn’t be read and are not shown.</p>}
             </div>

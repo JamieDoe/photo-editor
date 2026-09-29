@@ -175,3 +175,79 @@ fn camera_files_use_their_embedded_previews() {
         }
     }
 }
+
+#[test]
+fn pregeneration_fills_the_cache_and_skips_what_is_there() {
+    let s = setup("thumb-pregen", true);
+    let paths: Vec<PathBuf> = (0..6)
+        .map(|i| {
+            s.file(
+                &format!("p{i}.jpg"),
+                &fixtures::chart_jpeg(800 + i * 16, 600, 90),
+            )
+        })
+        .collect();
+    // One is already cached from browsing.
+    s.thumb(&paths[0]);
+
+    let summary = s
+        .engine
+        .pregenerate_thumbnails("root", paths.clone())
+        .wait();
+    assert_eq!(
+        summary,
+        app_core::BatchSummary {
+            made: 5,
+            already_cached: 1,
+            failed: 0,
+            cancelled: 0
+        }
+    );
+    for p in &paths {
+        assert_eq!(s.thumb(p).source, ThumbnailSource::Cache);
+    }
+    let again = s.engine.pregenerate_thumbnails("root", paths).wait();
+    assert_eq!(again.already_cached, 6);
+}
+
+#[test]
+fn a_new_batch_for_the_same_key_cancels_the_old_one() {
+    let s = setup("thumb-pregen-cancel", true);
+    let paths: Vec<PathBuf> = (0..40)
+        .map(|i| {
+            s.file(
+                &format!("p{i}.jpg"),
+                &fixtures::chart_jpeg(1600 + i, 1200, 90),
+            )
+        })
+        .collect();
+    let first = s.engine.pregenerate_thumbnails("root", paths.clone());
+    let second = s.engine.pregenerate_thumbnails("root", paths[..2].to_vec());
+    let first = first.wait();
+    assert!(first.cancelled > 0, "{first:?}");
+    assert_eq!(first.made + first.already_cached + first.cancelled, 40);
+    assert_eq!(first.failed, 0);
+    let second = second.wait();
+    assert_eq!(second.made + second.already_cached, 2);
+}
+
+#[test]
+fn unreadable_files_count_as_failed_not_fatal() {
+    let s = setup("thumb-pregen-fail", true);
+    let good = s.file("good.jpg", &fixtures::chart_jpeg(800, 600, 90));
+    let bad = s.file("bad.jpg", b"not a jpeg");
+    let summary = s
+        .engine
+        .pregenerate_thumbnails("root", vec![bad, good.clone()])
+        .wait();
+    assert_eq!((summary.made, summary.failed), (1, 1));
+    assert_eq!(s.thumb(&good).source, ThumbnailSource::Cache);
+}
+
+#[test]
+fn without_a_cache_pregeneration_does_nothing() {
+    let s = setup("thumb-pregen-nocache", false);
+    let p = s.file("a.jpg", &fixtures::chart_jpeg(800, 600, 90));
+    let batch = s.engine.pregenerate_thumbnails("root", vec![p]);
+    assert!(batch.is_empty());
+}

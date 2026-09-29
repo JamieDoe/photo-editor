@@ -209,6 +209,7 @@ pub fn index_library_folder(
         .root_of(Path::new(&path))
         .ok_or_else(|| folder_unavailable(&path))?;
     let root_str = root.display().to_string();
+    let root_path = root.clone();
     let progress_app = app.clone();
     let progress_root = root_str.clone();
     let handle =
@@ -241,17 +242,20 @@ pub fn index_library_folder(
                 .remove(&root_str);
         }
         let event = match result {
-            Ok(s) => IndexEvent::Finished {
-                root: root_str,
-                found: s.found as u32,
-                new: s.new as u32,
-                changed: s.changed as u32,
-                moved: s.moved as u32,
-                missing: s.missing as u32,
-                skipped: s.skipped as u32,
-                details_read: s.details_read as u32,
-                total_ms: s.total_ms,
-            },
+            Ok(s) => {
+                pregenerate_thumbnails(&app, root_path, root_str.clone());
+                IndexEvent::Finished {
+                    root: root_str,
+                    found: s.found as u32,
+                    new: s.new as u32,
+                    changed: s.changed as u32,
+                    moved: s.moved as u32,
+                    missing: s.missing as u32,
+                    skipped: s.skipped as u32,
+                    details_read: s.details_read as u32,
+                    total_ms: s.total_ms,
+                }
+            }
             // Superseded by a newer pass of the same folder: nothing to report.
             Err(e) if e.kind == crate::ipc::IpcErrorKind::Cancelled => return,
             Err(error) => IndexEvent::Failed {
@@ -292,6 +296,30 @@ pub fn cancel_thumbnail(state: State<'_, AppState>, path: String) {
     if let Some(file) = state.folders.check(Path::new(&path)) {
         state.engine.cancel_thumbnail(&file);
     }
+}
+
+/// After a successful index, makes the library folder's missing thumbnails in the
+/// background (idle priority), so browsing finds them ready. Re-indexing the folder
+/// replaces the batch.
+fn pregenerate_thumbnails(app: &AppHandle, root: PathBuf, key: String) {
+    let app = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        match state.catalogue.files_in(&root, true) {
+            Ok(files) => {
+                let paths: Vec<PathBuf> = files
+                    .into_iter()
+                    .filter(|f| f.status == app_core::FileStatus::Present)
+                    .map(|f| f.path)
+                    .collect();
+                let batch = state.engine.pregenerate_thumbnails(&key, paths);
+                log::info!("queued {} thumbnails for {key}", batch.len());
+            }
+            Err(e) => log::warn!("thumbnail pre-generation skipped for {key}: {e}"),
+        }
+    });
 }
 
 /// Library totals and any catalogue notice.

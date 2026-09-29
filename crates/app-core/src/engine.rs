@@ -39,6 +39,8 @@ pub(crate) struct Shared {
     pub(crate) decoders: DecoderRegistry,
     pub(crate) renderer: CpuRenderer,
     pub(crate) thumbnails: Option<cache::DiskCache>,
+    /// Cancel tokens of thumbnail pre-generation batches, by batch key (library root).
+    pub(crate) thumbnail_batches: Mutex<std::collections::HashMap<String, CancelToken>>,
     images: Mutex<OpenImages>,
     previews: Mutex<PreviewCache>,
     next_image_id: AtomicU64,
@@ -58,6 +60,7 @@ impl Engine {
                 .thumbnail_cache_dir
                 .clone()
                 .map(|dir| cache::DiskCache::new(dir, "jpg", config.thumbnail_cache_bytes)),
+            thumbnail_batches: Mutex::new(std::collections::HashMap::new()),
             config,
             decoders,
             renderer: CpuRenderer,

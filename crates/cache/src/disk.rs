@@ -55,6 +55,10 @@ impl DiskCache {
         &self.dir
     }
 
+    pub fn budget_bytes(&self) -> u64 {
+        self.budget_bytes
+    }
+
     /// The entry for `key`, if present and readable.
     pub fn get(&self, key: u64) -> Option<Vec<u8>> {
         // Opened for writing too: refreshing the time needs write access on Windows.
@@ -113,6 +117,12 @@ impl DiskCache {
             total
         });
         Ok(())
+    }
+
+    /// Whether an entry exists for `key` (a metadata check; does not read it or
+    /// refresh its recency).
+    pub fn contains(&self, key: u64) -> bool {
+        fs::metadata(self.path(key)).is_ok_and(|m| m.is_file())
     }
 
     /// Removes the entry for `key` (e.g. found to be corrupt).
@@ -243,7 +253,9 @@ mod tests {
         let dir = Dir::new("roundtrip");
         let cache = DiskCache::new(&dir.0, "jpg", 1 << 20);
         assert_eq!(cache.get(7), None);
+        assert!(!cache.contains(7));
         cache.put(7, b"seven").unwrap();
+        assert!(cache.contains(7));
         cache.put(u64::MAX, b"max").unwrap();
         assert_eq!(cache.get(7).as_deref(), Some(&b"seven"[..]));
         assert_eq!(cache.get(u64::MAX).as_deref(), Some(&b"max"[..]));

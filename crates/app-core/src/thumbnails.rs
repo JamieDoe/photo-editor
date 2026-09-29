@@ -22,6 +22,9 @@ pub const THUMBNAIL_LONG_EDGE: u32 = 512;
 /// Bump whenever thumbnail output changes, so cached thumbnails are regenerated.
 pub const THUMBNAIL_VERSION: u64 = 1;
 const JPEG_QUALITY: u8 = 80;
+/// Pre-generation stops at the number of thumbnails that fit the cache budget at this
+/// (generous) average size, so a very large library never churns the cache.
+const PREGEN_BYTES_PER_THUMBNAIL: u64 = 64 * 1024;
 
 /// How a thumbnail was obtained.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -69,13 +72,124 @@ impl Engine {
         self.jobs.cancel_key(&supersede_key(path));
     }
 
+    /// Makes missing thumbnails for `paths` in the background, so browsing later finds
+    /// them cached (PRODUCT.md workflow D). One small job per photo on the background
+    /// lane at idle priority: exports, indexing and on-screen thumbnails (their own
+    /// lane) always go first, and cancelling costs at most one thumbnail. A new batch
+    /// with the same `key` cancels the previous one. Without a cache this does nothing.
+    pub fn pregenerate_thumbnails(&self, key: &str, mut paths: Vec<PathBuf>) -> ThumbnailBatch {
+        let token = CancelToken::new();
+        if let Some(previous) = self
+            .shared
+            .thumbnail_batches
+            .lock()
+            .expect("batches lock")
+            .insert(key.to_owned(), token.clone())
+        {
+            previous.cancel();
+        }
+        let Some(cache) = &self.shared.thumbnails else {
+            return ThumbnailBatch {
+                token,
+                handles: Vec::new(),
+            };
+        };
+        let limit = (cache.budget_bytes() / PREGEN_BYTES_PER_THUMBNAIL) as usize;
+        if paths.len() > limit {
+            log::info!(
+                "pre-generating the first {limit} of {} thumbnails (cache budget)",
+                paths.len()
+            );
+            paths.truncate(limit);
+        }
+        let handles = paths
+            .into_iter()
+            .map(|path| {
+                let shared = Arc::clone(&self.shared);
+                let batch = token.clone();
+                let spec = JobSpec::new(Lane::Background, Priority::Idle, "thumbnail-pregen");
+                self.jobs
+                    .submit(spec, move |_| shared.pregenerate_one(&path, &batch))
+            })
+            .collect();
+        ThumbnailBatch { token, handles }
+    }
+
     /// Entries and bytes in the thumbnail cache (scans its directory).
     pub fn thumbnail_cache_stats(&self) -> Option<cache::DiskCacheStats> {
         self.shared.thumbnails.as_ref().map(DiskCache::stats)
     }
 }
 
+/// A running thumbnail pre-generation batch. Dropping it does not stop the work.
+pub struct ThumbnailBatch {
+    token: CancelToken,
+    handles: Vec<JobHandle<Pregenerated, EngineError>>,
+}
+
+/// What pre-generation did for one photo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Pregenerated {
+    Made,
+    AlreadyCached,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BatchSummary {
+    pub made: usize,
+    pub already_cached: usize,
+    pub failed: usize,
+    pub cancelled: usize,
+}
+
+impl ThumbnailBatch {
+    /// Photos submitted (after the cache-budget cap).
+    pub fn len(&self) -> usize {
+        self.handles.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.handles.is_empty()
+    }
+
+    /// Skips every photo not yet started.
+    pub fn cancel(&self) {
+        self.token.cancel();
+    }
+
+    /// Waits for every photo (tests and benchmarks).
+    pub fn wait(self) -> BatchSummary {
+        let mut s = BatchSummary::default();
+        for h in self.handles {
+            match h.wait() {
+                Ok(Pregenerated::Made) => s.made += 1,
+                Ok(Pregenerated::AlreadyCached) => s.already_cached += 1,
+                Err(JobError::Cancelled) => s.cancelled += 1,
+                Err(JobError::Failed(e)) if e.kind == ErrorKind::Cancelled => s.cancelled += 1,
+                Err(_) => s.failed += 1,
+            }
+        }
+        s
+    }
+}
+
 impl Shared {
+    fn pregenerate_one(
+        &self,
+        path: &Path,
+        batch: &CancelToken,
+    ) -> Result<Pregenerated, EngineError> {
+        if batch.is_cancelled() {
+            return Err(EngineError::cancelled());
+        }
+        let key = thumbnail_key(path)?;
+        if self.thumbnails.as_ref().is_some_and(|c| c.contains(key)) {
+            return Ok(Pregenerated::AlreadyCached);
+        }
+        self.make_thumbnail(path, key, batch)?;
+        Ok(Pregenerated::Made)
+    }
+
     fn cached_thumbnail(&self, key: u64) -> Option<Thumbnail> {
         let cache = self.thumbnails.as_ref()?;
         let jpeg = cache.get(key)?;

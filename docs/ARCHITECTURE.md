@@ -99,7 +99,14 @@ row scrolls into view ─► library_thumbnail(path)       // must be inside a g
        display_preview (embedded RAW preview / reduced JPEG decode)
          or reduced decode + default render ─► fit to 512 px ─► JPEG ─► disk cache
 row scrolls away first ─► cancel_thumbnail(path) (queued job skipped)
+index finished ─► pregenerate_thumbnails(root, present files)
+  ─► one job per photo [background lane, Priority::Idle]; cached ones skipped;
+     a new index of the same root cancels the previous batch
 ```
+
+The Library's grid and list are virtualised: only rows on or near the screen are
+mounted. Mounting requests a thumbnail and unmounting cancels it, so the work
+follows what is visible.
 
 ### Open
 
@@ -240,10 +247,10 @@ See `PERFORMANCE.md` for measured consequences.
 - Windows: LibRaw is opened with a narrow-character path (non-ASCII paths will fail);
   the LibRaw DLL is not bundled.
 - The recipe is not persisted and there is no undo history yet.
-- Library: the photo list still comes from the filesystem, one folder level at a
-  time, as a list with small thumbnails and no sort options. The catalogue supplies
-  indexing, totals and photo details; the catalogue-backed grid is a later Phase 2
-  milestone. Thumbnails are made on demand only (no pre-generation after indexing).
+- Library: photos are listed from the filesystem, one folder level at a time, in a
+  virtualised grid or list with no sort options. The catalogue supplies indexing,
+  totals and photo details. Listing from the catalogue arrives with ratings and
+  filters, which need it.
 - A granted folder that is later moved is not followed; the user chooses it again.
 - Recent folders cannot be removed from the list yet.
 - Background intensity changes need a restart (thread pools are created at start-up).

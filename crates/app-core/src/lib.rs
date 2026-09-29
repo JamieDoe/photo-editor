@@ -13,12 +13,14 @@ mod session;
 mod thumbnails;
 mod types;
 
-pub use catalogue::{Catalogue, CatalogueError, PhotoDetails, SourceIdentity};
+pub use catalogue::{Catalogue, CatalogueError, FileStatus, PhotoDetails, SourceIdentity};
 pub use config::EngineConfig;
 pub use engine::Engine;
 pub use error::{EngineError, ErrorKind};
 pub use library::{IndexProgress, IndexStage, IndexSummary};
-pub use thumbnails::{THUMBNAIL_LONG_EDGE, Thumbnail, ThumbnailSource};
+pub use thumbnails::{
+    BatchSummary, Pregenerated, THUMBNAIL_LONG_EDGE, Thumbnail, ThumbnailBatch, ThumbnailSource,
+};
 pub use types::{
     EmbeddedFrame, EngineInfo, ExportProgress, ExportRequest, ExportStage, ExportSummary, ImageId,
     ImageSummary, PreviewFrame, PreviewRequest,

@@ -17,7 +17,27 @@ export interface SelfTestDriver {
   editor: () => Editor;
 }
 
-const nextFrame = () => new Promise<number>((r) => requestAnimationFrame(r));
+/**
+ * The next animation frame. The OS stops delivering frames to a hidden or occluded
+ * window (or a sleeping display); rather than hang, the run then fails with a report
+ * that says so.
+ */
+const nextFrame = () =>
+  new Promise<number>((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `animation frames stopped (page visibility: ${document.visibilityState}); the window was probably hidden, covered or on another Space`,
+          ),
+        ),
+      2_000,
+    );
+    requestAnimationFrame((t) => {
+      clearTimeout(timer);
+      resolve(t);
+    });
+  });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function percentile(values: number[], p: number): number {

@@ -7,6 +7,7 @@ import type { LibraryStatusDto } from "../../ipc/generated/LibraryStatusDto";
 
 export type IndexProgress = Extract<IndexEvent, { type: "progress" }>;
 export type IndexFinished = Extract<IndexEvent, { type: "finished" }>;
+export type LibraryLayout = "grid" | "list";
 
 /**
  * Library state: browsing (folder listings) and the catalogue (indexing, totals).
@@ -20,6 +21,8 @@ export function useLibrary() {
   const [indexing, setIndexing] = useState<IndexProgress | null>(null);
   const [lastIndex, setLastIndex] = useState<IndexFinished | null>(null);
   const [status, setStatus] = useState<LibraryStatusDto | null>(null);
+  // Kept here (not in the view) so it survives switching to Edit and back.
+  const [layout, setLayout] = useState<LibraryLayout>("grid");
   const requestRef = useRef(0);
   const listingRef = useRef<FolderListingDto | null>(null);
   listingRef.current = listing;
@@ -103,6 +106,8 @@ export function useLibrary() {
     indexing,
     lastIndex,
     status,
+    layout,
+    setLayout,
     chooseFolder,
     openFolder,
     refresh,

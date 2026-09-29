@@ -45,8 +45,11 @@ existing screens to the design now, and to match it for every screen built from 
      uses the same tokens (grouped cards, segmented control).
 6. **Only working UI.** Design elements whose features do not exist yet are left out:
    - search, collections, albums, histogram, presets;
-   - crop and masks tools, undo/redo, the filmstrip, the grid.
+   - crop and masks tools, undo/redo, the filmstrip.
    Each is added, styled per the design, when its feature is built.
+   The Library grid (3:2 cards with a caption, 16 px by 20 px gaps, a column count
+   that keeps cards at most 280 px wide) was the first screen added this way. A
+   Grid/List switch keeps the details list, which the design does not have.
 
 ## Consequences
 

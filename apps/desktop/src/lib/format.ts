@@ -56,3 +56,20 @@ export function formatCaptured(iso: string | null | undefined, locale?: string):
   const d = new Date(Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!, +m[4]!, +m[5]!));
   return d.toLocaleString(locale, { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
 }
+
+/** Capture-date span of a set of photos ("24–26 Sep 2026"), from camera wall-clock
+ *  times; null when none has one. */
+export function formatDateRange(times: ReadonlyArray<string | null | undefined>, locale?: string): string | null {
+  let min: number | null = null;
+  let max: number | null = null;
+  for (const t of times) {
+    const m = t ? /^(\d{4})-(\d{2})-(\d{2})/.exec(t) : null;
+    if (!m) continue;
+    const day = Date.UTC(+m[1]!, +m[2]! - 1, +m[3]!);
+    min = min === null ? day : Math.min(min, day);
+    max = max === null ? day : Math.max(max, day);
+  }
+  if (min === null || max === null) return null;
+  const f = new Intl.DateTimeFormat(locale, { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  return min === max ? f.format(min) : f.formatRange(min, max);
+}

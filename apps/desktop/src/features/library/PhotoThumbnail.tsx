@@ -1,33 +1,21 @@
-import { useEffect, useRef, useState } from "react";
-import { observeVisibility } from "../../lib/visibility";
+import { useEffect, useState } from "react";
 import { requestThumbnail } from "./thumbnailLoader";
 
 /**
- * A photo's thumbnail, requested only while it is on screen. Scrolling it away
- * cancels a pending request and frees the image; coming back is a disk-cache hit.
+ * A photo's thumbnail. The Library views are virtualised, so this is mounted only for
+ * rows on or near the screen: it requests the thumbnail on mount, and unmounting
+ * (scrolled away) cancels a pending request or frees the image.
  */
-export function PhotoThumbnail({ path }: { path: string }) {
-  const box = useRef<HTMLSpanElement>(null);
-  const [visible, setVisible] = useState(false);
+export function PhotoThumbnail({ path, className = "thumb" }: { path: string; className?: string }) {
   const [url, setUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    const el = box.current;
-    return el ? observeVisibility(el, setVisible) : undefined;
-  }, []);
-
-  useEffect(() => {
-    if (!visible) return;
     const release = requestThumbnail(path, setUrl);
     return () => {
       release();
       setUrl(null);
     };
-  }, [visible, path]);
+  }, [path]);
 
-  return (
-    <span ref={box} className="thumb">
-      {url && <img src={url} alt="" decoding="async" draggable={false} />}
-    </span>
-  );
+  return <span className={className}>{url && <img src={url} alt="" decoding="async" draggable={false} />}</span>;
 }

@@ -59,6 +59,19 @@ Two constraints came from the existing design:
    - We rejected a custom URI scheme (`<img src="thumb://…">`) because it gives no
      cancellation signal to Rust.
 
+7. **Pre-generation (added in milestone 5).**
+   - After a successful index, the app queues the library folder's present photos for
+     `Engine::pregenerate_thumbnails`.
+   - Each photo is its own job on the background lane at `Priority::Idle`, so exports
+     and indexing (same lane) and on-screen thumbnails (browse lane) always go first,
+     and a queued batch costs one thumbnail of latency at most.
+   - Photos already cached are skipped with a metadata check.
+   - Re-indexing the folder cancels the previous batch.
+   - A batch is capped at what fits the cache budget (1 GiB / 64 KB, ~16,000 photos),
+     so it never churns the cache.
+   - It follows the Background-processing setting, because it runs inside that lane's
+     compute pool.
+
 ## Measurements (M1 Max, warm OS cache; `bench --thumbnails`)
 
 | Case | Time |
@@ -71,6 +84,7 @@ Two constraints came from the existing design:
 | Cache hit (in-process) | 0.03 ms; ~1 ms through IPC |
 | 48 thumbnails at once, 3 workers / 1 worker | 340 ms / 995 ms |
 | 48 thumbnails while an index pass runs | 344 ms (index unaffected: 538 ms) |
+| Pre-generating 300 (background lane, idle) | 6.2 s (48/s); an on-screen request meanwhile: 11.5 ms |
 
 ## Consequences
 
@@ -82,6 +96,5 @@ Two constraints came from the existing design:
   - JPEG EXIF orientation is still ignored (as in the viewer).
   - A moved or renamed file gets a new thumbnail. Keying by the catalogue's content
     fingerprint would avoid that at the cost of a lookup per request.
-  - Thumbnails are generated on demand only. Pre-generating after indexing (PRODUCT.md
-    workflow D step 4, at the "remaining thumbnails" priority) is a follow-up.
-  - The Library is still a list. The virtualised grid comes next.
+  - Pre-generation shows no progress in the UI yet. It is background work, and its
+    thumbnails appear as the photos are browsed.

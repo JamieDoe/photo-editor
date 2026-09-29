@@ -27,6 +27,7 @@ pub fn run(files: &[PathBuf], camera_files: &[PathBuf]) -> Value {
             "default": screen(camera_files, None, false),
             "one_worker": screen(camera_files, Some(1), false),
             "while_indexing": screen(camera_files, None, true),
+            "pregeneration": pregeneration(camera_files),
         })
     };
     json!({ "files": per_file, "screenful": screenful })
@@ -136,4 +137,34 @@ fn median(v: &mut [f64]) -> f64 {
 
 fn ms(t: Instant) -> f64 {
     t.elapsed().as_secs_f64() * 1000.0
+}
+
+/// Pre-generates 300 thumbnails (background lane, idle priority) and, halfway through,
+/// requests one on-screen thumbnail that is not cached: how long does it wait?
+fn pregeneration(camera_files: &[PathBuf]) -> Value {
+    const N: usize = 300;
+    let dir = fixtures::TempDir::new("thumb-pregen");
+    let links = make_links(dir.path(), "Batch", camera_files, N);
+    let visible = make_links(dir.path(), "Visible", camera_files, 1).remove(0);
+    let engine = Engine::new(EngineConfig {
+        thumbnail_cache_dir: Some(dir.path().join("thumbs")),
+        ..EngineConfig::default()
+    });
+    let t = Instant::now();
+    let batch = engine.pregenerate_thumbnails("bench", links);
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    let tv = Instant::now();
+    let shown = engine.thumbnail(visible).wait().expect("visible thumbnail");
+    let visible_ms = ms(tv);
+    let summary = batch.wait();
+    let total_ms = ms(t);
+    json!({
+        "thumbnails": N,
+        "made": summary.made,
+        "failed": summary.failed,
+        "all_ms": total_ms,
+        "per_second": summary.made as f64 / (total_ms / 1000.0),
+        "visible_during_batch_ms": visible_ms,
+        "visible_source": format!("{:?}", shown.source),
+    })
 }

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { formatAperture, formatBytes, formatCaptured, formatDateTime, formatExposure, formatShutter } from "./format";
+import {
+  formatAperture,
+  formatBytes,
+  formatCaptured,
+  formatDateRange,
+  formatDateTime,
+  formatExposure,
+  formatShutter,
+} from "./format";
 
 describe("formatBytes", () => {
   it("uses decimal units with sensible precision", () => {
@@ -42,5 +50,16 @@ describe("exposure formatting", () => {
     expect(text).toMatch(/06:41/);
     expect(formatCaptured(null)).toBeNull();
     expect(formatCaptured("garbage")).toBeNull();
+  });
+});
+
+describe("formatDateRange", () => {
+  it("spans the earliest and latest capture day", () => {
+    const r = formatDateRange(["2026-09-26T08:00:00", null, "2026-09-24T06:41:12", "2026-09-25T23:59:00"], "en-GB");
+    expect(r).toMatch(/24\s*[–-]\s*26 Sept? 2026/);
+  });
+  it("shows one day once and ignores missing times", () => {
+    expect(formatDateRange(["2026-09-24T06:41:12", "2026-09-24T20:00:00"], "en-GB")).toMatch(/^24 Sept? 2026$/);
+    expect(formatDateRange([null, undefined, "garbage"])).toBeNull();
   });
 });

@@ -31,13 +31,13 @@ function mockListing(path: string) {
   const parts = path.split("/").filter(Boolean);
   const rootIndex = parts.indexOf("Photos");
   const crumbs = parts.slice(rootIndex).map((name, i) => ({ name, path: "/" + parts.slice(0, rootIndex + i + 1).join("/") }));
-  const photos = Array.from({ length: 40 }, (_, i) => ({
+  const photos = Array.from({ length: 2400 }, (_, i) => ({
     name: `DSC_${String(i * 7 + 2).padStart(4, "0")}.${i % 5 === 4 ? "JPG" : "NEF"}`,
     path: `${path}/DSC_${i}.NEF`,
     sizeBytes: 24_000_000 + i * 731_000,
-    modifiedMs: Date.UTC(2026, 7, 14, 9, i * 3),
+    modifiedMs: Date.UTC(2026, 7, 14, 9, i % 60),
     raw: i % 5 !== 4,
-    details: i % 3 === 2 ? null : { camera: "Nikon Z 6", lens: "NIKKOR Z 24-70mm f/4 S", capturedAt: `2026-09-24T06:${String(10 + i).padStart(2, "0")}:12`, iso: 100, aperture: 8, shutterSeconds: 1 / 125, focalLengthMm: 35, width: 6048, height: 4024 },
+    details: i % 3 === 2 ? null : { camera: "Nikon Z 6", lens: "NIKKOR Z 24-70mm f/4 S", capturedAt: `2026-09-${24 + (i % 3)}T06:${String(10 + (i % 50)).padStart(2, "0")}:12`, iso: 100, aperture: 8, shutterSeconds: 1 / 125, focalLengthMm: 35, width: 6048, height: 4024 },
   }));
   return {
     path,
