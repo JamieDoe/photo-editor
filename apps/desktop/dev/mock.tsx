@@ -13,10 +13,14 @@ import "@fontsource-variable/geist-mono";
 import "../src/styles.css";
 
 const specs = [
-  { key: "exposure", label: "Exposure", group: "Light", min: -5, max: 5, step: 0.01, default: 0 },
-  { key: "contrast", label: "Contrast", group: "Light", min: -100, max: 100, step: 1, default: 0 },
-  { key: "temperature", label: "Temperature", group: "Colour", min: -100, max: 100, step: 1, default: 0 },
-  { key: "saturation", label: "Saturation", group: "Colour", min: -100, max: 100, step: 1, default: 0 },
+  { key: "exposure", label: "Exposure", group: "Light", min: -5, max: 5, step: 0.01, default: 0, more: false, unit: "EV" },
+  { key: "contrast", label: "Contrast", group: "Light", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
+  { key: "highlights", label: "Highlights", group: "Light", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
+  { key: "shadows", label: "Shadows", group: "Light", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
+  { key: "whites", label: "Whites", group: "Light", min: -100, max: 100, step: 1, default: 0, more: true, unit: "" },
+  { key: "blacks", label: "Blacks", group: "Light", min: -100, max: 100, step: 1, default: 0, more: true, unit: "" },
+  { key: "temperature", label: "Temperature", group: "Colour", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
+  { key: "saturation", label: "Saturation", group: "Colour", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
 ];
 
 let mockSettings: Record<string, unknown> = {
@@ -104,7 +108,7 @@ function counts() {
 mockIPC((cmd, payload) => {
   switch (cmd) {
     case "engine_info":
-      return { rendererVersion: 1, recipeVersion: 1, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs };
+      return { rendererVersion: 2, recipeVersion: 3, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs };
     case "open_image_dialog":
     case "open_image_path":
       openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";

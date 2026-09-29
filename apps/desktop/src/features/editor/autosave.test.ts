@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { neutralRecipe } from "./recipe";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import { AUTOSAVE_DELAY_MS, Autosaver, type AutosaveDeps } from "./autosave";
 
-const recipe = (exposure: number): EditRecipe => ({ version: 1, exposure, contrast: 0, temperature: 0, saturation: 0, look: "standard" });
+const recipe = (exposure: number): EditRecipe => ({ ...neutralRecipe(1), exposure });
 
 function setup(save: AutosaveDeps["save"] = async (_p, r) => ({ edited: r.exposure !== 0 })) {
   const states: Array<[string, string, boolean | null]> = [];

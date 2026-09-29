@@ -3,7 +3,7 @@ import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import { defaultRecipe, isIdentity } from "./recipe";
 
 const specs: AdjustmentSpec[] = [
-  { key: "exposure", label: "Exposure", group: "Light", min: -5, max: 5, step: 0.01, default: 0 },
+  { key: "exposure", label: "Exposure", group: "Light", min: -5, max: 5, step: 0.01, default: 0, more: false, unit: "EV" },
 ];
 
 describe("recipe helpers", () => {

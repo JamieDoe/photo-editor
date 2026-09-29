@@ -7,4 +7,12 @@ export type AdjustmentSpec = {
 /**
  * Field name in `EditRecipe`.
  */
-key: string, label: string, group: string, min: number, max: number, step: number, default: number, };
+key: string, label: string, group: string, min: number, max: number, step: number, default: number, 
+/**
+ * Shown behind the section's "More controls" (as in the design).
+ */
+more: boolean, 
+/**
+ * Unit shown after the value ("EV"), or empty.
+ */
+unit: string, };

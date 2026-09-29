@@ -87,6 +87,22 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
             },
         ),
         (
+            "highlights_minus60",
+            EditRecipe {
+                highlights: -60.0,
+                ..r
+            },
+        ),
+        ("shadows_plus60", EditRecipe { shadows: 60.0, ..r }),
+        (
+            "whites_plus50_blacks_minus50",
+            EditRecipe {
+                whites: 50.0,
+                blacks: -50.0,
+                ..r
+            },
+        ),
+        (
             "combined",
             EditRecipe {
                 exposure: 0.4,

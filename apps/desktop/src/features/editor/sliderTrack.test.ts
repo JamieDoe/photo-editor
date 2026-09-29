@@ -29,5 +29,6 @@ describe("formatSliderValue", () => {
     expect(formatSliderValue(-12, -100, 1)).toBe("-12");
     expect(formatSliderValue(0, -100, 1)).toBe("0");
     expect(formatSliderValue(92, 50, 1)).toBe("92");
+    expect(formatSliderValue(0.5, -5, 0.01, "EV")).toBe("+0.50 EV");
   });
 });

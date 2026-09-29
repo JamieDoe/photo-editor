@@ -18,6 +18,10 @@ pub struct AdjustmentSpec {
     pub max: f32,
     pub step: f32,
     pub default: f32,
+    /// Shown behind the section's "More controls" (as in the design).
+    pub more: bool,
+    /// Unit shown after the value ("EV"), or empty.
+    pub unit: &'static str,
 }
 
 impl AdjustmentSpec {
@@ -39,6 +43,8 @@ pub const EXPOSURE: AdjustmentSpec = AdjustmentSpec {
     max: 5.0,
     step: 0.01,
     default: 0.0,
+    more: false,
+    unit: "EV",
 };
 pub const CONTRAST: AdjustmentSpec = AdjustmentSpec {
     key: "contrast",
@@ -48,6 +54,52 @@ pub const CONTRAST: AdjustmentSpec = AdjustmentSpec {
     max: 100.0,
     step: 1.0,
     default: 0.0,
+    more: false,
+    unit: "",
+};
+pub const HIGHLIGHTS: AdjustmentSpec = AdjustmentSpec {
+    key: "highlights",
+    label: "Highlights",
+    group: "Light",
+    min: -100.0,
+    max: 100.0,
+    step: 1.0,
+    default: 0.0,
+    more: false,
+    unit: "",
+};
+pub const SHADOWS: AdjustmentSpec = AdjustmentSpec {
+    key: "shadows",
+    label: "Shadows",
+    group: "Light",
+    min: -100.0,
+    max: 100.0,
+    step: 1.0,
+    default: 0.0,
+    more: false,
+    unit: "",
+};
+pub const WHITES: AdjustmentSpec = AdjustmentSpec {
+    key: "whites",
+    label: "Whites",
+    group: "Light",
+    min: -100.0,
+    max: 100.0,
+    step: 1.0,
+    default: 0.0,
+    more: true,
+    unit: "",
+};
+pub const BLACKS: AdjustmentSpec = AdjustmentSpec {
+    key: "blacks",
+    label: "Blacks",
+    group: "Light",
+    min: -100.0,
+    max: 100.0,
+    step: 1.0,
+    default: 0.0,
+    more: true,
+    unit: "",
 };
 pub const TEMPERATURE: AdjustmentSpec = AdjustmentSpec {
     key: "temperature",
@@ -57,6 +109,8 @@ pub const TEMPERATURE: AdjustmentSpec = AdjustmentSpec {
     max: 100.0,
     step: 1.0,
     default: 0.0,
+    more: false,
+    unit: "",
 };
 pub const SATURATION: AdjustmentSpec = AdjustmentSpec {
     key: "saturation",
@@ -66,10 +120,23 @@ pub const SATURATION: AdjustmentSpec = AdjustmentSpec {
     max: 100.0,
     step: 1.0,
     default: 0.0,
+    more: false,
+    unit: "",
 };
 
+/// In display order: the design's Light section (Exposure, Contrast, Highlights,
+/// Shadows; Whites and Blacks behind "More controls"), then Colour.
 pub fn specs() -> Vec<AdjustmentSpec> {
-    vec![EXPOSURE, CONTRAST, TEMPERATURE, SATURATION]
+    vec![
+        EXPOSURE,
+        CONTRAST,
+        HIGHLIGHTS,
+        SHADOWS,
+        WHITES,
+        BLACKS,
+        TEMPERATURE,
+        SATURATION,
+    ]
 }
 
 #[cfg(test)]

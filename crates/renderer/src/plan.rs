@@ -1,5 +1,6 @@
 use crate::EditRecipe;
 use crate::Look;
+use crate::ops::tone::ToneParams;
 use crate::ops::{contrast, saturation, white_balance};
 
 /// One processing stage, in pipeline order. Parameters are resolved from the recipe
@@ -15,6 +16,10 @@ pub enum Stage {
     WhiteBalance { gains: [f32; 3] },
     /// Scene-linear multiplier (2^EV).
     Exposure { multiplier: f32 },
+    /// Highlights, shadows, whites and blacks (ADR 0023). Not a pure point operation:
+    /// highlights and shadows read an edge-aware map of the surroundings' brightness,
+    /// which backends build once per render from the stages before this one.
+    Tone { params: ToneParams },
     /// Tone S-curve around mid grey, applied per channel in a perceptual domain.
     Contrast { gamma: f32 },
     /// The Standard base look's tone curve, per channel (ADR 0022).
@@ -28,6 +33,7 @@ impl Stage {
         match self {
             Self::WhiteBalance { .. } => "white_balance",
             Self::Exposure { .. } => "exposure",
+            Self::Tone { .. } => "tone",
             Self::Contrast { .. } => "contrast",
             Self::BaseCurve => "base_curve",
             Self::Saturation { .. } => "saturation",
@@ -59,9 +65,9 @@ impl RenderPlan {
 
     /// Builds the plan for a recipe. Identity stages are omitted.
     ///
-    /// Order: white balance -> exposure -> contrast -> base look (scene to display
-    /// tones) -> colour (saturation) -> output transform, matching the conceptual
-    /// pipeline in CLAUDE.md. Exposure and contrast act on scene-referred values, so
+    /// Order: white balance -> exposure -> tone (highlights, shadows, whites, blacks)
+    /// -> contrast -> base look (scene to display tones) -> colour (saturation) ->
+    /// output transform, matching the conceptual pipeline in CLAUDE.md. Exposure and contrast act on scene-referred values, so
     /// the base look's shoulder still rolls off highlights they push up.
     pub fn from_recipe(recipe: &EditRecipe) -> Self {
         let r = recipe.sanitized();
@@ -75,6 +81,10 @@ impl RenderPlan {
             stages.push(Stage::Exposure {
                 multiplier: r.exposure.exp2(),
             });
+        }
+        let tone = r.tone();
+        if !tone.is_identity() {
+            stages.push(Stage::Tone { params: tone });
         }
         if r.contrast != 0.0 {
             stages.push(Stage::Contrast {
@@ -115,6 +125,7 @@ mod tests {
         let r = EditRecipe {
             exposure: 1.0,
             contrast: 10.0,
+            shadows: 20.0,
             temperature: 10.0,
             saturation: 10.0,
             ..Default::default()
@@ -129,6 +140,7 @@ mod tests {
             [
                 "white_balance",
                 "exposure",
+                "tone",
                 "contrast",
                 "base_curve",
                 "saturation"

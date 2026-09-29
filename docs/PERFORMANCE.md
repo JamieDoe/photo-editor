@@ -320,3 +320,17 @@ units). `--flat` measures the old flat look.
 The base curve is one lookup-table pass (the same cost as contrast). Its effect on
 interactive render time is within noise.
 
+## 13. Highlights / Shadows / Whites / Blacks (ADR 0023)
+
+Tone stage on the 1516×1010 interactive level (bench recipe, development Mac, noisy,
+±10 %):
+
+| Version | Stage cost | Full render |
+|---|---|---|
+| First: per-pixel `exp2`, map rebuilt every render | +6.6 ms | 9.4 ms |
+| Lookup-table gains, per-row map interpolation | +4.0 ms | — |
+| Map cached while it cannot change | +2.0 ms | 4.5 ms |
+
+- **Building the map:** about 2.8 ms at this size. It is rebuilt when exposure or
+  white balance change.
+- **Low-end hardware:** not yet measured.

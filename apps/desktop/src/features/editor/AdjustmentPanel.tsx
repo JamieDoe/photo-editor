@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
-import { ColourIcon, DetailIcon, LightIcon } from "../../components/icons";
+import { useState, type ReactNode } from "react";
+import { ChevronIcon, ColourIcon, DetailIcon, LightIcon } from "../../components/icons";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { Look } from "../../ipc/generated/Look";
@@ -59,20 +59,63 @@ export function AdjustmentPanel({ specs, recipe, onChange, disabled }: Props) {
         const edited = groupSpecs.some((s) => valueOf(s) !== s.default);
         return (
           <PanelSection key={group} title={group} icon={GROUP_ICONS[group] ?? <DetailIcon />} edited={edited}>
-            {groupSpecs.map((spec) => (
-              <Slider
-                key={spec.key}
-                spec={spec}
-                value={valueOf(spec)}
-                disabled={disabled}
-                onChange={(v) => {
-                  if (isAdjustmentKey(spec.key)) onChange({ ...recipe, [spec.key]: v });
-                }}
-              />
-            ))}
+            <GroupSliders
+              specs={groupSpecs}
+              valueOf={valueOf}
+              disabled={disabled}
+              onChange={(key, v) => {
+                if (isAdjustmentKey(key)) onChange({ ...recipe, [key]: v });
+              }}
+            />
           </PanelSection>
         );
       })}
+    </>
+  );
+}
+
+/**
+ * A section's sliders: the everyday ones, then (as in the design) "More controls"
+ * revealing the rest above a dashed divider. Opens by itself when a hidden slider
+ * is already edited, so an edit is never out of sight.
+ */
+function GroupSliders({
+  specs,
+  valueOf,
+  disabled,
+  onChange,
+}: {
+  specs: AdjustmentSpec[];
+  valueOf: (s: AdjustmentSpec) => number;
+  disabled: boolean;
+  onChange: (key: string, v: number) => void;
+}) {
+  const basic = specs.filter((s) => !s.more);
+  const more = specs.filter((s) => s.more);
+  const moreEdited = more.some((s) => valueOf(s) !== s.default);
+  const [open, setOpen] = useState(false);
+  const showMore = open || moreEdited;
+  const slider = (spec: AdjustmentSpec) => (
+    <Slider key={spec.key} spec={spec} value={valueOf(spec)} disabled={disabled} onChange={(v) => onChange(spec.key, v)} />
+  );
+  return (
+    <>
+      {basic.map(slider)}
+      {more.length > 0 && (
+        <>
+          {showMore && <div className="more-controls">{more.map(slider)}</div>}
+          <button
+            className="more-toggle"
+            aria-expanded={showMore}
+            disabled={moreEdited}
+            title={moreEdited ? "Shown while one of these is edited" : undefined}
+            onClick={() => setOpen(!open)}
+          >
+            <ChevronIcon size={12} />
+            {showMore ? "Fewer controls" : "More controls"}
+          </button>
+        </>
+      )}
     </>
   );
 }
@@ -91,7 +134,7 @@ function Slider({
   const id = `adjust-${spec.key}`;
   const edited = value !== spec.default;
   const track = sliderTrack(value, spec.min, spec.max);
-  const shown = formatSliderValue(value, spec.min, spec.step);
+  const shown = formatSliderValue(value, spec.min, spec.step, spec.unit);
   return (
     <div className={edited ? "slider edited" : "slider"}>
       <div className="slider-head">
