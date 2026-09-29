@@ -57,18 +57,18 @@ now.
    - Exposure shows "EV", as in the design. Its range stays ±5 (the design shows ±4),
      so existing edits are never clamped.
 
-## Measurements (M1 Max, 1516×1010 interactive level, `bench --single`, Nikon Z 6)
+## Measurements (development Mac, 1516×1010 interactive level, `bench`, bench recipe)
 
-| Stages | Render |
-|---|---|
-| Without tone | 2.6 ms |
-| With tone, first version (per-pixel `exp2`, no cache) | 9.4 ms (+6.6) |
-| With tone, final (map cached while dragging, lookup tables) | 4.5 ms (+2.0) |
+| Tone stage version | Stage cost | Full render |
+|---|---|---|
+| First (per-pixel `exp2`, map rebuilt every render) | +6.6 ms | 9.4 ms |
+| Lookup tables, per-row map interpolation | +4.0 ms | — |
+| Final (map cached while it cannot change) | +2.0 ms | 4.5 ms |
 
-- Dragging exposure or white balance with Highlights or Shadows set rebuilds the map
-  on every frame, which adds about 2.8 ms.
-- A low-end machine, 3–4× slower, stays within a 60 fps frame budget for drags of the
-  tone sliders themselves.
+- **Map rebuild:** about 2.8 ms, on every frame while exposure or white balance is
+  dragged with a tone slider set.
+- **Noise:** the machine is noisy, so treat these as ±10 %.
+- **Low-end hardware:** not yet measured.
 
 ## Consequences
 

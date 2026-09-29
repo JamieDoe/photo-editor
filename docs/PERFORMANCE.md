@@ -322,19 +322,15 @@ interactive render time is within noise.
 
 ## 13. Highlights / Shadows / Whites / Blacks (ADR 0023)
 
-Per-stage cost on the 1516×1010 interactive level (Nikon Z 6, `bench --single`,
-median):
+Tone stage on the 1516×1010 interactive level (bench recipe, development Mac, noisy,
+±10 %):
 
-| Cumulative stages | ms |
-|---|---|
-| none (u16→f32 + encode) | 0.9 |
-| + white balance + exposure | 1.0 |
-| + tone (map cached, as while dragging a tone slider) | 2.9 |
-| + contrast + base curve + saturation | 4.5 |
+| Version | Stage cost | Full render |
+|---|---|---|
+| First: per-pixel `exp2`, map rebuilt every render | +6.6 ms | 9.4 ms |
+| Lookup-table gains, per-row map interpolation | +4.0 ms | — |
+| Map cached while it cannot change | +2.0 ms | 4.5 ms |
 
-- **First version:** per-pixel `exp2`, map rebuilt every frame, +6.6 ms.
-- **What brought it to +2.0 ms:** caching the map, per-row interpolation and
-  lookup-table gains.
-- **Building the map:** 2.8 ms for this size (needed again when exposure or white
-  balance change).
-
+- **Building the map:** about 2.8 ms at this size. It is rebuilt when exposure or
+  white balance change.
+- **Low-end hardware:** not yet measured.
