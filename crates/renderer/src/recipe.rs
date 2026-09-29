@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::Look;
 use crate::adjustments::{
-    BLACKS, CLARITY, CONTRAST, EXPOSURE, HIGHLIGHTS, SATURATION, SHADOWS, SHARPENING, TEMPERATURE,
-    TEXTURE, TINT, VIBRANCE, WHITES,
+    BLACKS, CLARITY, CONTRAST, DEHAZE, EXPOSURE, HIGHLIGHTS, SATURATION, SHADOWS, SHARPENING,
+    TEMPERATURE, TEXTURE, TINT, VIBRANCE, WHITES,
 };
 use crate::ops::colour_mixer::ColourMixer;
 
@@ -22,7 +22,8 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 6: adds texture and clarity (ADR 0026); older recipes read them as 0.
 /// - 7: adds sharpening (ADR 0027). New recipes default to 40, as in the design;
 ///   older recipes had none and keep none, so they render as they did.
-pub const RECIPE_VERSION: u32 = 7;
+/// - 8: adds dehaze (ADR 0028); older recipes read it as 0.
+pub const RECIPE_VERSION: u32 = 8;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -47,6 +48,8 @@ pub struct EditRecipe {
     pub whites: f32,
     /// Blacks, -100..100: moves the black end of the tonal range.
     pub blacks: f32,
+    /// Dehaze, -100 (adds haze) .. 100 (removes it).
+    pub dehaze: f32,
     /// Warm/cool shift relative to the as-shot white balance, -100..100 (±120 mired).
     pub temperature: f32,
     /// Green/magenta shift relative to the as-shot white balance, -100..100.
@@ -80,6 +83,7 @@ impl Default for EditRecipe {
             shadows: 0.0,
             whites: 0.0,
             blacks: 0.0,
+            dehaze: 0.0,
             temperature: 0.0,
             tint: 0.0,
             vibrance: 0.0,
@@ -140,7 +144,11 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7 => Ok(recipe.sanitized()),
+            7 | 8 => Ok(Self {
+                version: RECIPE_VERSION,
+                ..recipe
+            }
+            .sanitized()),
             v => Err(RecipeError::UnsupportedVersion(v)),
         }
     }
@@ -160,6 +168,7 @@ impl EditRecipe {
             shadows: SHADOWS.clamp(self.shadows),
             whites: WHITES.clamp(self.whites),
             blacks: BLACKS.clamp(self.blacks),
+            dehaze: DEHAZE.clamp(self.dehaze),
             temperature: TEMPERATURE.clamp(self.temperature),
             tint: TINT.clamp(self.tint),
             vibrance: VIBRANCE.clamp(self.vibrance),
@@ -203,6 +212,7 @@ impl EditRecipe {
         s.exposure == 0.0
             && s.contrast == 0.0
             && s.tone().is_identity()
+            && s.dehaze == 0.0
             && s.temperature == 0.0
             && s.tint == 0.0
             && s.vibrance == 0.0
@@ -254,7 +264,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":7,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"look":"standard"}"#
+            r#"{"version":8,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"look":"standard"}"#
         );
     }
 
@@ -376,7 +386,7 @@ mod tests {
             Err(RecipeError::UnsupportedVersion(99))
         );
         assert!(matches!(
-            EditRecipe::from_json(r#"{"dehaze":5}"#),
+            EditRecipe::from_json(r#"{"grain":5}"#),
             Err(RecipeError::Invalid(_))
         ));
     }

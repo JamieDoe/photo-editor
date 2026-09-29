@@ -23,6 +23,7 @@ fn bench_recipe(i: usize) -> EditRecipe {
         shadows: 35.0,
         whites: 10.0,
         blacks: -10.0,
+        dehaze: 20.0,
         texture: 20.0,
         clarity: 25.0,
         temperature: 15.0,

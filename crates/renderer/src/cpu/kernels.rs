@@ -1,9 +1,13 @@
+use std::sync::{Arc, Mutex};
+
 use image_core::LinearImage;
 use image_core::color::REC709_LUMA;
 
 use super::lut::CurveLut;
 use crate::ops::colour_mixer::{self, MixerTable};
+use crate::ops::dehaze::DehazeModel;
 use crate::ops::detail::{self, DetailParams};
+use crate::ops::scene::{self, RowModel, SceneMap};
 use crate::ops::tone::{self, ToneBase, ToneParams};
 use crate::ops::{contrast, look, vibrance};
 use crate::{RenderPlan, Stage};
@@ -31,6 +35,7 @@ pub(super) enum Kernel {
     Tone(Box<ToneKernel>),
     /// Texture and clarity: reads source rows around the chunk.
     Detail(Box<DetailKernel>),
+    Dehaze(Box<DehazeKernel>),
 }
 
 /// The surroundings map with each pixel column's map columns and blend weight.
@@ -69,40 +74,172 @@ impl StopsLut {
     }
 }
 
-/// The most recent surroundings map. While a slider other than white balance or
-/// exposure is dragged, every frame needs the same map, so it is built once. The key
-/// is the source buffer (address, size, and a fingerprint of sampled pixels, so a new
-/// image at a reused address is never mistaken for the old one) and the gains before
-/// the tone stage. One entry, so memory stays bounded (a 256-px map is ~0.5 MB).
-fn cached_base(source: &LinearImage, gains: [f32; 3]) -> std::sync::Arc<ToneBase> {
-    use std::sync::{Arc, Mutex};
-    type Key = (usize, usize, u32, u32, [u32; 3], u64);
-    static LAST: Mutex<Option<(Key, Arc<ToneBase>)>> = Mutex::new(None);
+/// Identifies the source buffer: address, size, and a fingerprint of sampled pixels,
+/// so a new image at a reused address is never mistaken for the old one.
+type SourceKey = (usize, usize, u32, u32, u64);
 
+fn source_key(source: &LinearImage) -> SourceKey {
     let data = source.data();
     let mut fingerprint: u64 = 0xcbf2_9ce4_8422_2325;
     for v in data.iter().step_by(997) {
         fingerprint = (fingerprint ^ u64::from(*v)).wrapping_mul(0x0100_0000_01b3);
     }
-    let key: Key = (
+    (
         data.as_ptr() as usize,
         data.len(),
         source.width(),
         source.height(),
-        gains.map(f32::to_bits),
         fingerprint,
+    )
+}
+
+type GainBits = [u32; 3];
+/// A cached map and what it was built for.
+type Keyed<K, T> = Option<(K, Arc<T>)>;
+
+/// The most recent source's scene map and the maps derived from it, so dragging a
+/// slider reuses them:
+///
+/// - the map without gains, read from the full image once per image;
+/// - that map after the current white balance and exposure (a cheap rescale);
+/// - the dehaze model and the surroundings map, for those gains and dehaze amount.
+///
+/// One source, so memory stays bounded (a 256-px map is well under 1 MB).
+#[derive(Default)]
+struct MapCache {
+    key: Option<SourceKey>,
+    unit: Option<Arc<SceneMap>>,
+    scaled: Keyed<GainBits, SceneMap>,
+    dehaze: Keyed<(GainBits, u32), DehazeModel>,
+    tone: Keyed<(GainBits, Option<u32>), ToneBase>,
+}
+
+static MAPS: Mutex<Option<MapCache>> = Mutex::new(None);
+
+/// Runs `f` on the cache entry for `key`, replacing an entry for another source.
+fn with_maps<R>(key: SourceKey, f: impl FnOnce(&mut MapCache) -> R) -> R {
+    let mut guard = MAPS.lock().unwrap_or_else(|e| e.into_inner());
+    let cache = guard.get_or_insert_with(MapCache::default);
+    if cache.key != Some(key) {
+        *cache = MapCache {
+            key: Some(key),
+            ..MapCache::default()
+        };
+    }
+    f(cache)
+}
+
+/// Looks up `get` in the cache, or builds with `build` (outside the lock, so other
+/// renders are not held up) and stores with `put`.
+fn cached<T>(
+    key: SourceKey,
+    get: impl FnOnce(&MapCache) -> Option<Arc<T>>,
+    build: impl FnOnce() -> T,
+    put: impl FnOnce(&mut MapCache, Arc<T>),
+) -> Arc<T> {
+    if let Some(hit) = with_maps(key, |c| get(c)) {
+        return hit;
+    }
+    let value = Arc::new(build());
+    with_maps(key, |c| put(c, Arc::clone(&value)));
+    value
+}
+
+fn cached_scene(source: &LinearImage, gains: [f32; 3]) -> (SourceKey, Arc<SceneMap>) {
+    let key = source_key(source);
+    let bits = gains.map(f32::to_bits);
+    let scene = cached(
+        key,
+        |c| {
+            c.scaled
+                .as_ref()
+                .filter(|(b, _)| *b == bits)
+                .map(|(_, m)| Arc::clone(m))
+        },
+        || {
+            let unit = cached(
+                key,
+                |c| c.unit.clone(),
+                || SceneMap::unit(source),
+                |c, m| c.unit = Some(m),
+            );
+            unit.scaled(gains)
+        },
+        |c, m| c.scaled = Some((bits, m)),
     );
-    if let Ok(last) = LAST.lock()
-        && let Some((k, base)) = last.as_ref()
-        && *k == key
-    {
-        return Arc::clone(base);
+    (key, scene)
+}
+
+fn cached_dehaze(source: &LinearImage, gains: [f32; 3], amount: f32) -> Arc<DehazeModel> {
+    let (key, scene) = cached_scene(source, gains);
+    let bits = (gains.map(f32::to_bits), amount.to_bits());
+    cached(
+        key,
+        |c| {
+            c.dehaze
+                .as_ref()
+                .filter(|(b, _)| *b == bits)
+                .map(|(_, m)| Arc::clone(m))
+        },
+        || DehazeModel::build(&scene, amount),
+        |c, m| c.dehaze = Some((bits, m)),
+    )
+}
+
+/// The surroundings map for the tone and detail stages, measured after `dehaze`.
+fn cached_base(
+    source: &LinearImage,
+    gains: [f32; 3],
+    dehaze: Option<(f32, &DehazeModel)>,
+) -> Arc<ToneBase> {
+    let (key, scene) = cached_scene(source, gains);
+    let bits = (
+        gains.map(f32::to_bits),
+        dehaze.map(|(amount, _)| amount.to_bits()),
+    );
+    cached(
+        key,
+        |c| {
+            c.tone
+                .as_ref()
+                .filter(|(b, _)| *b == bits)
+                .map(|(_, m)| Arc::clone(m))
+        },
+        || ToneBase::from_scene(&scene, dehaze.map(|(_, m)| m)),
+        |c, m| c.tone = Some((bits, m)),
+    )
+}
+
+/// Dehaze runs on the pixels as they are after white balance and exposure.
+pub(super) struct DehazeKernel {
+    model: Arc<DehazeModel>,
+    columns: Vec<(u32, u32, f32)>,
+}
+
+thread_local! {
+    static ROW_MODEL: std::cell::RefCell<RowModel> = std::cell::RefCell::default();
+}
+
+impl DehazeKernel {
+    fn apply(&self, rgb: &mut [f32], span: RowSpan<'_>) {
+        ROW_MODEL.with_borrow_mut(|rm| {
+            for (r, row) in rgb.chunks_mut(span.width * 3).enumerate() {
+                rm.load(self.model.map(), span.first_row + r, span.height);
+                for (x, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+                    let t = rm.eval(self.columns[x], self.model.guide(scene::luma(*px)));
+                    *px = self.model.apply(*px, t);
+                }
+            }
+        });
     }
-    let base = Arc::new(ToneBase::build(source, gains));
-    if let Ok(mut last) = LAST.lock() {
-        *last = Some((key, Arc::clone(&base)));
-    }
-    base
+}
+
+/// A dehaze stage before a neighbourhood stage: its amount (the cache key) and model.
+#[derive(Clone)]
+struct DehazeBefore {
+    amount: f32,
+    model: Arc<DehazeModel>,
+    columns: Arc<Vec<(u32, u32, f32)>>,
 }
 
 pub(super) struct DetailKernel {
@@ -114,6 +251,8 @@ pub(super) struct DetailKernel {
     /// Rows either side the stage reads (see `DetailParams::reach`).
     reach: usize,
     base: Option<BaseWithColumns>,
+    /// Dehaze before this stage: the luminance is measured after it.
+    dehaze: Option<DehazeBefore>,
     exp2: SignedStopsLut,
 }
 
@@ -125,6 +264,7 @@ struct DetailScratch {
     sharp_row: Vec<f32>,
     vertical: Vec<f32>,
     blur: detail::BlurScratch,
+    row_model: RowModel,
     a_row: Vec<f32>,
     b_row: Vec<f32>,
 }
@@ -167,9 +307,18 @@ impl DetailKernel {
         4 * self.reach
     }
 
-    fn new(source: &LinearImage, gains: [f32; 3], params: DetailParams) -> Self {
+    fn new(
+        source: &LinearImage,
+        gains: [f32; 3],
+        params: DetailParams,
+        dehaze: Option<DehazeBefore>,
+    ) -> Self {
         let base = params.needs_base().then(|| {
-            let base = cached_base(source, gains);
+            let base = cached_base(
+                source,
+                gains,
+                dehaze.as_ref().map(|d| (d.amount, &*d.model)),
+            );
             let cols = base.columns(source.width() as usize);
             (base, cols)
         });
@@ -180,6 +329,7 @@ impl DetailKernel {
             radius: detail::radius_for(w, h),
             reach: params.reach(w, h),
             base,
+            dehaze,
             exp2: SignedStopsLut::new(),
         }
     }
@@ -195,7 +345,21 @@ impl DetailKernel {
         DETAIL_SCRATCH.with_borrow_mut(|s| {
             s.log_y.resize(band * w, 0.0);
             for (y, out) in (top..bottom).zip(s.log_y.chunks_mut(w)) {
-                detail::log_luminance_row(span.source.row(y as u32), self.gains, out);
+                let src = span.source.row(y as u32);
+                match &self.dehaze {
+                    None => detail::log_luminance_row(src, self.gains, out),
+                    Some(d) => {
+                        s.row_model.load(d.model.map(), y, span.height);
+                        detail::dehazed_log_luminance_row(
+                            src,
+                            self.gains,
+                            &d.model,
+                            &s.row_model,
+                            &d.columns,
+                            out,
+                        );
+                    }
+                }
             }
             let small_blur = self.params.uses_small_blur();
             if small_blur {
@@ -260,9 +424,14 @@ impl DetailKernel {
 }
 
 impl ToneKernel {
-    fn new(source: &LinearImage, gains: [f32; 3], params: ToneParams) -> Self {
+    fn new(
+        source: &LinearImage,
+        gains: [f32; 3],
+        params: ToneParams,
+        dehaze: Option<&DehazeBefore>,
+    ) -> Self {
         let base = params.is_local().then(|| {
-            let base = cached_base(source, gains);
+            let base = cached_base(source, gains, dehaze.map(|d| (d.amount, &*d.model)));
             let cols = base.columns(source.width() as usize);
             (base, cols)
         });
@@ -315,6 +484,7 @@ impl Kernel {
             }
             Self::Tone(k) => k.apply(rgb, span),
             Self::Detail(k) => k.apply(rgb, span),
+            Self::Dehaze(k) => k.apply(rgb, span),
             Self::Saturation(f) => {
                 let [wr, wg, wb] = REC709_LUMA;
                 for px in rgb.as_chunks_mut::<3>().0 {
@@ -357,6 +527,7 @@ pub(super) fn min_chunk_rows(kernels: &[Kernel]) -> usize {
 pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
     let mut out: Vec<Kernel> = Vec::with_capacity(plan.stages.len());
     let mut gains_so_far = [1.0f32; 3];
+    let mut dehaze_so_far: Option<DehazeBefore> = None;
     for stage in &plan.stages {
         match *stage {
             Stage::WhiteBalance { gains } => (0..3).for_each(|c| gains_so_far[c] *= gains[c]),
@@ -387,10 +558,24 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
                 }))));
             }
             Stage::BaseCurve => out.push(Kernel::Curve(Box::new(CurveLut::build(look::standard)))),
+            Stage::Dehaze { amount } => {
+                let model = cached_dehaze(source, gains_so_far, amount);
+                let columns = model.map().columns(source.width() as usize);
+                out.push(Kernel::Dehaze(Box::new(DehazeKernel {
+                    model: Arc::clone(&model),
+                    columns: columns.clone(),
+                })));
+                dehaze_so_far = Some(DehazeBefore {
+                    amount,
+                    model,
+                    columns: Arc::new(columns),
+                });
+            }
             Stage::Tone { params } => out.push(Kernel::Tone(Box::new(ToneKernel::new(
                 source,
                 gains_so_far,
                 params,
+                dehaze_so_far.as_ref(),
             )))),
             Stage::Saturation { factor } => out.push(Kernel::Saturation(factor)),
             Stage::Vibrance { amount } => out.push(Kernel::Vibrance(amount)),
@@ -398,6 +583,7 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
                 source,
                 gains_so_far,
                 params,
+                dehaze_so_far.clone(),
             )))),
             Stage::ColourMixer { bands } => {
                 out.push(Kernel::Mixer(Box::new(MixerTable::new(&bands))))
