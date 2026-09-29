@@ -93,7 +93,16 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
   // Display order, to check the invariant: once a render of an opened image is shown,
   // no embedded preview may follow it within that open.
   const events: Array<{ kind: "render"; imageId: number } | { kind: "embedded" }> = [];
+  // On-screen size of the photo after each frame is painted: a quick preview and the
+  // later sharp renders must occupy the same box (no shrink-then-grow on open).
+  const shownSizes: Array<{ kind: "render" | "embedded"; width: number; height: number }> = [];
   const unsubscribe = driver.editor().subscribeFrames((f) => {
+    requestAnimationFrame(() =>
+      setTimeout(() => {
+        const r = document.querySelector(".viewer-canvas")?.getBoundingClientRect();
+        if (r) shownSizes.push({ kind: f.source, width: Math.round(r.width), height: Math.round(r.height) });
+      }, 0),
+    );
     if (f.source === "render") {
       frames.push(f);
       events.push({ kind: "render", imageId: f.imageId });
@@ -172,6 +181,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     // Checked for the first open once all its frames (including late ones) are in.
     embeddedAfterRender ||= embeddedAfterRenderOf(summary.id, openEventsStart);
     const reopenEventsStart = events.length;
+    const reopenSizesStart = shownSizes.length;
     const tReopen = performance.now();
     const reopened = await driver.editor().openPath(config.imagePath);
     if (!reopened) throw new Error(driver.editor().error?.message ?? "re-open failed");
@@ -179,7 +189,15 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     const reopenEmbedded = embedded[embeddedBefore];
     await sleep(300); // let any late channel message arrive before checking order
     embeddedAfterRender ||= embeddedAfterRenderOf(reopened.id, reopenEventsStart);
+    const reopenSizes = shownSizes.slice(reopenSizesStart);
+    const last = reopenSizes.at(-1);
+    const sizeStable =
+      last !== undefined &&
+      reopenSizes.some((s) => s.kind === "embedded") &&
+      reopenSizes.every((s) => Math.abs(s.width - last.width) <= 1 && Math.abs(s.height - last.height) <= 1);
     const reopen = {
+      sizes: reopenSizes.map((s) => `${s.kind}:${s.width}x${s.height}`),
+      sizeStable,
       embeddedShownMs: reopenEmbedded?.sinceOpenMs ?? null,
       embeddedExtractMs: reopened.embeddedPreviewMs,
       decodeMs: reopened.decodeMs,
@@ -326,6 +344,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       noSchedulerErrors: stats.errors === 0,
       quitHeldDuringExport: quitGuard.held,
       libraryIndexed: indexOk,
+      viewerSizeStableOnOpen: reopen.sizeStable,
       libraryThumbnails: thumbnailsOk,
       ratingsAndFlags: marksOk,
       savedEdits: editsOk,

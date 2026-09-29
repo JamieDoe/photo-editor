@@ -91,6 +91,7 @@ export function EditView({ editor, marks, onMark, onStep, onOpenFile }: Props) {
         </div>
         <Viewer
           displayed={editor.displayed}
+          image={image}
           onResize={editor.setTargetLongEdge}
           placeholder={busy ? "Opening…" : "Open a photo from the Library, or use “Open photo…”."}
         />
