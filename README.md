@@ -61,6 +61,13 @@ report, then exits):
 PE_SELF_TEST=/path/to/photo.nef target/release/desktop
 ```
 
+Keep the window visible while it runs: macOS stops animation frames for covered
+windows, and the self-test then fails with a message saying so.
+
+CI (`.github/workflows/ci.yml`, ADR 0017) runs these checks on every pull request:
+the full product on macOS, and the portable core on Linux and Windows. The Rust
+toolchain is pinned in `rust-toolchain.toml`.
+
 ## Benchmark
 
 ```bash
