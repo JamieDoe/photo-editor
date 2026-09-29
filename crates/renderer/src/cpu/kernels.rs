@@ -7,6 +7,7 @@ use super::lut::CurveLut;
 use crate::ops::colour_mixer::{self, MixerTable};
 use crate::ops::dehaze::DehazeModel;
 use crate::ops::detail::{self, DetailParams};
+use crate::ops::finishing;
 use crate::ops::noise;
 use crate::ops::scene::{self, RowModel, SceneMap};
 use crate::ops::tone::{self, ToneBase, ToneParams};
@@ -37,6 +38,17 @@ pub(super) enum Kernel {
     /// Texture and clarity: reads source rows around the chunk.
     Detail(Box<DetailKernel>),
     Dehaze(Box<DehazeKernel>),
+    /// Gain in stops by position: squared offsets per column, the amount, and the
+    /// gain table.
+    Vignette(Box<VignetteKernel>),
+    /// Grain amount and lattice cells per pixel.
+    Grain(f32, f32),
+}
+
+pub(super) struct VignetteKernel {
+    amount: f32,
+    dx2: Vec<f32>,
+    exp2: SignedStopsLut,
 }
 
 /// The surroundings map with each pixel column's map columns and blend weight.
@@ -567,6 +579,27 @@ impl Kernel {
             Self::Tone(k) => k.apply(rgb, span),
             Self::Detail(k) => k.apply(rgb, span, scratch),
             Self::Dehaze(k) => k.apply(rgb, span, &mut scratch.row_model),
+            Self::Vignette(k) => {
+                let h = span.height as f32;
+                for (r, row) in rgb.chunks_mut(span.width * 3).enumerate() {
+                    let t = ((span.first_row + r) as f32 + 0.5) / h * 2.0 - 1.0;
+                    let dy2 = t * t;
+                    for (px, &dx2) in row.as_chunks_mut::<3>().0.iter_mut().zip(&k.dx2) {
+                        let g = k.exp2.eval(finishing::vignette_stops(k.amount, dx2, dy2));
+                        px[0] *= g;
+                        px[1] *= g;
+                        px[2] *= g;
+                    }
+                }
+            }
+            Self::Grain(amount, scale) => {
+                for (r, row) in rgb.chunks_mut(span.width * 3).enumerate() {
+                    let y = span.first_row + r;
+                    for (x, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+                        *px = finishing::apply_grain(*px, *amount, x, y, *scale);
+                    }
+                }
+            }
             Self::Saturation(f) => {
                 let [wr, wg, wb] = REC709_LUMA;
                 for px in rgb.as_chunks_mut::<3>().0 {
@@ -661,6 +694,15 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
             )))),
             Stage::Saturation { factor } => out.push(Kernel::Saturation(factor)),
             Stage::Vibrance { amount } => out.push(Kernel::Vibrance(amount)),
+            Stage::Vignette { amount } => out.push(Kernel::Vignette(Box::new(VignetteKernel {
+                amount,
+                dx2: finishing::axis_squares(source.width() as usize),
+                exp2: SignedStopsLut::new(),
+            }))),
+            Stage::Grain { amount } => out.push(Kernel::Grain(
+                amount,
+                finishing::grain_scale(source.width() as usize, source.height() as usize),
+            )),
             Stage::Detail { params } => out.push(Kernel::Detail(Box::new(DetailKernel::new(
                 source,
                 gains_so_far,

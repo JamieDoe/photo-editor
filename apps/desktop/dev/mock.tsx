@@ -33,6 +33,8 @@ const specs = [
   { key: "clarity", label: "Clarity", group: "Detail", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
   { key: "sharpening", label: "Sharpening", group: "Detail", min: 0, max: 150, step: 1, default: 40, more: false, unit: "" },
   { key: "noiseReduction", label: "Noise reduction", group: "Detail", min: 0, max: 100, step: 1, default: 0, more: false, unit: "" },
+  { key: "vignette", label: "Vignette", group: "Detail", min: -100, max: 100, step: 1, default: 0, more: true, unit: "" },
+  { key: "grain", label: "Grain", group: "Detail", min: 0, max: 100, step: 1, default: 0, more: true, unit: "" },
 ];
 
 let mockSettings: Record<string, unknown> = {
@@ -120,7 +122,7 @@ function counts() {
 mockIPC((cmd, payload) => {
   switch (cmd) {
     case "engine_info":
-      return { rendererVersion: 3, recipeVersion: 9, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs, mixer: mixerSpec };
+      return { rendererVersion: 3, recipeVersion: 10, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs, mixer: mixerSpec };
     case "open_image_dialog":
     case "open_image_path":
       openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";
@@ -179,7 +181,7 @@ mockIPC((cmd, payload) => {
     }
     case "save_edit": {
       const { path, recipe } = payload as { path: string; recipe: Record<string, number> };
-      const edited = ["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "dehaze", "temperature", "tint", "vibrance", "saturation", "texture", "clarity", "noiseReduction"].some((k) => recipe[k] !== 0) || recipe.sharpening !== 40;
+      const edited = ["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "dehaze", "temperature", "tint", "vibrance", "saturation", "texture", "clarity", "noiseReduction", "vignette", "grain"].some((k) => recipe[k] !== 0) || recipe.sharpening !== 40;
       if (edited) mockEdits.set(path, recipe);
       else mockEdits.delete(path);
       return new Promise((r) => setTimeout(() => r({ edited }), 150));

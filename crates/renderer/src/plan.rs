@@ -30,6 +30,8 @@ pub enum Stage {
     /// Texture and clarity (ADR 0026): local contrast measured on the image entering
     /// the stage's neighbourhood; backends read neighbouring rows of the source.
     Detail { params: DetailParams },
+    /// Vignette (ADR 0031), -100..100: a gain towards the corners.
+    Vignette { amount: f32 },
     /// Tone S-curve around mid grey, applied per channel in a perceptual domain.
     Contrast { gamma: f32 },
     /// The Standard base look's tone curve, per channel (ADR 0022).
@@ -40,6 +42,8 @@ pub enum Stage {
     Vibrance { amount: f32 },
     /// Blend towards/away from Rec.709 luminance.
     Saturation { factor: f32 },
+    /// Film grain (ADR 0031), 0..100, on the finished image.
+    Grain { amount: f32 },
 }
 
 impl Stage {
@@ -50,6 +54,8 @@ impl Stage {
             Self::Dehaze { .. } => "dehaze",
             Self::Tone { .. } => "tone",
             Self::Detail { .. } => "detail",
+            Self::Vignette { .. } => "vignette",
+            Self::Grain { .. } => "grain",
             Self::Contrast { .. } => "contrast",
             Self::BaseCurve => "base_curve",
             Self::ColourMixer { .. } => "colour_mixer",
@@ -115,6 +121,9 @@ impl RenderPlan {
         if !detail.is_identity() {
             stages.push(Stage::Detail { params: detail });
         }
+        if r.vignette != 0.0 {
+            stages.push(Stage::Vignette { amount: r.vignette });
+        }
         if r.contrast != 0.0 {
             stages.push(Stage::Contrast {
                 gamma: contrast::gamma_for(r.contrast),
@@ -137,6 +146,9 @@ impl RenderPlan {
             stages.push(Stage::Saturation {
                 factor: saturation::factor_for(r.saturation),
             });
+        }
+        if r.grain != 0.0 {
+            stages.push(Stage::Grain { amount: r.grain });
         }
         Self::new(stages)
     }
@@ -176,6 +188,8 @@ mod tests {
             shadows: 20.0,
             dehaze: 30.0,
             clarity: 15.0,
+            vignette: -20.0,
+            grain: 10.0,
             temperature: 10.0,
             vibrance: 10.0,
             saturation: 10.0,
@@ -201,11 +215,13 @@ mod tests {
                 "dehaze",
                 "tone",
                 "detail",
+                "vignette",
                 "contrast",
                 "base_curve",
                 "colour_mixer",
                 "vibrance",
-                "saturation"
+                "saturation",
+                "grain"
             ]
         );
     }

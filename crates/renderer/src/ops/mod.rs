@@ -7,6 +7,7 @@ pub mod colour_mixer;
 pub mod contrast;
 pub mod dehaze;
 pub mod detail;
+pub mod finishing;
 pub mod look;
 pub mod noise;
 pub mod saturation;

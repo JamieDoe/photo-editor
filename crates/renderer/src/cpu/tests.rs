@@ -89,6 +89,16 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
             let rgb = *px;
             *px = match *stage {
                 Stage::Detail { .. } => unreachable!("whole-image stage handled above"),
+                Stage::Vignette { amount } => {
+                    let dx = ((k % w) as f32 + 0.5) / w as f32 * 2.0 - 1.0;
+                    let dy = ((k / w) as f32 + 0.5) / h as f32 * 2.0 - 1.0;
+                    let g = ops::finishing::vignette_stops(amount, dx * dx, dy * dy).exp2();
+                    rgb.map(|c| c * g)
+                }
+                Stage::Grain { amount } => {
+                    let scale = ops::finishing::grain_scale(w, h);
+                    ops::finishing::apply_grain(rgb, amount, k % w, k / w, scale)
+                }
                 Stage::Dehaze { .. } => {
                     let d = dehaze.as_ref().unwrap();
                     let t = d.transmission_at(k % w, k / w, w, h, ops::scene::luma(rgb));
@@ -138,6 +148,8 @@ fn matches_scalar_reference_for_all_stages() {
         clarity: 45.0,
         dehaze: 50.0,
         noise_reduction: 70.0,
+        vignette: -40.0,
+        grain: 30.0,
         ..Default::default()
     };
     let plan = RenderPlan::from_recipe(&recipe, None);

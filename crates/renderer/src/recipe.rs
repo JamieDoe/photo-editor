@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::Look;
 use crate::adjustments::{
-    BLACKS, CLARITY, CONTRAST, DEHAZE, EXPOSURE, HIGHLIGHTS, NOISE_REDUCTION, SATURATION, SHADOWS,
-    SHARPENING, TEMPERATURE, TEXTURE, TINT, VIBRANCE, WHITES,
+    BLACKS, CLARITY, CONTRAST, DEHAZE, EXPOSURE, GRAIN, HIGHLIGHTS, NOISE_REDUCTION, SATURATION,
+    SHADOWS, SHARPENING, TEMPERATURE, TEXTURE, TINT, VIBRANCE, VIGNETTE, WHITES,
 };
 use crate::ops::colour_mixer::ColourMixer;
 
@@ -24,7 +24,8 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   older recipes had none and keep none, so they render as they did.
 /// - 8: adds dehaze (ADR 0028); older recipes read it as 0.
 /// - 9: adds noise reduction (ADR 0030); older recipes read it as 0.
-pub const RECIPE_VERSION: u32 = 9;
+/// - 10: adds vignette and grain (ADR 0031); older recipes read them as 0.
+pub const RECIPE_VERSION: u32 = 10;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -67,6 +68,10 @@ pub struct EditRecipe {
     pub sharpening: f32,
     /// Noise reduction, 0..100.
     pub noise_reduction: f32,
+    /// Vignette, -100 (darker corners) .. 100 (lighter corners).
+    pub vignette: f32,
+    /// Film grain, 0..100.
+    pub grain: f32,
     /// Hue, saturation and luminance per colour band. `None` (and omitted from the
     /// JSON) when unused, so recipes without it read and hash as before.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -95,6 +100,8 @@ impl Default for EditRecipe {
             clarity: 0.0,
             sharpening: SHARPENING.default,
             noise_reduction: 0.0,
+            vignette: 0.0,
+            grain: 0.0,
             mixer: None,
             look: Look::Standard,
         }
@@ -148,7 +155,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=9 => Ok(Self {
+            7..=10 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -181,6 +188,8 @@ impl EditRecipe {
             clarity: CLARITY.clamp(self.clarity),
             sharpening: SHARPENING.clamp(self.sharpening),
             noise_reduction: NOISE_REDUCTION.clamp(self.noise_reduction),
+            vignette: VIGNETTE.clamp(self.vignette),
+            grain: GRAIN.clamp(self.grain),
             mixer: self.mixer.map(sanitize_mixer).filter(|m| !m.is_identity()),
             look: self.look,
         }
@@ -227,6 +236,8 @@ impl EditRecipe {
             && s.clarity == 0.0
             && s.sharpening == SHARPENING.default
             && s.noise_reduction == 0.0
+            && s.vignette == 0.0
+            && s.grain == 0.0
             && s.mixer.is_none()
             && s.look == Look::default()
     }
@@ -271,7 +282,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":9,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"look":"standard"}"#
+            r#"{"version":10,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -393,7 +404,7 @@ mod tests {
             Err(RecipeError::UnsupportedVersion(99))
         );
         assert!(matches!(
-            EditRecipe::from_json(r#"{"grain":5}"#),
+            EditRecipe::from_json(r#"{"lensProfile":5}"#),
             Err(RecipeError::Invalid(_))
         ));
     }
