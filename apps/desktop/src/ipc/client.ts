@@ -85,6 +85,8 @@ export const setPhotoMarks = (paths: string[], change: MarkChangeDto) =>
 
 /** Saves a library photo's edit (a default recipe removes it). */
 export const saveEdit = (path: string, recipe: EditRecipe) => invoke<EditSavedDto>("save_edit", { path, recipe });
+/** The Light section's tone curve for `recipe`: display values of evenly spaced tones. */
+export const toneCurve = (recipe: EditRecipe) => invoke<number[]>("tone_curve", { recipe });
 
 export const libraryBackups = () => invoke<BackupStatusDto>("library_backups");
 export const backUpLibrary = () => invoke<BackupStatusDto>("back_up_library");

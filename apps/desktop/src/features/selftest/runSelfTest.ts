@@ -313,6 +313,18 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     unlistenQuit();
     const quitGuard = { exportStarted: guardExport !== null, held: quitRequested !== null };
 
+    // Tone curve through the real command: the default recipe draws the diagonal, and
+    // Shadows lifts the low end.
+    const neutral = neutralRecipe(info.recipeVersion);
+    const flatCurve = await ipc.toneCurve(neutral);
+    const liftedCurve = await ipc.toneCurve({ ...neutral, shadows: 60 });
+    const toneCurve = {
+      points: flatCurve.length,
+      maxOffDiagonal: Math.max(...flatCurve.map((y, i) => Math.abs(y - i / (flatCurve.length - 1)))),
+      shadowsLift: (liftedCurve[8] ?? 0) - (flatCurve[8] ?? 0),
+    };
+    const toneCurveOk = toneCurve.points === 49 && toneCurve.maxOffDiagonal < 0.01 && toneCurve.shadowsLift > 0.02;
+
     const stats = driver.editor().schedulerStats();
     const checks = {
       exportFinished: finished.type === "finished",
@@ -326,6 +338,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       libraryThumbnails: thumbnailsOk,
       ratingsAndFlags: marksOk,
       savedEdits: editsOk,
+      toneCurve: toneCurveOk,
     };
     // Named so that a failing run explains itself.
     const failed = Object.entries(checks)
@@ -343,6 +356,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       firstFrame: { ms: firstFrameMs, size: `${first.frame.width}x${first.frame.height}`, quality: first.info.quality },
       firstVisibleMs: firstFrameMs,
       reopen,
+      toneCurve,
       quitGuard,
       indexing,
       thumbnails,

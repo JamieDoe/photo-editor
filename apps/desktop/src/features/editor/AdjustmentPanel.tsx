@@ -9,12 +9,15 @@ import { PanelSection } from "./PanelSection";
 import { ColourMixerControls } from "./ColourMixerControls";
 import { isAdjustmentKey, mixerEdited, mixerOf } from "./recipe";
 import { Slider } from "./Slider";
+import { ToneCurve } from "./ToneCurve";
 import { formatSliderValue } from "./sliderTrack";
 import { formatKelvin, kelvinAt, WHITE_BALANCE_TRACKS } from "./whiteBalance";
 
 interface Props {
   specs: AdjustmentSpec[];
   mixerSpec: MixerSpec;
+  /** The tone curve graph's points (see `useToneCurve`); null until known. */
+  toneCurve: number[] | null;
   recipe: EditRecipe;
   onChange: (r: EditRecipe) => void;
   disabled: boolean;
@@ -38,7 +41,7 @@ const GROUP_ICONS: Record<string, ReactNode> = {
  * An edited value can be reset by clicking it (it reads “Reset” on hover) or by
  * double-clicking the slider.
  */
-export function AdjustmentPanel({ specs, mixerSpec, recipe, onChange, disabled, temperatureScale }: Props) {
+export function AdjustmentPanel({ specs, mixerSpec, toneCurve, recipe, onChange, disabled, temperatureScale }: Props) {
   const groups = [...new Set(specs.map((s) => s.group))];
   const valueOf = (spec: AdjustmentSpec) => (isAdjustmentKey(spec.key) ? recipe[spec.key] : spec.default);
   // As in the design, Temperature reads as the light it assumes ("5650 K").
@@ -71,10 +74,17 @@ export function AdjustmentPanel({ specs, mixerSpec, recipe, onChange, disabled, 
       {groups.map((group) => {
         const groupSpecs = specs.filter((s) => s.group === group && isAdjustmentKey(s.key));
         // As in the design, the colour mixer is the Colour section's "More controls".
+        // As in the design, the tone curve graph heads the Light section's "More
+        // controls", above Whites, Blacks and Dehaze.
+        const curve =
+          group === "Light"
+            ? { edited: false, before: true, content: <ToneCurve points={toneCurve} /> }
+            : undefined;
         const mixer =
           group === "Colour"
             ? {
                 edited: mixerEdited(recipe),
+                before: false,
                 content: (
                   <ColourMixerControls
                     spec={mixerSpec}
@@ -92,7 +102,7 @@ export function AdjustmentPanel({ specs, mixerSpec, recipe, onChange, disabled, 
               specs={groupSpecs}
               valueOf={valueOf}
               format={format}
-              extra={mixer}
+              extra={mixer ?? curve}
               disabled={disabled}
               onChange={(key, v) => {
                 if (isAdjustmentKey(key)) onChange({ ...recipe, [key]: v });
@@ -121,8 +131,9 @@ function GroupSliders({
   specs: AdjustmentSpec[];
   valueOf: (s: AdjustmentSpec) => number;
   format: (s: AdjustmentSpec, v: number) => string;
-  /** More controls that are not plain sliders (the colour mixer). */
-  extra?: { content: ReactNode; edited: boolean };
+  /** More controls that are not plain sliders: the colour mixer (after the sliders)
+   *  or the tone curve graph (`before` them). */
+  extra?: { content: ReactNode; edited: boolean; before: boolean };
   disabled: boolean;
   onChange: (key: string, v: number) => void;
 }) {
@@ -151,8 +162,9 @@ function GroupSliders({
         <>
           {showMore && (
             <div className="more-controls">
+              {extra?.before && extra.content}
               {more.map(slider)}
-              {extra?.content}
+              {extra && !extra.before && extra.content}
             </div>
           )}
           <button

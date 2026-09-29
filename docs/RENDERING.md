@@ -55,6 +55,10 @@ Colour (vibrance, saturation)  chroma scale around Rec.709 luminance
 Output transform               clip [0,1], sRGB OETF, 8-bit quantise
 ```
 
+The Light section's tone curve graph is computed by `renderer::tone_curve` (ADR 0029).
+It shows the Light controls' response for a neutral tone, against the default
+rendering.
+
 ### Stage definitions (reference implementations in `renderer::ops`)
 
 - **Dehaze** (`-100..100`, ADR 0028): the airlight and transmission are estimated
