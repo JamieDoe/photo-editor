@@ -118,7 +118,13 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
         </div>
         <div className="panel-scroll scroll">
           {info && recipe && (
-            <AdjustmentPanel specs={info.adjustments} recipe={recipe} onChange={editor.setRecipe} disabled={!image} />
+            <AdjustmentPanel
+              specs={info.adjustments}
+              recipe={recipe}
+              onChange={editor.setRecipe}
+              disabled={!image}
+              temperatureScale={image?.temperatureScale ?? null}
+            />
           )}
           <PanelSection title="Diagnostics" icon={<DiagnosticsIcon />} defaultOpen={false}>
             <StatsPanel editor={editor} />

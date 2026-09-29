@@ -38,9 +38,17 @@ whites: number,
  */
 blacks: number, 
 /**
- * Warm/cool shift relative to the as-shot white balance, -100..100.
+ * Warm/cool shift relative to the as-shot white balance, -100..100 (±120 mired).
  */
 temperature: number, 
+/**
+ * Green/magenta shift relative to the as-shot white balance, -100..100.
+ */
+tint: number, 
+/**
+ * Saturation that favours muted colours and spares skin tones, -100..100.
+ */
+vibrance: number, 
 /**
  * Colour saturation, -100 (monochrome) .. 100.
  */

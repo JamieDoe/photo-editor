@@ -35,7 +35,7 @@ fn main() {
         saturation: 20.0,
         ..Default::default()
     };
-    let plan = RenderPlan::from_recipe(&recipe);
+    let plan = RenderPlan::from_recipe(&recipe, None);
     let pyramid = Pyramid::build(source, 256);
 
     println!(

@@ -12,4 +12,5 @@ pub mod resize;
 
 pub use buffer::{ImageError, LinearImage, OutputImage, PixelFormat};
 pub use cancel::{Cancellation, NeverCancel};
+pub use color::Chromaticity;
 pub use pyramid::Pyramid;

@@ -25,6 +25,8 @@ pub struct ImageSummary {
     pub aperture: Option<f32>,
     pub shutter_seconds: Option<f32>,
     pub focal_length_mm: Option<f32>,
+    /// For showing Temperature in kelvin; `None` if the as-shot light is unknown.
+    pub temperature_scale: Option<renderer::TemperatureScale>,
     pub full_width: u32,
     pub full_height: u32,
     /// Dimensions of each preview pyramid level, largest first.

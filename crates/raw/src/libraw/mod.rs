@@ -155,6 +155,7 @@ impl Decoder for LibRawDecoder {
                 shutter_seconds: positive(info.shutter),
                 aperture: positive(info.aperture),
                 focal_length_mm: positive(info.focal_length),
+                as_shot_white: image_core::Chromaticity::from_linear_srgb(info.as_shot_white),
             },
         })
     }

@@ -27,6 +27,9 @@ typedef struct pe_raw_info {
     float focal_length;
     char make[64];
     char model[64];
+    /* The as-shot illuminant (the light the camera's white balance neutralises) in
+     * linear sRGB, relative scale: a D65 light is (1, 1, 1). Zeros if unknown. */
+    float as_shot_white[3];
 } pe_raw_info;
 
 typedef struct pe_raw_ctx pe_raw_ctx;

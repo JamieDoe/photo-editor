@@ -113,6 +113,7 @@ impl Decoder for JpegDecoder {
                 shutter_seconds: None,
                 aperture: None,
                 focal_length_mm: None,
+                as_shot_white: None,
             },
         })
     }

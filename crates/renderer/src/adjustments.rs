@@ -112,6 +112,28 @@ pub const TEMPERATURE: AdjustmentSpec = AdjustmentSpec {
     more: false,
     unit: "",
 };
+pub const TINT: AdjustmentSpec = AdjustmentSpec {
+    key: "tint",
+    label: "Tint",
+    group: "Colour",
+    min: -100.0,
+    max: 100.0,
+    step: 1.0,
+    default: 0.0,
+    more: false,
+    unit: "",
+};
+pub const VIBRANCE: AdjustmentSpec = AdjustmentSpec {
+    key: "vibrance",
+    label: "Vibrance",
+    group: "Colour",
+    min: -100.0,
+    max: 100.0,
+    step: 1.0,
+    default: 0.0,
+    more: false,
+    unit: "",
+};
 pub const SATURATION: AdjustmentSpec = AdjustmentSpec {
     key: "saturation",
     label: "Saturation",
@@ -125,7 +147,8 @@ pub const SATURATION: AdjustmentSpec = AdjustmentSpec {
 };
 
 /// In display order: the design's Light section (Exposure, Contrast, Highlights,
-/// Shadows; Whites and Blacks behind "More controls"), then Colour.
+/// Shadows; Whites and Blacks behind "More controls"), then Colour (Temperature, Tint,
+/// Vibrance, Saturation).
 pub fn specs() -> Vec<AdjustmentSpec> {
     vec![
         EXPOSURE,
@@ -135,6 +158,8 @@ pub fn specs() -> Vec<AdjustmentSpec> {
         WHITES,
         BLACKS,
         TEMPERATURE,
+        TINT,
+        VIBRANCE,
         SATURATION,
     ]
 }

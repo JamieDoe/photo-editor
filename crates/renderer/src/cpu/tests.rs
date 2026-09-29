@@ -12,7 +12,7 @@ fn chart() -> LinearImage {
 fn render(recipe: &EditRecipe, img: &LinearImage) -> OutputImage {
     CpuRenderer
         .render(
-            &RenderPlan::from_recipe(recipe),
+            &RenderPlan::from_recipe(recipe, None),
             img,
             PixelFormat::Rgb8,
             &NeverCancel,
@@ -54,6 +54,7 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                 Stage::Contrast { gamma } => rgb.map(|c| ops::contrast::apply(c, gamma)),
                 Stage::BaseCurve => rgb.map(ops::look::standard),
                 Stage::Saturation { factor } => ops::saturation::apply(rgb, factor),
+                Stage::Vibrance { amount } => ops::vibrance::apply(rgb, amount),
             };
         }
         out.extend(rgb.map(|c| (color::linear_to_srgb(c.clamp(0.0, 1.0)) * 255.0).round() as u8));
@@ -75,7 +76,7 @@ fn matches_scalar_reference_for_all_stages() {
         saturation: 30.0,
         ..Default::default()
     };
-    let plan = RenderPlan::from_recipe(&recipe);
+    let plan = RenderPlan::from_recipe(&recipe, None);
     let fast = CpuRenderer
         .render(&plan, &img, PixelFormat::Rgb8, &NeverCancel)
         .unwrap();
@@ -111,7 +112,7 @@ fn rgba_output_is_opaque() {
     let img = chart();
     let out = CpuRenderer
         .render(
-            &RenderPlan::from_recipe(&EditRecipe::default()),
+            &RenderPlan::from_recipe(&EditRecipe::default(), None),
             &img,
             PixelFormat::Rgba8,
             &NeverCancel,
@@ -196,7 +197,7 @@ fn the_cached_surroundings_map_never_leaks_between_images() {
         highlights: -50.0,
         ..Default::default()
     };
-    let plan = RenderPlan::from_recipe(&recipe);
+    let plan = RenderPlan::from_recipe(&recipe, None);
     let a = chart();
     let b = LinearImage::new(96, 64, a.data().iter().rev().copied().collect()).unwrap();
     for img in [&a, &b, &a] {

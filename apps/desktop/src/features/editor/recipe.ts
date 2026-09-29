@@ -12,6 +12,8 @@ const ADJUSTMENT_KEYS: readonly AdjustmentKey[] = [
   "whites",
   "blacks",
   "temperature",
+  "tint",
+  "vibrance",
   "saturation",
 ];
 
@@ -35,6 +37,8 @@ export function neutralRecipe(recipeVersion: number): EditRecipe {
     whites: 0,
     blacks: 0,
     temperature: 0,
+    tint: 0,
+    vibrance: 0,
     saturation: 0,
     look: "standard",
   };

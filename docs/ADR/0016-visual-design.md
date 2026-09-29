@@ -73,6 +73,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Floating photo toolbar under the photo: rating stars, pick, reject | as designed (zoom, crop, masks and compare to follow) |
 | Panel: exposure strip, collapsible sections, sliders with reset-on-hover | as designed |
 | Light section: Exposure (in EV), Contrast, Highlights, Shadows; Whites and Blacks behind "More controls" | as designed (tone curve and Dehaze to follow) |
+| Colour section: Temperature in kelvin on a blue–amber track, Tint on a green–magenta track, Vibrance, Saturation | as designed (colour mixer behind "More controls" to follow) |
 
 ### Deliberate deviations
 
@@ -86,6 +87,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Edit panel top | "Look: Standard / Flat" row where the design has Presets | Base looks (ADR 0022) are profile choices; presets are not built yet |
 | Stage | Dimmed photo and "Loading…" pill while the next photo opens | ADR 0020; the design shows no loading state |
 | Light section | Exposure range ±5 EV (design ±4); "More controls" opens itself when a hidden slider is edited | Existing edits are never clamped; an edit is never out of sight |
+| Colour section | Temperature shows its relative value (e.g. "+20") on JPEGs | A JPEG has no as-shot light to express in kelvin (ADR 0024) |
 | Settings | Whole screen (grouped cards, segmented controls) | The design has no settings; built from its tokens and components |
 
 ### Not built yet (and so not shown)

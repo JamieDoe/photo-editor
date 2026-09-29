@@ -13,6 +13,8 @@ pub(crate) struct OpenedImage {
     pub path: PathBuf,
     pub source_id: SourceId,
     pub pyramid: Pyramid,
+    /// The as-shot light, which white balance adjustments are relative to.
+    pub as_shot_white: Option<image_core::Chromaticity>,
 }
 
 /// Bounded most-recently-used set of open images.

@@ -28,7 +28,7 @@ fn gpu_matches_cpu_within_quantisation() {
             ..Default::default()
         },
     ] {
-        let plan = RenderPlan::from_recipe(&recipe);
+        let plan = RenderPlan::from_recipe(&recipe, None);
         let cpu = CpuRenderer
             .render(&plan, &source, PixelFormat::Rgba8, &NeverCancel)
             .unwrap();

@@ -39,24 +39,28 @@ exceed white, so `u16` storage loses nothing.
 RAW decode (LibRaw)            camera WB (as shot), demosaic, camera matrix -> linear sRGB
     │                          (JPEG: sRGB decode + linearise via LUT)
     ▼
-White balance (temperature)    per-channel gains, relative to as-shot
+White balance (temperature,    per-channel gains, relative to the as-shot light
+               tint)           (ADR 0024)
 Exposure                       multiply by 2^EV
 Tone (highlights, shadows,     local gains from an edge-aware surroundings map, and
       whites, blacks)          end-point gains (ADR 0023)
 Contrast                       S-curve around mid grey (scene-referred)
 Base look (Standard)           camera-like tone curve: lift, toe, shoulder (ADR 0022)
-Colour (saturation)            chroma scale around Rec.709 luminance
+Colour (vibrance, saturation)  chroma scale around Rec.709 luminance
     ▼
 Output transform               clip [0,1], sRGB OETF, 8-bit quantise
 ```
 
 ### Stage definitions (reference implementations in `renderer::ops`)
 
-- **Temperature** (`-100..100`): shifts the white point along the Planckian locus by
-  `1.2 mired` per unit, relative to 6500 K. Gains = blackbody RGB at the shifted
-  temperature / at the reference, normalised so neutral luminance is preserved.
-  *Simplification:* applied in linear sRGB after the camera matrix, not in camera
-  space before it. Absolute Kelvin/tint needs camera-space WB (see §7).
+- **Temperature / Tint** (`-100..100`, ADR 0024): relative to the photo's as-shot
+  light, which the decoder reports (D65 for JPEGs).
+  - Temperature moves the assumed light `1.2 mired` per unit along the Planckian
+    locus. Tint moves it `1/3000 Duv` per unit across the locus.
+  - Gains = as-shot light / assumed light in linear sRGB, normalised so neutral
+    luminance is preserved.
+  - *Simplification:* applied in linear sRGB after the camera matrix, not in camera
+    space before it (see §8).
 - **Exposure** (`-5..5 EV`): linear multiply.
 - **Highlights / Shadows** (`-100..100`): local and hue-stable (equal gain on R, G, B).
   - The gain in stops comes from the surroundings' brightness: a fast guided filter
@@ -73,6 +77,11 @@ Output transform               clip [0,1], sRGB OETF, 8-bit quantise
     (slope 1.65, pivot 0.55), normalised so sensor white stays white. Its
     parameters were fitted to six cameras' own JPEGs.
   - **Flat** is no curve: the look of version-1 recipes, kept for their edits.
+- **Vibrance** (`-100..100`, ADR 0024): chroma scaled around Rec.709 luminance,
+  weighted per pixel.
+  - Positive: up to 2× for muted colours, none for fully saturated ones, and skin
+    hues get at most 40 %.
+  - Negative: mutes strong colours more, never to grey.
 - **Saturation** (`-100..100`): `Y + (rgb − Y)·(1 + s/100)` with Rec.709 luminance,
   clamped at 0. `-100` gives exact luminance-preserving monochrome.
 - **Output**: hard clip at 1.0. With the Standard look, highlights roll off through
