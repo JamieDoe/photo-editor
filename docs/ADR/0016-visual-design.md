@@ -74,7 +74,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Panel: exposure strip, collapsible sections, sliders with reset-on-hover | as designed |
 | Light section: Exposure (in EV), Contrast, Highlights, Shadows; Whites and Blacks behind "More controls" | as designed (tone curve and Dehaze to follow) |
 | Colour section: Temperature in kelvin on a blue–amber track, Tint on a green–magenta track, Vibrance, Saturation | as designed |
-| Detail section: Texture, Clarity | as designed (Sharpening, Noise reduction, and Vignette / Grain behind "More controls" to follow) |
+| Detail section: Texture, Clarity, Sharpening (default 40) | as designed (Noise reduction, and Vignette / Grain behind "More controls" to follow) |
 | Colour mixer behind "More controls": label and range name, eight dots (Blues first), Hue / Saturation / Luminance | as designed |
 
 ### Deliberate deviations
@@ -96,7 +96,7 @@ existing screens to the design now, and to match it for every screen built from 
 ### Not built yet (and so not shown)
 
 Search, Recently imported, albums, histogram, presets and Auto, tone curve, Dehaze,
-Sharpening, Noise reduction, Vignette, Grain, crop, masks, compare, zoom, the filmstrip, batch selection and Export
+Noise reduction, Vignette, Grain, crop, masks, compare, zoom, the filmstrip, batch selection and Export
 dialog.
 
 ## Consequences

@@ -11,21 +11,26 @@ fn gpu_matches_cpu_within_quantisation() {
         return;
     };
     let source = fixtures::chart_linear(333, 211);
+    // The spike implements the per-pixel stages only, so no default sharpening.
+    let base = EditRecipe {
+        sharpening: 0.0,
+        ..Default::default()
+    };
     for recipe in [
-        EditRecipe::default(),
+        base,
         EditRecipe {
             exposure: 0.7,
             contrast: 40.0,
             temperature: -30.0,
             saturation: 35.0,
-            ..Default::default()
+            ..base
         },
         EditRecipe {
             exposure: -1.0,
             contrast: -60.0,
             temperature: 80.0,
             saturation: -100.0,
-            ..Default::default()
+            ..base
         },
     ] {
         let plan = RenderPlan::from_recipe(&recipe, None);

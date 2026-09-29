@@ -30,6 +30,7 @@ const specs = [
   { key: "saturation", label: "Saturation", group: "Colour", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
   { key: "texture", label: "Texture", group: "Detail", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
   { key: "clarity", label: "Clarity", group: "Detail", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
+  { key: "sharpening", label: "Sharpening", group: "Detail", min: 0, max: 150, step: 1, default: 40, more: false, unit: "" },
 ];
 
 let mockSettings: Record<string, unknown> = {
@@ -117,7 +118,7 @@ function counts() {
 mockIPC((cmd, payload) => {
   switch (cmd) {
     case "engine_info":
-      return { rendererVersion: 3, recipeVersion: 6, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs, mixer: mixerSpec };
+      return { rendererVersion: 3, recipeVersion: 7, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs, mixer: mixerSpec };
     case "open_image_dialog":
     case "open_image_path":
       openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";
@@ -162,7 +163,7 @@ mockIPC((cmd, payload) => {
     }
     case "save_edit": {
       const { path, recipe } = payload as { path: string; recipe: Record<string, number> };
-      const edited = ["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "temperature", "tint", "vibrance", "saturation", "texture", "clarity"].some((k) => recipe[k] !== 0);
+      const edited = ["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "temperature", "tint", "vibrance", "saturation", "texture", "clarity"].some((k) => recipe[k] !== 0) || recipe.sharpening !== 40;
       if (edited) mockEdits.set(path, recipe);
       else mockEdits.delete(path);
       return new Promise((r) => setTimeout(() => r({ edited }), 150));

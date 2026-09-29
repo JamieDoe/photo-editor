@@ -33,6 +33,8 @@ fn main() {
         contrast: 25.0,
         temperature: 15.0,
         saturation: 20.0,
+        // Per-pixel stages only: the spike has no neighbourhood stages.
+        sharpening: 0.0,
         ..Default::default()
     };
     let plan = RenderPlan::from_recipe(&recipe, None);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
-import { defaultRecipe, isIdentity, mixerEdited, mixerOf } from "./recipe";
+import { defaultRecipe, isIdentity, mixerEdited, mixerOf, neutralRecipe } from "./recipe";
 
 const specs: AdjustmentSpec[] = [
   { key: "exposure", label: "Exposure", group: "Light", min: -5, max: 5, step: 0.01, default: 0, more: false, unit: "EV" },
@@ -17,6 +17,13 @@ describe("recipe helpers", () => {
     const r = defaultRecipe(2, specs);
     expect(isIdentity({ ...r, look: "flat" })).toBe(false);
     expect(isIdentity({ ...r, exposure: 0.1 })).toBe(false);
+  });
+
+  it("counts default sharpening as unedited, and none as an edit", () => {
+    const r = neutralRecipe(7);
+    expect(r.sharpening).toBe(40);
+    expect(isIdentity(r)).toBe(true);
+    expect(isIdentity({ ...r, sharpening: 0 })).toBe(false);
   });
 
   it("treats an absent or all-zero mixer as unused", () => {

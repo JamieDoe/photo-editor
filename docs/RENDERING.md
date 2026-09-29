@@ -44,7 +44,8 @@ White balance (temperature,    per-channel gains, relative to the as-shot light
 Exposure                       multiply by 2^EV
 Tone (highlights, shadows,     local gains from an edge-aware surroundings map, and
       whites, blacks)          end-point gains (ADR 0023)
-Detail (texture, clarity)      local contrast at two scales, no halos (ADR 0026)
+Detail (texture, clarity,      local contrast at two scales, no halos (ADR 0026), and
+        sharpening)            capture sharpening, default 40 (ADR 0027)
 Contrast                       S-curve around mid grey (scene-referred)
 Base look (Standard)           camera-like tone curve: lift, toe, shoulder (ADR 0022)
 Colour mixer                   hue/saturation/luminance per colour band (ADR 0025)
@@ -79,6 +80,10 @@ Output transform               clip [0,1], sRGB OETF, 8-bit quantise
     edges, so it has no halos.
   - ±100 doubles or removes the band (Clarity at 2× strength). Gains are limited to
     ±1.5 stops.
+- **Sharpening** (`0..150`, default 40, ADR 0027): unsharp mask on log2 luminance
+  with a 3×3 binomial blur at the rendered size. 100 multiplies one-pixel detail by
+  2.5. Each pixel's change is limited to ±0.5 stop; it fades out in deep shadows.
+  Recipes before version 7 read it as 0.
 - **Contrast** (`-100..100`): per channel, in a gamma-2.2 perceptual domain; curve
   fixes 0, mid grey (0.18) and 1; slope at the pivot is `2^(±0.8)` at the extremes;
   values above 1 pass through, so contrast alone never clips highlights.

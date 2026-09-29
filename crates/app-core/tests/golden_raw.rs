@@ -26,9 +26,11 @@ fn raw_pipeline_matches_golden() {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/golden/raw");
     let update = std::env::var_os("UPDATE_GOLDEN").is_some();
 
-    // The first two predate the Standard look: flat, unchanged images.
+    // The first two predate the Standard look: flat, unchanged images. None of the
+    // first three has the default sharpening, which came later (ADR 0027).
     let flat = EditRecipe {
         look: Look::Flat,
+        sharpening: 0.0,
         ..EditRecipe::default()
     };
     for (name, recipe) in [
@@ -43,7 +45,14 @@ fn raw_pipeline_matches_golden() {
                 ..flat
             },
         ),
-        ("dng_standard", EditRecipe::default()),
+        (
+            "dng_standard",
+            EditRecipe {
+                sharpening: 0.0,
+                ..EditRecipe::default()
+            },
+        ),
+        ("dng_default", EditRecipe::default()),
     ] {
         let frame = engine
             .render_preview(PreviewRequest {

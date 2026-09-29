@@ -390,3 +390,23 @@ Nikon Z 6, bench recipe (texture 20, clarity 25), three runs:
   - 30 fps preview.
 - **Next step if needed:** cache the blurred plane between frames.
 
+## 17. Sharpening (ADR 0027)
+
+Default recipe on the 1516×1010 interactive level (Nikon Z 6, medians of 40 renders):
+
+| Default recipe | ms |
+|---|---|
+| Without sharpening | 1.6 |
+| Sharpening 40, first version (two box-blur passes and plane copies) | 4.7 – 5.5 |
+| Sharpening 40, final (3×3 blur per row, Texture/Clarity work skipped) | 2.9 – 3.0 |
+
+Bench recipe (Texture 20, Clarity 25, Sharpening 40):
+
+- Detail stage: +3.4 to +3.9 ms; total 10.4 ms.
+- Full-resolution render: 163–174 ms; export render: about 295 ms.
+
+Release self-test, all controls dragged together:
+
+- median render 10.3–12.3 ms, 95th percentile 12.5–14.4 ms;
+- 30 fps.
+
