@@ -42,6 +42,36 @@ impl Decoder for LibRawDecoder {
         crate::has_extension(path, EXTENSIONS)
     }
 
+    fn read_metadata(&self, path: &Path) -> Result<crate::PhotoMetadata, DecodeError> {
+        use crate::metadata::{non_empty, positive, rotation_from_flip};
+        if !path.exists() {
+            return Err(DecodeError::NotFound(path.display().to_string()));
+        }
+        let c_path = path_to_cstring(path)?;
+        let mut m = ffi::PeRawMeta::default();
+        // SAFETY: valid path and out-pointer for the duration of the call.
+        let rc = unsafe { ffi::pe_raw_metadata(c_path.as_ptr(), &mut m) };
+        if rc != 0 {
+            return Err(map_error(rc));
+        }
+        let text = |c: &[std::os::raw::c_char]| non_empty(&c_chars_to_string(c));
+        Ok(crate::PhotoMetadata {
+            camera_make: text(&m.make),
+            camera_model: text(&m.model),
+            lens: text(&m.lens),
+            captured_at: text(&m.captured_at),
+            iso: positive(m.iso).map(|v| v.round() as u32),
+            aperture: positive(m.aperture),
+            shutter_seconds: positive(m.shutter),
+            focal_length_mm: positive(m.focal_length),
+            width: (m.width > 0).then_some(m.width),
+            height: (m.height > 0).then_some(m.height),
+            rotation: rotation_from_flip(m.flip),
+            gps: (m.has_gps != 0 && (m.latitude != 0.0 || m.longitude != 0.0))
+                .then_some((m.latitude, m.longitude)),
+        })
+    }
+
     fn embedded_preview(
         &self,
         path: &Path,

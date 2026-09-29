@@ -12,6 +12,8 @@ import type { ExportRequestDto } from "./generated/ExportRequestDto";
 import type { ExportStartedDto } from "./generated/ExportStartedDto";
 import type { FolderListingDto } from "./generated/FolderListingDto";
 import type { ImageSummaryDto } from "./generated/ImageSummaryDto";
+import type { IndexEvent } from "./generated/IndexEvent";
+import type { LibraryStatusDto } from "./generated/LibraryStatusDto";
 import type { IpcError } from "./generated/IpcError";
 import type { PreviewRequestDto } from "./generated/PreviewRequestDto";
 import type { QuitRequestedDto } from "./generated/QuitRequestedDto";
@@ -22,6 +24,8 @@ import { decodeFrame, type PreviewFrame } from "./frame";
 
 /** Must match `EXPORT_EVENT` in src-tauri/src/ipc.rs. */
 const EXPORT_EVENT = "export://event";
+/** Must match `INDEX_EVENT` in src-tauri/src/ipc.rs. */
+const INDEX_EVENT = "library://index";
 /** Must match `QUIT_REQUESTED_EVENT` in src-tauri/src/lifecycle.rs. */
 const QUIT_REQUESTED_EVENT = "app://quit-requested";
 
@@ -79,6 +83,23 @@ export const chooseFolder = () => invoke<FolderListingDto | null>("choose_folder
 /** Lists a folder inside a previously granted folder. */
 export const listFolder = (path: string) => invoke<FolderListingDto>("list_folder", { path });
 
+/** Indexes the library folder containing `path` in the background (see onIndexEvent). */
+export const indexLibraryFolder = (path: string) => invoke<void>("index_library_folder", { path });
+
+export const libraryStatus = () => invoke<LibraryStatusDto>("library_status");
+
+/** A photo's thumbnail as JPEG bytes (long edge at most 512 px). */
+export async function libraryThumbnail(path: string): Promise<ArrayBuffer> {
+  return toArrayBuffer(await invoke<ArrayBuffer | number[]>("library_thumbnail", { path }));
+}
+
+/** Cancels a pending `libraryThumbnail` request; it then rejects as cancelled. */
+export const cancelThumbnail = (path: string) => invoke<void>("cancel_thumbnail", { path });
+
+export async function onIndexEvent(handler: (e: IndexEvent) => void): Promise<UnlistenFn> {
+  return listen<IndexEvent>(INDEX_EVENT, (event) => handler(event.payload));
+}
+
 export const setDefaultFolder = (path: string) => invoke<SettingsViewDto>("set_default_folder", { path });
 
 export const diagnostics = () => invoke<DiagnosticsDto>("diagnostics");
@@ -96,6 +117,8 @@ export async function onQuitRequested(handler: (e: QuitRequestedDto) => void): P
 
 /** Quits after cancelling running exports (the user confirmed). */
 export const quit = () => invoke<void>("quit");
+
+export const selfTestGrantFolder = () => invoke<string | null>("self_test_grant_folder");
 
 export const selfTestRequestClose = () => invoke<void>("self_test_request_close");
 

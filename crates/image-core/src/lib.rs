@@ -8,6 +8,7 @@ pub mod buffer;
 pub mod cancel;
 pub mod color;
 pub mod pyramid;
+pub mod resize;
 
 pub use buffer::{ImageError, LinearImage, OutputImage, PixelFormat};
 pub use cancel::{Cancellation, NeverCancel};

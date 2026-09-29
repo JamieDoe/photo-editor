@@ -1,7 +1,8 @@
 # Architecture
 
-Status: **Phase 1, desktop shell** (on top of the Phase 0 rendering prototype). This
-document describes the system as it exists today. Product intent lives in `PRODUCT.md`;
+Status: **Phase 2 in progress** (catalogue, background indexing, photo details,
+thumbnails) on top of the Phase 1 desktop shell. This document describes the system as it exists
+today. Product intent lives in `PRODUCT.md`;
 rendering detail in `RENDERING.md`; measurements in `PERFORMANCE.md`; decisions in
 `ADR/`.
 
@@ -23,11 +24,13 @@ apps/desktop (Tauri 2)
         │
         ▼
 crates/settings         typed, versioned settings; crash-safe JSON store
-crates/folders          one-level folder listings; FolderAccess scope
+crates/catalogue        SQLite catalogue: library folders, photos, files, identity
+crates/folders          folder listings and recursive walks; FolderAccess scope
 crates/platform         OS-level helpers (atomic file writes)
 crates/app-core         Engine: open / render_preview / export / close
-   ├── jobs             lanes, priority, supersession, cooperative cancellation
-   ├── cache            bounded LRU (byte budget), stable render keys
+   ├── jobs             lanes (interactive, browse, background), priority,
+   │                    supersession, cooperative cancellation
+   ├── cache            bounded LRU (byte budget), stable render keys, disk cache
    ├── raw              Decoder trait + registry: LibRaw (RAW), zune-jpeg (JPEG)
    ├── renderer         EditRecipe -> RenderPlan -> RenderBackend (CPU)
    ├── export           encode + atomic write, never over the source
@@ -50,11 +53,15 @@ workspace; `renderer` and `raw` never know about each other, jobs, caches or Tau
 | React (`apps/desktop/src`) | UI state, controls, when to request previews, blitting frames to a canvas | decode, process or resample pixels; touch the filesystem |
 | Tauri commands (`src-tauri`) | IPC payload conversion, native dialogs, event emission, folder access checks, lifecycle | do heavy work on the main thread; expose engine internals |
 | `settings` | preference schema, validation, persistence | contain catalogue data or UI state |
-| `folders` | listing folders, deciding which paths are granted | read photo contents |
+| `folders` | listing and walking folders, deciding which paths are granted | read photo contents |
+| `catalogue` | library state in SQLite, file identity, migrations | hold photographs; be the only copy of anything (it is rebuildable) |
 | `app-core` | orchestration: file identity, open images, preview cache, job submission, export flow | depend on Tauri or UI concepts |
 | `renderer` | recipe schema/versioning, render plan, CPU backend | do I/O; know which decoder produced the pixels |
 | `raw` | converting files into `LinearImage` | apply edits |
 | `jobs` | scheduling, cancellation, lane isolation | know what a job does |
+
+Visual design: design tokens in `apps/desktop/src/styles.css` and bundled Geist fonts,
+following the app design (ADR 0016). New screens reuse the tokens and components.
 
 ## 3. Data flow
 
@@ -68,6 +75,38 @@ UI "Choose folder…" ─► choose_folder (Rust shows native folder dialog)
 UI clicks a subfolder / breadcrumb ─► list_folder(path)  // must be inside a grant
 UI clicks a photo ─► open_image_path(path)               // must be inside a grant
 ```
+
+### Index (Library, background)
+
+```text
+choose_folder / Refresh ─► index_library_folder(path) ─► granted root containing path
+  ─► Engine::index_folder [background lane, Priority::Indexing, supersedes same root]
+       walk_photos (no symlinks, hidden skipped)
+       per batch of 256: stat ─► touch_unchanged (fast path, no reads)
+                         fingerprint the rest (parallel) ─► record_files (one transaction)
+       finish_scan: files not seen ─► missing (only for complete passes)
+       read details for the queue (new/changed photos): headers only, parallel,
+         batches of 256 ─► set_details (one transaction)          [stage ReadingDetails]
+  ◄─ library://index events: progress (stage, n of total), finished (counts) or failed
+```
+
+### Thumbnails (Library)
+
+```text
+row scrolls into view ─► library_thumbnail(path)       // must be inside a grant
+  ─► disk cache hit (path + size + mtime + versions) ─► JPEG bytes, ~1 ms
+  ─► miss: Engine::thumbnail [browse lane, VisibleThumbnail, supersedes same path]
+       display_preview (embedded RAW preview / reduced JPEG decode)
+         or reduced decode + default render ─► fit to 512 px ─► JPEG ─► disk cache
+row scrolls away first ─► cancel_thumbnail(path) (queued job skipped)
+index finished ─► pregenerate_thumbnails(root, present files)
+  ─► one job per photo [background lane, Priority::Idle]; cached ones skipped;
+     a new index of the same root cancels the previous batch
+```
+
+The Library's grid and list are virtualised: only rows on or near the screen are
+mounted. Mounting requests a thumbnail and unmounting cancels it, so the work
+follows what is visible.
 
 ### Open
 
@@ -184,10 +223,14 @@ within half the machine.
 
 ## 8. Persistence
 
-- Persisted: settings (including default and recent folders), window state, logs.
-- Not persisted yet: edit recipes live in UI state for the session. There is no SQLite
-  or catalogue (Phase 2). `EditRecipe` is already versioned and serialisable, so
-  Phase 2 can store it without changing its shape.
+- Persisted:
+  - settings (including default and recent folders), window state, logs;
+  - the catalogue (`catalogue.sqlite` in the OS app-data directory; ADRs 0012–0014).
+    It holds library folders, photos, their files and photo details (camera, lens,
+    capture time, exposure, dimensions, GPS). It is rebuildable by re-indexing, and a
+    corrupt file is moved aside and rebuilt.
+- Not persisted yet: edit recipes live in UI state for the session (a later Phase 2
+  milestone). `EditRecipe` is already versioned and serialisable.
 
 ## 9. Known limitations
 
@@ -204,8 +247,10 @@ See `PERFORMANCE.md` for measured consequences.
 - Windows: LibRaw is opened with a narrow-character path (non-ASCII paths will fail);
   the LibRaw DLL is not bundled.
 - The recipe is not persisted and there is no undo history yet.
-- Library: one folder level at a time, no thumbnails, no search/sort options; very
-  large folders render every row (virtualised grid is Phase 2).
+- Library: photos are listed from the filesystem, one folder level at a time, in a
+  virtualised grid or list with no sort options. The catalogue supplies indexing,
+  totals and photo details. Listing from the catalogue arrives with ratings and
+  filters, which need it.
 - A granted folder that is later moved is not followed; the user chooses it again.
 - Recent folders cannot be removed from the list yet.
 - Background intensity changes need a restart (thread pools are created at start-up).

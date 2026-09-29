@@ -38,7 +38,8 @@ memory, background processing and export quality.
 
 Files the app keeps (macOS):
 
-- Settings and window state: `~/Library/Application Support/dev.photoeditor.prototype/`
+- Settings, window state and the library catalogue (`catalogue.sqlite`):
+  `~/Library/Application Support/dev.photoeditor.prototype/`
 - Logs: `~/Library/Logs/dev.photoeditor.prototype/photo-editor.log`. Error messages
   show a reference such as `E-M2P8J-1` that matches a line in this file.
 
@@ -66,6 +67,9 @@ PE_SELF_TEST=/path/to/photo.nef target/release/desktop
 cargo run -p fixtures --release --bin gen-fixtures -- --large   # synthetic 24 MP files
 cargo run -p bench --release -- --iterations 7                   # markdown + bench-results/*.json
 cargo run -p gpu-spike --release --bin gpu-bench -- [file]       # CPU vs wgpu comparison
+cargo run -p bench --release -- --index-scale 10000              # library indexing at scale
+cargo run -p bench --release -- --index-links 10000              # same, real RAW headers (hard links)
+cargo run -p bench --release -- --thumbnails                     # library thumbnails
 ```
 
 ## Regenerate the TypeScript IPC types
@@ -87,7 +91,8 @@ crates/export        JPEG encode, safe atomic writes
 crates/jpeg-turbo    libjpeg-turbo binding (encode + DCT-scaled decode)
 crates/app-core      Engine: open / preview / export
 crates/settings      typed, versioned settings and their store
-crates/folders       folder listings and the folder access scope
+crates/folders       folder listings, recursive walks and the folder access scope
+crates/catalogue     SQLite catalogue: library folders, photos, files, identity
 crates/platform      OS-level helpers (atomic writes)
 crates/fixtures      synthetic copyright-free test images
 crates/bench         benchmark harness

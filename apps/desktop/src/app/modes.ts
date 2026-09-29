@@ -1,9 +1,9 @@
-/** Primary application modes (PRODUCT.md §7.1). Export is an action within Edit until
- * batch export exists. */
+/** Primary application modes (PRODUCT.md §7.1). Library and Edit are the workspace
+ * switch; Settings opens from the top bar. Export is an action until batch export
+ * exists. */
 export type Mode = "library" | "edit" | "settings";
 
-export const MODES: ReadonlyArray<{ id: Mode; label: string }> = [
+export const WORKSPACES: ReadonlyArray<{ id: Mode; label: string }> = [
   { id: "library", label: "Library" },
   { id: "edit", label: "Edit" },
-  { id: "settings", label: "Settings" },
 ];

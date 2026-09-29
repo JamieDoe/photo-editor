@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Photo Editor — Phase 0 prototype",
+        "title": "Photo Editor",
         "width": 1400,
         "height": 900,
         "minWidth": 800,

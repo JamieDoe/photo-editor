@@ -2,10 +2,10 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::{Arc, Mutex};
 
-use app_core::{CancelToken, Engine, EngineConfig};
+use app_core::{CancelToken, Catalogue, CatalogueError, Engine, EngineConfig};
 use folders::FolderAccess;
 use settings::{BackgroundIntensity, LoadOutcome, Settings, SettingsStore};
 
@@ -14,6 +14,12 @@ pub struct AppState {
     pub settings: SettingsStore,
     /// Folders the user granted; the only places the webview may browse or open from.
     pub folders: FolderAccess,
+    /// The library catalogue (SQLite). See ADR 0012.
+    pub catalogue: Arc<Catalogue>,
+    /// Shown once in the Library if the catalogue had to be reset or is read-only.
+    pub catalogue_notice: Option<String>,
+    /// Cancel tokens of indexing passes still running, by root folder.
+    pub indexing: Mutex<HashMap<String, CancelToken>>,
     /// Settings the engine was built with; changing these needs a restart.
     pub startup_background_intensity: BackgroundIntensity,
     /// Where an unreadable settings file was moved at start-up, if that happened.
@@ -30,8 +36,22 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// Loads settings from `settings_path` and builds the engine from them.
-    pub fn new(settings_path: PathBuf, self_test: Option<PathBuf>) -> Self {
+    /// Loads settings, opens the catalogue and builds the engine.
+    pub fn new(
+        settings_path: PathBuf,
+        catalogue_path: PathBuf,
+        thumbnail_dir: PathBuf,
+        self_test: Option<PathBuf>,
+    ) -> Self {
+        // Self-test runs must never touch the user's library.
+        let (catalogue, catalogue_notice) = if self_test.is_some() {
+            (
+                Catalogue::open_in_memory().expect("in-memory SQLite always opens"),
+                None,
+            )
+        } else {
+            open_catalogue(&catalogue_path)
+        };
         let (settings, outcome) = SettingsStore::load(settings_path);
         match &outcome {
             LoadOutcome::Fresh => log::info!("no settings file yet; using defaults"),
@@ -50,7 +70,13 @@ impl AppState {
         folders.grant_remembered(current.library.recent_folders.iter().map(String::as_str));
         Self {
             folders,
-            engine: Engine::new(engine_config(&current)),
+            catalogue: Arc::new(catalogue),
+            catalogue_notice,
+            indexing: Mutex::new(HashMap::new()),
+            engine: Engine::new(EngineConfig {
+                thumbnail_cache_dir: Some(thumbnail_dir),
+                ..engine_config(&current)
+            }),
             startup_background_intensity: current.performance.background_intensity,
             settings_recovered_from: match outcome {
                 LoadOutcome::Recovered { backup } => Some(backup),
@@ -67,6 +93,48 @@ impl AppState {
     pub fn restart_required(&self) -> bool {
         self.settings.get().performance.background_intensity != self.startup_background_intensity
     }
+}
+
+/// Opens the catalogue, recovering from damage. It is rebuildable from the library
+/// folders, so a corrupt file is moved aside and a fresh one started. A catalogue
+/// from a newer app version is left untouched and an in-memory one used instead.
+fn open_catalogue(path: &std::path::Path) -> (Catalogue, Option<String>) {
+    match Catalogue::open(path) {
+        Ok(c) => {
+            log::info!("catalogue opened at {}", path.display());
+            (c, None)
+        }
+        Err(CatalogueError::Corrupt(detail)) => {
+            let stamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs());
+            let backup = path.with_extension(format!("corrupt-{stamp}.sqlite"));
+            log::warn!(
+                "catalogue corrupt ({detail}); moving it to {} and rebuilding",
+                backup.display()
+            );
+            let _ = std::fs::rename(path, &backup);
+            for suffix in ["-wal", "-shm"] {
+                let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+            }
+            let notice = format!(
+                "The library database was damaged and has been rebuilt. Your photos are untouched; folders are re-indexed when you open them. The old file was kept at {}.",
+                backup.display()
+            );
+            match Catalogue::open(path) {
+                Ok(c) => (c, Some(notice)),
+                Err(e) => in_memory_fallback(&e),
+            }
+        }
+        Err(e) => in_memory_fallback(&e),
+    }
+}
+
+fn in_memory_fallback(e: &CatalogueError) -> (Catalogue, Option<String>) {
+    log::error!("catalogue unavailable ({e}); using a temporary in-memory catalogue");
+    let catalogue = Catalogue::open_in_memory().expect("in-memory SQLite always opens");
+    let notice = "The library database couldn’t be opened (it may belong to a newer version of the app). Changes this session won’t be saved.";
+    (catalogue, Some(notice.to_owned()))
 }
 
 /// Engine configuration derived from user settings.

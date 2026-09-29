@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use jobs::JobSystemConfig;
 use renderer::QualityLimits;
 
@@ -14,6 +16,11 @@ pub struct EngineConfig {
     pub preview_cache_bytes: usize,
     /// Decoded images kept in memory (each holds its preview pyramid).
     pub max_open_images: usize,
+    /// Directory of the library thumbnail cache. `None` disables it (thumbnails are
+    /// regenerated on every request).
+    pub thumbnail_cache_dir: Option<PathBuf>,
+    /// Byte budget of the thumbnail cache on disk.
+    pub thumbnail_cache_bytes: u64,
     pub jobs: JobSystemConfig,
 }
 
@@ -25,6 +32,9 @@ impl Default for EngineConfig {
             limits: QualityLimits::default(),
             preview_cache_bytes: 256 * 1024 * 1024,
             max_open_images: 2,
+            thumbnail_cache_dir: None,
+            // ~20,000 thumbnails at ~50 KB each.
+            thumbnail_cache_bytes: 1024 * 1024 * 1024,
             jobs: JobSystemConfig::default(),
         }
     }

@@ -88,6 +88,13 @@ pub fn shutdown<R: Runtime>(app: AppHandle<R>, code: i32) {
         for t in &tokens {
             t.cancel();
         }
+        // Indexing is cancelled without waiting: each batch is a transaction, so an
+        // interrupted pass loses nothing and the next pass resumes.
+        if let Ok(indexing) = state.indexing.lock() {
+            for t in indexing.values() {
+                t.cancel();
+            }
+        }
     }
     tauri::async_runtime::spawn(async move {
         let start = Instant::now();

@@ -102,6 +102,12 @@ The base conversion and encode are about half the cost.
 A 120-step simulated drag at 60 Hz, then 90 more steps while an export runs.
 Round trip = slider request → frame received in JS (IPC + queue + render + transfer).
 
+The window must stay visible for the whole run. macOS stops delivering animation
+frames to a window that is covered, on another Space or on a sleeping display, and the
+editor paces its rendering on those frames. The self-test then fails within 2 s with
+"animation frames stopped (page visibility: hidden)" rather than hanging (before
+Phase 2 milestone 5 it hung).
+
 | File | First frame after open | Drag: frames shown | Round trip p50 / p95 / max | During export: shown, p50 / p95 / max | UI frame gap p50 / max (idle baseline) | Detail frame: render → round trip |
 |---|---|---|---|---|---|---|
 | Nikon Z 6 | 367 ms (1516x1010) | 119/120 | 4 / 5 / 5 ms | 89/90, 4 / 10 / 18 ms | 17 / 18 ms (17 / 21) | 5.3 → 21 ms (3032x2020) |
@@ -231,3 +237,69 @@ memory after open is ~166–173 MB for 24–26 MP files (+10–14 MB for the pre
 
 Export totals now (decode / render / encode / write, ms): Nikon 806 / 36 / 81 / 8;
 61 MP Sony 1457 / 85 / 210 / 11. Decode is now ~80% of export for Bayer files.
+
+## 10. Library indexing (Phase 2; ADRs 0013, 0014)
+
+`cargo run -p bench --release -- --index-scale 10000` generates 10,000 distinct 70 KB
+files in 100 folders. `--index-links 10000` indexes 10,000 hard links to the six real
+camera samples, so it parses real RAW headers. Both use warm OS cache and an on-disk
+catalogue.
+
+| Pass (10,000 files) | Distinct synthetic files | Real RAW headers (hard links) |
+|---|---|---|
+| First index (record + read details) | 817 ms | 1,864 ms (details: 978 ms) |
+| Rescan, nothing changed | 74 ms | 101 ms |
+| Rescan, 1% changed | 88 ms | — |
+
+- The directory walk takes ~9 ms, and the catalogue including WAL is ~11 MB.
+- Reading details from real RAW headers costs ~0.25–0.4 ms per file warm (~2 ms for
+  a first read); JPEG EXIF ~0.13 ms. In parallel that's ~1 s per 10,000 photos.
+- The first `--index-links` run exposed quadratic move detection with many identical
+  files: **36.8 s**. It's fixed by migration 3 plus bounded candidates; see ADR 0014.
+- That index costs rescans ~25 ms per 10,000 files (A/B: 50 → 76 ms), a deliberate
+  trade for a linear worst case. In the synthetic first index, reading details takes
+  218 ms: every file is tried and rejected as not a RAW file.
+- In the app, indexing the 8 camera samples through IPC takes 2–8 ms (4–5 ms with
+  details), and a rescan under 1 ms.
+- Not yet measured: a cold OS cache, spinning disks and network drives. The first
+  index reads 128 KB per new file (fingerprint) plus the file headers.
+
+## 11. Library thumbnails (Phase 2; ADR 0015)
+
+`cargo run -p bench --release -- --thumbnails` covers each fixture file and a
+"screenful" of 48 thumbnails requested at once: hard links to the camera files, cold
+cache, warm OS cache.
+
+| File | Made from | Cold | Cached | Size |
+|---|---|---|---|---|
+| Nikon Z 6 NEF | embedded preview | 5.2 ms | 0.03 ms | 30 KB |
+| Canon EOS R6 CR3 | embedded preview | 11.7 ms | 0.03 ms | 40 KB |
+| Sony A7R IV ARW (61 MP) | embedded preview | 12.6 ms | 0.03 ms | 30 KB |
+| Sony A7 III ARW | embedded preview | 16.7 ms | 0.03 ms | 56 KB |
+| Fujifilm X-T3 RAF | embedded preview | 34.4 ms | 0.03 ms | 34 KB |
+| Ricoh GR III DNG | embedded preview | 43.7 ms | 0.03 ms | 36 KB |
+| synthetic 24 MP JPEG | DCT-scaled decode | 20.7 ms | 0.03 ms | 15 KB |
+| synthetic 24 MP DNG | decode + render (no preview) | 182 ms | 0.03 ms | 15 KB |
+
+| Screenful (48) | First | All | Rate |
+|---|---|---|---|
+| Browse lane, 3 workers (default on 10 cores) | 12 ms | 341 ms | 141/s |
+| 1 worker (low-end stand-in) | 12 ms | 995 ms | 48/s |
+| 3 workers while indexing 3,000 files | 11 ms | 344 ms | 139/s |
+
+- **In the app** (self-test, real IPC): the 8 fixture photos take ~230 ms together,
+  dominated by the 182 ms synthetic DNG. A cached thumbnail's round trip is ~1 ms.
+- **Indexing no longer delays thumbnails:** they run on their own lane, and the
+  concurrent index pass finished normally (538 ms).
+- **Pre-generation after indexing** (ADR 0015 §7): 300 thumbnails (camera-file hard
+  links) at idle priority on the single background worker take 6.2 s (48/s), so about
+  3.5 min per 10,000 photos. An on-screen thumbnail requested mid-batch still takes
+  11.5 ms, because it runs on its own lane.
+- **Worth investigating:** the Fuji and Ricoh cases are 3–8x slower than Nikon. That
+  is likely LibRaw's container parsing or a larger embedded JPEG. Not yet profiled.
+- **Not yet measured:**
+  - a cold OS cache (the embedded preview is read from the RAW file);
+  - network drives;
+  - a real low-end machine;
+  - UI frame times while 48 thumbnails decode in the webview.
+
