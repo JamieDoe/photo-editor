@@ -131,6 +131,10 @@ export function App() {
             editor={editor}
             marks={editEntry?.marks ?? null}
             onMark={(change) => editEntry && void library.setMarks([editEntry.path], change)}
+            position={(() => {
+              const index = library.visible.findIndex((p) => p.path === editPath);
+              return index >= 0 ? { index, total: library.visible.length } : null;
+            })()}
             onStep={(delta) => {
               const next = library.neighbour(editPath, delta);
               if (next) openFromLibrary(next.path);

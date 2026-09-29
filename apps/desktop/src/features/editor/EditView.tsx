@@ -22,11 +22,13 @@ interface Props {
   onMark: (change: MarkChangeDto) => void;
   /** Opens the previous (-1) or next (+1) photo of the Library view. */
   onStep: (delta: number) => void;
+  /** Where the open photo sits in the Library view ("3 of 40"); null if not there. */
+  position: { index: number; total: number } | null;
   onOpenFile: () => void;
 }
 
 /** The Edit mode: photograph in the centre, adjustments on the right. */
-export function EditView({ editor, marks, onMark, onStep, onOpenFile }: Props) {
+export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }: Props) {
   const { info, image, recipe, busy } = editor;
 
   // Keyboard: 0–5 / P / X / U mark the photo, ← → move through the Library's photos.
@@ -82,7 +84,11 @@ export function EditView({ editor, marks, onMark, onStep, onOpenFile }: Props) {
                 onReset={editor.resetRecipe}
               />
             )}
-            {marks && <MarkControls marks={marks} onChange={onMark} />}
+            {position && (
+              <span className="photo-counter">
+                {position.index + 1} of {position.total.toLocaleString()}
+              </span>
+            )}
             <button className="ghost" onClick={onOpenFile} disabled={busy || !info}>
               <OpenIcon />
               {busy ? "Opening…" : "Open photo…"}
@@ -96,6 +102,15 @@ export function EditView({ editor, marks, onMark, onStep, onOpenFile }: Props) {
           onResize={editor.setTargetLongEdge}
           placeholder="Open a photo from the Library, or use “Open photo…”."
         />
+        {/* The design's floating toolbar under the photo. Zoom, crop, masks and
+            compare join it as they are built; for now it holds rating and flags. */}
+        <div className="photo-toolbar-strip">
+          {marks && (
+            <div className="photo-toolbar" role="toolbar" aria-label="Photo tools">
+              <MarkControls marks={marks} onChange={onMark} />
+            </div>
+          )}
+        </div>
       </div>
       <aside className="panel-right" aria-label="Adjustments">
         <div className={exif.length > 0 ? "panel-exif" : "panel-exif empty"}>

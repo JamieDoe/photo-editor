@@ -55,6 +55,43 @@ existing screens to the design now, and to match it for every screen built from 
    One deliberate change: a click *selects* a card and a double-click opens it (the
    design opens on click), because culling needs a selection.
 
+## Following the design as screens are built
+
+- **The reference** is the design artifact "RAW Photo Editor"
+  (claude.ai/artifact/GRNipwGPYLYuQNfM8NpH3A, file `Main.dc.html`).
+- **The rule:** every UI change starts from it, copying structure, placement and
+  styles. Anything placed differently, or not in the design, is listed here.
+
+### Built as designed
+
+| Design element | Status |
+|---|---|
+| Library grid (3:2 cards, caption, stars, pick badge, rejects at 38%) | as designed |
+| Library header filter "All / Picks / ★ 3+" | as designed |
+| Sidebar Picks / Rated / Rejected with counts | as designed |
+| Edit header: name, mono file details, "● Edited", "N of M" counter | as designed |
+| Floating photo toolbar under the photo: rating stars, pick, reject | as designed (zoom, crop, masks and compare to follow) |
+| Panel: exposure strip, collapsible sections, sliders with reset-on-hover | as designed |
+
+### Deliberate deviations
+
+| Where | Deviation | Why |
+|---|---|---|
+| Library cards | Click selects, double-click opens (design: click opens) | Culling needs a selection to rate with the keyboard |
+| Library header | Grid/List switch, Refresh, Set as default | The details list and folder actions predate the grid; the design has neither |
+| Library sidebar | "Indexed photos" is a count, not a view | "All photos" as a library-wide view is not built yet |
+| Edit header | "Open photo…" button | Opening a file outside the library; the design has no equivalent |
+| Edit header | Reset (whole photo) and save notes ("Not saved…", "Couldn't save") | Honest save state for photos outside the library; one-step reset |
+| Edit panel top | "Look: Standard / Flat" row where the design has Presets | Base looks (ADR 0022) are profile choices; presets are not built yet |
+| Stage | Dimmed photo and "Loading…" pill while the next photo opens | ADR 0020; the design shows no loading state |
+| Settings | Whole screen (grouped cards, segmented controls) | The design has no settings; built from its tokens and components |
+
+### Not built yet (and so not shown)
+
+Search, Recently imported, albums, histogram, presets and Auto, tone curve, colour
+mixer, detail, crop, masks, compare, zoom, the filmstrip, batch selection and Export
+dialog.
+
 ## Consequences
 
 - New screens start from the tokens and components above; the design artifact is the
