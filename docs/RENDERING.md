@@ -91,6 +91,12 @@ rendering.
     edges, so it has no halos.
   - ±100 doubles or removes the band (Clarity at 2× strength). Gains are limited to
     ±1.5 stops.
+- **Noise reduction** (`0..100`, ADR 0030): runs first in the detail stage.
+  - Luminance: a self-guided filter of log2 luminance, with a threshold that follows
+    the expected noise at each brightness. The other detail controls measure the
+    denoised luminance.
+  - Colour: R/Y and B/Y smoothed on a 512-cell whole-image map, guided by luminance.
+    Applied only where the change is noise-sized, so colour edges don't bleed.
 - **Sharpening** (`0..150`, default 40, ADR 0027): unsharp mask on log2 luminance
   with a 3×3 binomial blur at the rendered size. 100 multiplies one-pixel detail by
   2.5. Each pixel's change is limited to ±0.5 stop; it fades out in deep shadows.

@@ -13,7 +13,7 @@ use image_core::{Cancellation, LinearImage, OutputImage, PixelFormat};
 use rayon::prelude::*;
 
 use crate::{RenderBackend, RenderError, RenderPlan};
-use kernels::{Kernel, RowSpan, compile, min_chunk_rows};
+use kernels::{Kernel, KernelScratch, RowSpan, compile, min_chunk_rows};
 use lut::output_lut;
 
 /// Target pixels per parallel work item: large enough to amortise scheduling, small
@@ -52,21 +52,32 @@ impl CpuRenderer {
         out.data_mut()
             .par_chunks_mut(rows_per_chunk * width * channels)
             .enumerate()
-            .try_for_each_init(Vec::new, |scratch: &mut Vec<f32>, (i, out_chunk)| {
-                if cancel.is_cancelled() {
-                    return Err(RenderError::Cancelled);
-                }
-                let first = i * rows_per_chunk * width * 3;
-                let src_chunk = &src[first..first + out_chunk.len() / channels * 3];
-                let span = RowSpan {
-                    first_row: i * rows_per_chunk,
-                    width,
-                    height,
-                    source,
-                };
-                process_chunk(&kernels, src_chunk, scratch, out_chunk, channels, span);
-                Ok(())
-            })
+            .try_for_each_init(
+                || (Vec::new(), KernelScratch::default()),
+                |(scratch, kernel_scratch): &mut (Vec<f32>, KernelScratch), (i, out_chunk)| {
+                    if cancel.is_cancelled() {
+                        return Err(RenderError::Cancelled);
+                    }
+                    let first = i * rows_per_chunk * width * 3;
+                    let src_chunk = &src[first..first + out_chunk.len() / channels * 3];
+                    let span = RowSpan {
+                        first_row: i * rows_per_chunk,
+                        width,
+                        height,
+                        source,
+                    };
+                    process_chunk(
+                        &kernels,
+                        src_chunk,
+                        scratch,
+                        kernel_scratch,
+                        out_chunk,
+                        channels,
+                        span,
+                    );
+                    Ok(())
+                },
+            )
     }
 }
 
@@ -93,6 +104,7 @@ fn process_chunk(
     kernels: &[Kernel],
     src: &[u16],
     scratch: &mut Vec<f32>,
+    kernel_scratch: &mut KernelScratch,
     out: &mut [u8],
     channels: usize,
     span: RowSpan<'_>,
@@ -101,7 +113,7 @@ fn process_chunk(
     scratch.clear();
     scratch.extend(src.iter().map(|&v| f32::from(v) * INV));
     for k in kernels {
-        k.apply(scratch, span);
+        k.apply(scratch, span, kernel_scratch);
     }
     let lut = output_lut();
     let pixels = scratch.as_chunks::<3>().0;

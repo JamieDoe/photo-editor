@@ -129,7 +129,9 @@ a reduced-resolution decode; full resolution is decoded only for export.
 ### Edit (slider drag)
 
 ```text
-slider change ─► setRecipe ─► PreviewScheduler (≤ 1 request per animation frame)
+slider change ─► setRecipe ─► PreviewScheduler (≤ 1 request per animation frame, and
+                              ≤ 1 interactive render in flight: the newest change
+                              waits for it, so frames never starve; ADR 0030)
   ─► render_preview {imageId, recipe, quality, targetLongEdge}
        Engine: choose pyramid level for quality/target
                cache lookup (source id + recipe hash + size + renderer version)

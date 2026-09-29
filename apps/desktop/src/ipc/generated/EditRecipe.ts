@@ -71,6 +71,10 @@ clarity: number,
  */
 sharpening: number, 
 /**
+ * Noise reduction, 0..100.
+ */
+noiseReduction: number, 
+/**
  * Hue, saturation and luminance per colour band. `None` (and omitted from the
  * JSON) when unused, so recipes without it read and hash as before.
  */

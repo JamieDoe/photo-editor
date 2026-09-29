@@ -57,6 +57,7 @@ const ADJUSTMENT_KEYS: readonly AdjustmentKey[] = [
   "texture",
   "clarity",
   "sharpening",
+  "noiseReduction",
 ];
 
 export function isAdjustmentKey(key: string): key is AdjustmentKey {
@@ -91,6 +92,7 @@ export function neutralRecipe(recipeVersion: number): EditRecipe {
     texture: 0,
     clarity: 0,
     sharpening: 40,
+    noiseReduction: 0,
     look: "standard",
   };
 }

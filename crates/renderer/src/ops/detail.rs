@@ -17,12 +17,17 @@
 //!   Texture it does not scale with the image). Its change is limited to ±0.5 stop,
 //!   which keeps halos along edges faint.
 //!
+//! - **Noise reduction** (ADR 0030, `ops::noise`) runs first: the luminance the other
+//!   three measure is the denoised one, so they do not bring the noise back, and the
+//!   colour ratios are smoothed.
+//!
 //! Deep shadows fade out of Texture and Sharpening (mostly noise there) and Clarity
 //! eases off towards white and black, where extra contrast would clip.
 
 use image_core::color::REC709_LUMA;
 
 use super::dehaze::DehazeModel;
+use super::noise::{self, GuidedScratch, NoiseParams};
 use super::scene::RowModel;
 use super::tone::ToneBase;
 
@@ -44,6 +49,8 @@ pub struct DetailParams {
     pub clarity: f32,
     /// 0..150.
     pub sharpening: f32,
+    /// Noise reduction, 0..100.
+    pub noise: f32,
 }
 
 /// Rows the sharpening blur reads either side (a 3x3 binomial, see
@@ -56,7 +63,11 @@ const SHARPEN_MAX_STOPS: f32 = 0.5;
 
 impl DetailParams {
     pub fn is_identity(&self) -> bool {
-        self.texture == 0.0 && self.clarity == 0.0 && self.sharpening == 0.0
+        self.texture == 0.0 && self.clarity == 0.0 && self.sharpening == 0.0 && self.noise == 0.0
+    }
+
+    pub fn noise(&self) -> NoiseParams {
+        NoiseParams { amount: self.noise }
     }
 
     /// Whether Texture or Clarity (which use the small blur) are set.
@@ -76,7 +87,12 @@ impl DetailParams {
         } else {
             0
         };
-        small.max(sharp)
+        if self.noise == 0.0 {
+            return small.max(sharp);
+        }
+        // The blurs measure the denoised luminance, which reaches further itself. (The
+        // colour part reads a whole-image map, `noise::ChromaMap`, not rows.)
+        2 * noise::luma_radius(width, height) + small.max(sharp)
     }
 
     /// Clarity needs the surroundings map.
@@ -156,15 +172,25 @@ pub fn dehazed_log_luminance_row(
 /// image gives the same result as the whole image for rows at least `2 * radius`
 /// from the band's cut edges.
 pub fn blur_plane(plane: &mut [f32], w: usize, h: usize, radius: usize, scratch: &mut BlurScratch) {
-    scratch.line.resize(w, 0.0);
+    box_plane(plane, w, h, radius, 2, scratch);
+}
+
+/// `passes` box passes of `radius` in each direction, in place; reaches
+/// `passes * radius` pixels. Borders average only the pixels inside.
+pub fn box_plane(
+    plane: &mut [f32],
+    w: usize,
+    h: usize,
+    radius: usize,
+    passes: usize,
+    scratch: &mut BlurScratch,
+) {
     scratch.sums.resize(w, 0.0);
     scratch.plane.resize(w * h, 0.0);
-    for _ in 0..2 {
-        for row in plane.chunks_mut(w) {
-            box_line(row, radius, &mut scratch.line);
-        }
+    for _ in 0..passes {
+        horizontal_pass(plane, w, h, radius, scratch);
     }
-    for _ in 0..2 {
+    for _ in 0..passes {
         vertical_pass(plane, &mut scratch.plane, w, h, radius, &mut scratch.sums);
         plane.copy_from_slice(&scratch.plane);
     }
@@ -173,35 +199,115 @@ pub fn blur_plane(plane: &mut [f32], w: usize, h: usize, radius: usize, scratch:
 /// Buffers [`blur_plane`] reuses between calls.
 #[derive(Debug, Default)]
 pub struct BlurScratch {
-    line: Vec<f32>,
+    /// 1/count per column, and a copy of the rows being blurred.
+    inv: Vec<f32>,
+    rows: Vec<f32>,
     sums: Vec<f32>,
     plane: Vec<f32>,
 }
 
-fn box_line(line: &mut [f32], r: usize, scratch: &mut [f32]) {
-    let n = line.len();
-    let src = &mut scratch[..n];
-    src.copy_from_slice(line);
-    let mut sum = 0.0f32;
-    let mut count = 0.0f32;
-    for v in &src[..=r.min(n - 1)] {
-        sum += v;
-        count += 1.0;
-    }
-    for k in 0..n {
-        line[k] = sum / count;
-        if k + r + 1 < n {
-            sum += src[k + r + 1];
-            count += 1.0;
+/// Radii up to this sum their taps directly (independent per pixel, so the compiler
+/// vectorises along the row); larger radii use running sums.
+const DIRECT_MAX_RADIUS: usize = 6;
+
+/// Horizontal box pass by direct sums: the same result as the running sums (the
+/// same pixels averaged), for small radii.
+fn horizontal_direct(plane: &mut [f32], w: usize, r: usize, scratch: &mut BlurScratch) {
+    let inv_full = 1.0 / (2 * r + 1) as f32;
+    scratch.rows.resize(w, 0.0);
+    for row in plane.chunks_exact_mut(w) {
+        let src = &mut scratch.rows[..w];
+        src.copy_from_slice(row);
+        // Interior: all 2r+1 taps inside the row, added one shifted row at a time
+        // (each a contiguous, vectorisable pass).
+        let n = w - 2 * r;
+        let interior = &mut row[r..w - r];
+        interior.copy_from_slice(&src[..n]);
+        for t in 1..=2 * r {
+            for (o, s) in interior.iter_mut().zip(&src[t..t + n]) {
+                *o += s;
+            }
         }
-        if k >= r {
-            sum -= src[k - r];
-            count -= 1.0;
+        for o in interior.iter_mut() {
+            *o *= inv_full;
+        }
+        // Borders: average only the pixels inside.
+        for k in (0..r).chain(w - r..w) {
+            let (a, b) = (k.saturating_sub(r), (k + r).min(w - 1));
+            row[k] = src[a..=b].iter().sum::<f32>() / (b - a + 1) as f32;
         }
     }
 }
 
-fn vertical_pass(src: &[f32], out: &mut [f32], w: usize, h: usize, r: usize, sums: &mut [f32]) {
+/// Horizontal box pass. A running sum along a row is a chain of dependent additions,
+/// so eight rows advance together (independent chains the CPU overlaps), and the
+/// division is a multiplication by 1/count.
+pub fn horizontal_pass(plane: &mut [f32], w: usize, h: usize, r: usize, scratch: &mut BlurScratch) {
+    if r <= DIRECT_MAX_RADIUS && w > 2 * r {
+        return horizontal_direct(plane, w, r, scratch);
+    }
+    const ROWS: usize = 8;
+    scratch.inv.clear();
+    scratch
+        .inv
+        .extend((0..w).map(|k| 1.0 / ((k + r).min(w - 1) - k.saturating_sub(r) + 1) as f32));
+    scratch.rows.resize(ROWS * w, 0.0);
+    let first = r.min(w - 1) + 1;
+    let mut y = 0;
+    while y < h {
+        let n = ROWS.min(h - y);
+        let block = &mut plane[y * w..(y + n) * w];
+        let src = &mut scratch.rows[..n * w];
+        src.copy_from_slice(block);
+        let mut sums = [0.0f32; ROWS];
+        for (j, s) in sums.iter_mut().enumerate().take(n) {
+            *s = src[j * w..j * w + first].iter().sum();
+        }
+        if n == ROWS {
+            // Fixed-size fast path: the compiler keeps the eight sums in registers.
+            let rows: [&[f32]; ROWS] = std::array::from_fn(|j| &src[j * w..(j + 1) * w]);
+            let outs = block.chunks_exact_mut(w);
+            let mut outs: Vec<&mut [f32]> = outs.collect();
+            for k in 0..w {
+                let inv = scratch.inv[k];
+                for j in 0..ROWS {
+                    outs[j][k] = sums[j] * inv;
+                }
+                if k + r + 1 < w {
+                    for j in 0..ROWS {
+                        sums[j] += rows[j][k + r + 1];
+                    }
+                }
+                if k >= r {
+                    for j in 0..ROWS {
+                        sums[j] -= rows[j][k - r];
+                    }
+                }
+            }
+            y += n;
+            continue;
+        }
+        for k in 0..w {
+            let inv = scratch.inv[k];
+            for (j, s) in sums.iter().enumerate().take(n) {
+                block[j * w + k] = s * inv;
+            }
+            if k + r + 1 < w {
+                for (j, s) in sums.iter_mut().enumerate().take(n) {
+                    *s += src[j * w + k + r + 1];
+                }
+            }
+            if k >= r {
+                for (j, s) in sums.iter_mut().enumerate().take(n) {
+                    *s -= src[j * w + k - r];
+                }
+            }
+        }
+        y += n;
+    }
+}
+
+pub fn vertical_pass(src: &[f32], out: &mut [f32], w: usize, h: usize, r: usize, sums: &mut [f32]) {
     sums.iter_mut().for_each(|s| *s = 0.0);
     let mut count = 0.0f32;
     for y in 0..=r.min(h - 1) {
@@ -296,15 +402,32 @@ pub fn sharpen_stops(p: &DetailParams, log_y: f32, sharp: f32) -> f32 {
 /// Reference implementation over a whole image of linear RGB `f32` (already after the
 /// stages before this one), given the log2 luminance plane the neighbourhoods are
 /// measured on (`log_y`, `width` x `height`) and the surroundings map.
+///
+/// `chroma` is the colour noise map (built from the source like `log_y`), when noise
+/// reduction is on.
+#[allow(clippy::needless_range_loop)] // x indexes several planes and maps
 pub fn apply_reference(
     rgb: &mut [f32],
     log_y: &[f32],
+    chroma: Option<&noise::ChromaMap>,
     width: usize,
     height: usize,
     base: Option<&ToneBase>,
     p: &DetailParams,
 ) {
-    let mut small = log_y.to_vec();
+    let np = p.noise();
+    let mut gs = GuidedScratch::default();
+    // Noise reduction first: the other controls measure the denoised luminance.
+    let mut denoised = log_y.to_vec();
+    if !np.is_identity() {
+        let r = noise::luma_radius(width, height);
+        noise::denoise_luma(&np, log_y, width, height, r, &mut gs, &mut denoised);
+    }
+    let chroma_cols = chroma.map(|c| c.columns(width)).unwrap_or_default();
+    let mut chroma_row = Vec::new();
+    let colour_step = noise::ColourStep::new(&np);
+    let measured = &denoised;
+    let mut small = measured.clone();
     blur_plane(
         &mut small,
         width,
@@ -315,7 +438,7 @@ pub fn apply_reference(
     let mut sharp = vec![0.0f32; width * height];
     let mut vertical = Vec::new();
     for y in 0..height {
-        let row = |r: usize| &log_y[r * width..(r + 1) * width];
+        let row = |r: usize| &measured[r * width..(r + 1) * width];
         let (above, below) = (row(y.saturating_sub(1)), row((y + 1).min(height - 1)));
         let out = &mut sharp[y * width..(y + 1) * width];
         sharpen_blur_row(above, row(y), below, &mut vertical, out);
@@ -329,9 +452,21 @@ pub fn apply_reference(
                 Some(b) => -b.stops_at(x, y, width, height, small[i]),
                 None => small[i],
             };
-            let gain = gain_stops(p, log_y[i], small[i], base_log, sharp[i]).exp2();
-            for c in &mut rgb[i * 3..i * 3 + 3] {
+            let stops = ((measured[i] - log_y[i])
+                + gain_stops(p, measured[i], small[i], base_log, sharp[i]))
+            .clamp(-MAX_STOPS, MAX_STOPS);
+            let gain = stops.exp2();
+            let px = &mut rgb[i * 3..i * 3 + 3];
+            for c in px.iter_mut() {
                 *c *= gain;
+            }
+            if let Some(c) = chroma {
+                if x == 0 {
+                    c.load_row(y, height, &mut chroma_row);
+                }
+                let (qr, qb) = noise::ChromaMap::at(&chroma_row, chroma_cols[x]);
+                let out = noise::denoise_colour([px[0], px[1], px[2]], qr, qb, &colour_step);
+                px.copy_from_slice(&out);
             }
         }
     }
@@ -355,7 +490,7 @@ mod tests {
         let base = p
             .needs_base()
             .then(|| ToneBase::from_log_luminance(w, h, plane));
-        apply_reference(&mut rgb, plane, w, h, base.as_ref(), &p);
+        apply_reference(&mut rgb, plane, None, w, h, base.as_ref(), &p);
         rgb.chunks(3).map(|px| px[1].log2()).collect()
     }
 
@@ -381,6 +516,7 @@ mod tests {
             texture: 100.0,
             clarity: 100.0,
             sharpening: 0.0,
+            noise: 0.0,
         };
         for (a, b) in run(&flat, w, h, p).iter().zip(&flat) {
             assert!((a - b).abs() < 1e-4);
@@ -390,6 +526,7 @@ mod tests {
             texture: 0.0,
             clarity: 0.0,
             sharpening: 0.0,
+            noise: 0.0,
         };
         assert_eq!(run(&noisy, w, h, zero), noisy);
     }
@@ -408,6 +545,7 @@ mod tests {
                 texture: 100.0,
                 clarity: 0.0,
                 sharpening: 0.0,
+                noise: 0.0,
             },
         );
         let less = run(
@@ -418,6 +556,7 @@ mod tests {
                 texture: -100.0,
                 clarity: 0.0,
                 sharpening: 0.0,
+                noise: 0.0,
             },
         );
         assert!(spread(&more) > 1.6 * spread(&fine), "{}", spread(&more));
@@ -438,6 +577,7 @@ mod tests {
                 texture: 100.0,
                 clarity: 0.0,
                 sharpening: 0.0,
+                noise: 0.0,
             },
         );
         assert!((spread(&out) / spread(&noise) - 1.0).abs() < 0.05);
@@ -456,6 +596,7 @@ mod tests {
                 texture: 0.0,
                 clarity: 100.0,
                 sharpening: 0.0,
+                noise: 0.0,
             },
         );
         let centre = |v: &[f32]| spread(&v[40 * w..120 * w]);
@@ -477,6 +618,7 @@ mod tests {
                 texture: 0.0,
                 clarity: 100.0,
                 sharpening: 0.0,
+                noise: 0.0,
             },
         );
         for x in 0..w {
@@ -514,6 +656,7 @@ mod tests {
             texture: 0.0,
             clarity: 0.0,
             sharpening: s,
+            noise: 0.0,
         };
         let sharper = run(&fine, w, h, p(100.0));
         assert!(
@@ -538,6 +681,7 @@ mod tests {
             texture: t,
             clarity: 0.0,
             sharpening: s,
+            noise: 0.0,
         };
         assert_eq!(p(0.0, 40.0).reach(6064, 4040), 1);
         assert_eq!(p(10.0, 40.0).reach(6064, 4040), 18);
