@@ -28,6 +28,7 @@ let mockSettings: Record<string, unknown> = {
 };
 
 /** Marks by photo path; seeded with a few, updated by set_photo_marks. */
+let mockBackups = { enabled: true, count: 5, totalBytes: 11_800_000, latestAtMs: Date.now() - 2 * 3600_000, folder: "/Users/me/Library/Application Support/app/backups" };
 const mockEdits = new Map<string, Record<string, number>>();
 let openedPath = "/mock.nef";
 const mockMarks = new Map<string, { rating: number; flag: "none" | "pick" | "reject" }>();
@@ -152,6 +153,13 @@ mockIPC((cmd, payload) => {
       else mockEdits.delete(path);
       return new Promise((r) => setTimeout(() => r({ edited }), 150));
     }
+    case "library_backups":
+      return mockBackups;
+    case "back_up_library":
+      mockBackups = { ...mockBackups, count: Math.min(mockBackups.count + 1, 14), latestAtMs: Date.now(), totalBytes: mockBackups.totalBytes + 2_400_000 };
+      return new Promise((r) => setTimeout(() => r(mockBackups), 600));
+    case "show_backups":
+      return null;
     case "library_collection": {
       const kind = (payload as { kind: "picks" | "rated" | "rejected" }).kind;
       const all = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");

@@ -57,6 +57,8 @@ pub struct FileRecord {
 /// jobs, never from the UI thread.
 pub struct Catalogue {
     conn: Mutex<Connection>,
+    /// The database file; `None` for an in-memory catalogue.
+    path: Option<PathBuf>,
 }
 
 impl Catalogue {
@@ -69,15 +71,15 @@ impl Catalogue {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        Self::init(Connection::open(path)?)
+        Self::init(Connection::open(path)?, Some(path.to_path_buf()))
     }
 
     /// An in-memory catalogue (tests, benchmarks).
     pub fn open_in_memory() -> Result<Self> {
-        Self::init(Connection::open_in_memory()?)
+        Self::init(Connection::open_in_memory()?, None)
     }
 
-    fn init(mut conn: Connection) -> Result<Self> {
+    fn init(mut conn: Connection, path: Option<PathBuf>) -> Result<Self> {
         // WAL: readers don't block the writer and a crash cannot corrupt committed data.
         // NORMAL sync is durable across app crashes (fsync at checkpoints).
         conn.pragma_update(None, "journal_mode", "WAL")?;
@@ -90,7 +92,19 @@ impl Catalogue {
         schema::migrate(&mut conn)?;
         Ok(Self {
             conn: Mutex::new(conn),
+            path,
         })
+    }
+
+    /// The database file (`None` for an in-memory catalogue).
+    pub fn path(&self) -> Option<&Path> {
+        self.path.as_deref()
+    }
+
+    /// Rows changed through this catalogue since it was opened. Backups compare it to
+    /// decide whether anything is new since the last one.
+    pub fn change_count(&self) -> u64 {
+        self.conn().total_changes()
     }
 
     pub(crate) fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {

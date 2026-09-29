@@ -225,7 +225,8 @@ within half the machine.
 
 - Persisted:
   - settings (including default and recent folders), window state, logs;
-  - the catalogue (`catalogue.sqlite` in the OS app-data directory; ADRs 0012–0014).
+  - the catalogue (`catalogue.sqlite` in the OS app-data directory; ADRs 0012–0014),
+    backed up to `backups/` next to it (ADR 0021).
     It holds library folders, photos, their files and photo details (camera, lens,
     capture time, exposure, dimensions, GPS). It is rebuildable by re-indexing, and a
     corrupt file is moved aside and rebuilt.
@@ -250,8 +251,9 @@ See `PERFORMANCE.md` for measured consequences.
 - Library: folders are listed from the filesystem, one level at a time, joined with
   details and marks from the catalogue. The library-wide Picks / Rated / Rejected
   collections come from the catalogue. There is no sort, search or multi-select yet.
-- Ratings, flags and edits cannot be rebuilt from the files. A catalogue reset loses
-  them (the old file is kept), and backups are the next milestone (ADR 0018, 0019).
+- Ratings, flags and edits cannot be rebuilt from the files. They are protected by
+  automatic backups on the same disk (ADR 0021); copying backups elsewhere is not
+  available yet.
 - A granted folder that is later moved is not followed; the user chooses it again.
 - Recent folders cannot be removed from the list yet.
 - Background intensity changes need a restart (thread pools are created at start-up).

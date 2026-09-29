@@ -66,8 +66,8 @@ from its in-memory preview pyramid (a few milliseconds) and store it under the n
 
 ## Consequences
 
-- Edits, like marks, cannot be rebuilt from the files. The backup work in ADR 0018
-  becomes more pressing and is the next milestone.
+- Edits, like marks, cannot be rebuilt from the files. They are protected by the
+  automatic backups of ADR 0021.
 - History and undo (Phase 7) will build on this: the `edits` table holds the current
   state, and history will be a separate table of earlier states.
 - Presets, copy/paste and batch edits (Phase 7) are recipes too, and reuse

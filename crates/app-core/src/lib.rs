@@ -15,9 +15,11 @@ mod thumbnails;
 mod types;
 
 pub use catalogue::{
-    Catalogue, CatalogueError, Collection, CollectionCounts, CollectionEntry, FileStatus, Flag,
-    MarkChange, Marks, PhotoDetails, PhotoId, Rating, SourceIdentity, StoredEdit,
+    BackupInfo, BackupKind, BackupStore, Catalogue, CatalogueError, Collection, CollectionCounts,
+    CollectionEntry, FileStatus, Flag, MarkChange, Marks, PhotoDetails, PhotoId, Rating,
+    SourceIdentity, StoredEdit,
 };
+pub use catalogue::{SCHEMA_VERSION, schema_version_of};
 pub use config::EngineConfig;
 pub use edits::{SavedEdit, load_edit, save_edit};
 pub use engine::Engine;

@@ -1,6 +1,7 @@
 import type { BackgroundIntensity } from "../../ipc/generated/BackgroundIntensity";
 import type { Theme } from "../../ipc/generated/Theme";
 import { sliderTrack } from "../editor/sliderTrack";
+import { BackupSettings } from "./BackupSettings";
 import type { SettingsApi } from "./useSettings";
 
 const THEMES: Array<[Theme, string]> = [
@@ -141,6 +142,8 @@ export function SettingsView({ api }: { api: SettingsApi }) {
             </div>
           </div>
         </section>
+
+        <BackupSettings />
 
         <section className="settings-group">
           <h2>Library</h2>

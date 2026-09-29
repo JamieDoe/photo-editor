@@ -612,6 +612,21 @@ impl From<app_core::IndexStage> for IndexStageDto {
     }
 }
 
+/// Library backups, for Settings (ADR 0021).
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct BackupStatusDto {
+    /// False when the library is temporary (in memory) and cannot be backed up.
+    pub enabled: bool,
+    pub count: u32,
+    #[ts(type = "number")]
+    pub total_bytes: u64,
+    #[ts(type = "number | null")]
+    pub latest_at_ms: Option<i64>,
+    pub folder: String,
+}
+
 /// Library-wide facts for the Library screen.
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
