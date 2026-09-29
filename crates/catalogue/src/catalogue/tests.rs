@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
+use crate::{Collection, Flag, MarkChange, Marks};
 
 struct Library {
     _dir: fixtures::TempDir,
@@ -424,4 +425,155 @@ fn many_identical_copies_stay_fast() {
         )
         .unwrap();
     assert!(matches!(o, RecordOutcome::Moved { .. }), "{o:?}");
+}
+
+fn rate(n: u8) -> MarkChange {
+    MarkChange::Rating(crate::Rating::new(n).unwrap())
+}
+
+#[test]
+fn marks_are_set_read_and_listed_per_folder() {
+    let l = library("cat-marks");
+    let a = l.root.join("a.nef");
+    let b = l.root.join("b.nef");
+    let c = l.root.join("sub/c.nef");
+    let ids: Vec<PhotoId> = [(&a, 1), (&b, 2), (&c, 3)]
+        .into_iter()
+        .map(|(p, seed)| {
+            l.cat
+                .record_file(l.folder, &write(p, &photo_bytes(seed)), ScanId(1))
+                .unwrap()
+                .0
+        })
+        .collect();
+    assert_eq!(
+        l.cat.photo_at(&a.canonicalize().unwrap()).unwrap(),
+        Some(ids[0])
+    );
+    assert_eq!(l.cat.photo_at(&l.root.join("nope.nef")).unwrap(), None);
+
+    l.cat.set_marks(&ids[..2], rate(4)).unwrap();
+    l.cat
+        .set_marks(&ids[1..2], MarkChange::Flag(Flag::Pick))
+        .unwrap();
+    l.cat
+        .set_marks(&ids[2..], MarkChange::Flag(Flag::Reject))
+        .unwrap();
+    assert_eq!(l.cat.marks(ids[0]).unwrap().rating.stars(), 4);
+    assert_eq!(
+        l.cat.marks(ids[1]).unwrap(),
+        Marks {
+            rating: crate::Rating::new(4).unwrap(),
+            flag: Flag::Pick
+        }
+    );
+    // A rating change leaves the flag alone, and 0 clears the rating.
+    l.cat.set_marks(&ids[1..2], rate(0)).unwrap();
+    assert_eq!(l.cat.marks(ids[1]).unwrap().flag, Flag::Pick);
+    assert_eq!(l.cat.marks(ids[1]).unwrap().rating.stars(), 0);
+
+    let mut here = l.cat.marks_in_dir(&l.root).unwrap();
+    here.sort_by(|x, y| x.0.cmp(&y.0));
+    let names: Vec<_> = here
+        .iter()
+        .map(|(p, m)| {
+            (
+                p.file_name().unwrap().to_string_lossy().into_owned(),
+                m.rating.stars(),
+                m.flag,
+            )
+        })
+        .collect();
+    assert_eq!(
+        names,
+        [
+            ("a.nef".to_owned(), 4, Flag::None),
+            ("b.nef".to_owned(), 0, Flag::Pick)
+        ]
+    );
+}
+
+#[test]
+fn marks_follow_a_moved_photo_and_collections_skip_missing_files() {
+    let l = library("cat-marks-move");
+    let old = l.root.join("keeper.nef");
+    let (photo, _) = l
+        .cat
+        .record_file(l.folder, &write(&old, &photo_bytes(9)), ScanId(1))
+        .unwrap();
+    l.cat.set_marks(&[photo], rate(5)).unwrap();
+    l.cat
+        .set_marks(&[photo], MarkChange::Flag(Flag::Pick))
+        .unwrap();
+    let other = l.root.join("gone.nef");
+    let (gone, _) = l
+        .cat
+        .record_file(l.folder, &write(&other, &photo_bytes(10)), ScanId(1))
+        .unwrap();
+    l.cat
+        .set_marks(&[gone], MarkChange::Flag(Flag::Reject))
+        .unwrap();
+
+    // Move one file, delete the other, rescan.
+    let new = l.root.join("Best/keeper.nef");
+    std::fs::create_dir_all(new.parent().unwrap()).unwrap();
+    std::fs::rename(&old, &new).unwrap();
+    std::fs::remove_file(&other).unwrap();
+    let (moved, o) = l
+        .cat
+        .record_file(
+            l.folder,
+            &SourceIdentity::from_path(&new).unwrap(),
+            ScanId(2),
+        )
+        .unwrap();
+    assert_eq!(moved, photo);
+    assert!(matches!(o, RecordOutcome::Moved { .. }));
+    l.cat.finish_scan(l.folder, ScanId(2), None).unwrap();
+
+    let picks = l.cat.collection(Collection::Picks).unwrap();
+    assert_eq!(picks.len(), 1);
+    assert_eq!(picks[0].path, new.canonicalize().unwrap());
+    assert_eq!(picks[0].marks.rating.stars(), 5);
+    assert_eq!(l.cat.collection(Collection::Rated).unwrap().len(), 1);
+    // The rejected photo's file is missing: not listed, not counted.
+    assert!(l.cat.collection(Collection::Rejected).unwrap().is_empty());
+    assert_eq!(
+        l.cat.collection_counts().unwrap(),
+        crate::CollectionCounts {
+            picks: 1,
+            rated: 1,
+            rejected: 0
+        }
+    );
+}
+
+#[test]
+fn collections_include_details_once_indexed() {
+    let l = library("cat-marks-details");
+    let (photo, _) = l
+        .cat
+        .record_file(
+            l.folder,
+            &write(&l.root.join("x.nef"), &photo_bytes(4)),
+            ScanId(1),
+        )
+        .unwrap();
+    l.cat.set_marks(&[photo], rate(2)).unwrap();
+    assert_eq!(
+        l.cat.collection(Collection::Rated).unwrap()[0].details,
+        None
+    );
+    let details = crate::PhotoDetails {
+        camera_model: Some("Z 6".into()),
+        captured_at: Some("2026-09-24T06:41:12".into()),
+        ..Default::default()
+    };
+    l.cat
+        .set_details(&[(photo, Some(details.clone()))])
+        .unwrap();
+    assert_eq!(
+        l.cat.collection(Collection::Rated).unwrap()[0].details,
+        Some(details)
+    );
 }

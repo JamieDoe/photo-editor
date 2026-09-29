@@ -74,6 +74,8 @@ fn main() {
             commands::library::library_status,
             commands::library::library_thumbnail,
             commands::library::cancel_thumbnail,
+            commands::marks::set_photo_marks,
+            commands::marks::library_collection,
             commands::images::open_image_dialog,
             commands::images::open_image_path,
             commands::images::render_preview,

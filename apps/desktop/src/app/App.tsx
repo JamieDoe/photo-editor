@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { BrandMark, ExportIcon, SettingsIcon } from "../components/icons";
 import { QuitDialog } from "../components/QuitDialog";
@@ -41,10 +41,19 @@ export function App() {
     });
   }, []);
 
-  const openInEditor = async (open: () => Promise<unknown>) => {
-    setMode("edit");
-    await open();
-  };
+  // The Library photo open in Edit (null for files opened with "Open photo…"): its
+  // marks are shown and set in Edit, and ← → step through the Library's photos.
+  const [editPath, setEditPath] = useState<string | null>(null);
+  const openFromLibrary = useCallback(
+    (path: string) => {
+      setEditPath(path);
+      library.setSelected(path);
+      setMode("edit");
+      void editor.openPath(path);
+    },
+    [editor, library],
+  );
+  const editEntry = library.findPhoto(editPath);
 
   const exporting =
     editor.exportState !== null && (editor.exportState.last === null || editor.exportState.last.type === "progress");
@@ -107,10 +116,24 @@ export function App() {
           <LibraryView
             library={library}
             settings={settings}
-            onOpenPhoto={(path) => void openInEditor(() => editor.openPath(path))}
+            onOpenPhoto={openFromLibrary}
           />
         )}
-        {mode === "edit" && <EditView editor={editor} />}
+        {mode === "edit" && (
+          <EditView
+            editor={editor}
+            marks={editEntry?.marks ?? null}
+            onMark={(change) => editEntry && void library.setMarks([editEntry.path], change)}
+            onStep={(delta) => {
+              const next = library.neighbour(editPath, delta);
+              if (next) openFromLibrary(next.path);
+            }}
+            onOpenFile={() => {
+              setEditPath(null);
+              void editor.openDialog();
+            }}
+          />
+        )}
         {mode === "settings" && <SettingsView api={settings} />}
       </div>
       <QuitDialog />

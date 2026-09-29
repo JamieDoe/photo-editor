@@ -369,6 +369,115 @@ pub struct PhotoEntryDto {
     pub raw: bool,
     /// From the catalogue, once the folder has been indexed.
     pub details: Option<PhotoDetailsDto>,
+    /// Rating and flag (defaults until set).
+    pub marks: MarksDto,
+}
+
+/// Pick/reject flag.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum FlagDto {
+    #[default]
+    None,
+    Pick,
+    Reject,
+}
+
+impl From<app_core::Flag> for FlagDto {
+    fn from(f: app_core::Flag) -> Self {
+        match f {
+            app_core::Flag::None => Self::None,
+            app_core::Flag::Pick => Self::Pick,
+            app_core::Flag::Reject => Self::Reject,
+        }
+    }
+}
+
+impl From<FlagDto> for app_core::Flag {
+    fn from(f: FlagDto) -> Self {
+        match f {
+            FlagDto::None => Self::None,
+            FlagDto::Pick => Self::Pick,
+            FlagDto::Reject => Self::Reject,
+        }
+    }
+}
+
+/// The photographer's marks on a photo (ADR 0018).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MarksDto {
+    /// 0 (unrated) to 5.
+    pub rating: u8,
+    pub flag: FlagDto,
+}
+
+impl From<app_core::Marks> for MarksDto {
+    fn from(m: app_core::Marks) -> Self {
+        Self {
+            rating: m.rating.stars(),
+            flag: m.flag.into(),
+        }
+    }
+}
+
+/// One change applied to one or more photos.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, TS)]
+#[serde(tag = "type", rename_all = "camelCase")]
+#[ts(export)]
+pub enum MarkChangeDto {
+    Rating { stars: u8 },
+    Flag { flag: FlagDto },
+}
+
+/// Library-wide collections built from marks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum CollectionKindDto {
+    Picks,
+    Rated,
+    Rejected,
+}
+
+impl From<CollectionKindDto> for app_core::Collection {
+    fn from(k: CollectionKindDto) -> Self {
+        match k {
+            CollectionKindDto::Picks => Self::Picks,
+            CollectionKindDto::Rated => Self::Rated,
+            CollectionKindDto::Rejected => Self::Rejected,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CollectionCountsDto {
+    pub picks: u32,
+    pub rated: u32,
+    pub rejected: u32,
+}
+
+impl From<app_core::CollectionCounts> for CollectionCountsDto {
+    fn from(c: app_core::CollectionCounts) -> Self {
+        Self {
+            picks: c.picks as u32,
+            rated: c.rated as u32,
+            rejected: c.rejected as u32,
+        }
+    }
+}
+
+/// Photos of a library-wide collection, from the catalogue.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct CollectionListingDto {
+    pub kind: CollectionKindDto,
+    pub photos: Vec<PhotoEntryDto>,
 }
 
 /// Photo details read from file headers during indexing.
@@ -481,4 +590,5 @@ pub struct LibraryStatusDto {
     pub folders: Vec<String>,
     /// Set if the catalogue was reset or could not be opened (shown once).
     pub notice: Option<String>,
+    pub collections: CollectionCountsDto,
 }

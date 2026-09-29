@@ -15,7 +15,7 @@ use crate::ipc::{
 
 /// Error for a folder that is not (or no longer) available: moved, deleted, on an
 /// unplugged drive, or never granted.
-fn folder_unavailable(path: &str) -> IpcError {
+pub(super) fn folder_unavailable(path: &str) -> IpcError {
     let reference = crate::logging::new_reference();
     log::warn!("[{reference}] folder unavailable or not granted: {path}");
     IpcError {
@@ -85,10 +85,10 @@ async fn list(state: &AppState, dir: PathBuf) -> IpcResult<FolderListingDto> {
     let root = state.folders.root_of(&dir).unwrap_or_else(|| dir.clone());
     let target = dir.clone();
     let catalogue = std::sync::Arc::clone(&state.catalogue);
-    let (listing, details) = tauri::async_runtime::spawn_blocking(move || {
+    let (listing, details, marks) = tauri::async_runtime::spawn_blocking(move || {
         let listing = folders::list_folder(&target, &extensions);
         // Details exist once the folder has been indexed; a catalogue problem must not
-        // stop browsing, so it only costs the extra columns.
+        // stop browsing, so it only costs the extra columns and marks.
         let details = catalogue.details_in_dir(&target).unwrap_or_else(|e| {
             log::warn!(
                 "catalogue details unavailable for {}: {e}",
@@ -96,18 +96,23 @@ async fn list(state: &AppState, dir: PathBuf) -> IpcResult<FolderListingDto> {
             );
             Vec::new()
         });
-        (listing, details)
+        let marks = catalogue.marks_in_dir(&target).unwrap_or_else(|e| {
+            log::warn!("catalogue marks unavailable for {}: {e}", target.display());
+            Vec::new()
+        });
+        (listing, details, marks)
     })
     .await
     .map_err(IpcError::internal)?;
     let listing = listing.map_err(|_| folder_unavailable(&dir.display().to_string()))?;
     let details: std::collections::HashMap<PathBuf, app_core::PhotoDetails> =
         details.into_iter().collect();
-    Ok(to_dto(listing, &root, &raw_extensions, &details))
+    let marks: std::collections::HashMap<PathBuf, app_core::Marks> = marks.into_iter().collect();
+    Ok(to_dto(listing, &root, &raw_extensions, &details, &marks))
 }
 
 /// Extensions of camera RAW formats (everything the registry accepts except JPEG).
-fn raw_extensions(all: &[&'static str]) -> Vec<&'static str> {
+pub(super) fn raw_extensions(all: &[&'static str]) -> Vec<&'static str> {
     all.iter()
         .copied()
         .filter(|e| !matches!(*e, "jpg" | "jpeg"))
@@ -119,6 +124,7 @@ fn to_dto(
     root: &Path,
     raw_extensions: &[&str],
     details: &std::collections::HashMap<PathBuf, app_core::PhotoDetails>,
+    marks: &std::collections::HashMap<PathBuf, app_core::Marks>,
 ) -> FolderListingDto {
     let crumb = |p: &Path| FolderCrumbDto {
         name: p.file_name().map_or_else(
@@ -146,6 +152,7 @@ fn to_dto(
             .map(|p| PhotoEntryDto {
                 raw: raw_extensions.contains(&p.extension.as_str()),
                 details: details.get(&p.path).map(PhotoDetailsDto::from),
+                marks: marks.get(&p.path).copied().unwrap_or_default().into(),
                 name: p.name,
                 path: p.path.display().to_string(),
                 size_bytes: p.size_bytes,
@@ -173,6 +180,7 @@ mod tests {
             listing,
             &root.canonicalize().unwrap(),
             &["nef"],
+            &Default::default(),
             &Default::default(),
         );
         let names: Vec<_> = dto.breadcrumbs.iter().map(|c| c.name.as_str()).collect();
@@ -326,8 +334,12 @@ fn pregenerate_thumbnails(app: &AppHandle, root: PathBuf, key: String) {
 #[tauri::command]
 pub async fn library_status(state: State<'_, AppState>) -> IpcResult<LibraryStatusDto> {
     let catalogue = std::sync::Arc::clone(&state.catalogue);
-    let (photos, folders) = tauri::async_runtime::spawn_blocking(move || {
-        Ok::<_, app_core::CatalogueError>((catalogue.photo_count()?, catalogue.folders()?))
+    let (photos, folders, collections) = tauri::async_runtime::spawn_blocking(move || {
+        Ok::<_, app_core::CatalogueError>((
+            catalogue.photo_count()?,
+            catalogue.folders()?,
+            catalogue.collection_counts()?,
+        ))
     })
     .await
     .map_err(IpcError::internal)?
@@ -339,5 +351,6 @@ pub async fn library_status(state: State<'_, AppState>) -> IpcResult<LibraryStat
             .map(|f| f.path.display().to_string())
             .collect(),
         notice: state.catalogue_notice.clone(),
+        collections: collections.into(),
     })
 }

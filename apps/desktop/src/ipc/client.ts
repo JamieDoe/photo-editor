@@ -6,6 +6,9 @@ import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { EngineInfoDto } from "./generated/EngineInfoDto";
 import type { ClientErrorReport } from "./generated/ClientErrorReport";
+import type { CollectionCountsDto } from "./generated/CollectionCountsDto";
+import type { CollectionKindDto } from "./generated/CollectionKindDto";
+import type { CollectionListingDto } from "./generated/CollectionListingDto";
 import type { DiagnosticsDto } from "./generated/DiagnosticsDto";
 import type { ExportEvent } from "./generated/ExportEvent";
 import type { ExportRequestDto } from "./generated/ExportRequestDto";
@@ -14,6 +17,7 @@ import type { FolderListingDto } from "./generated/FolderListingDto";
 import type { ImageSummaryDto } from "./generated/ImageSummaryDto";
 import type { IndexEvent } from "./generated/IndexEvent";
 import type { LibraryStatusDto } from "./generated/LibraryStatusDto";
+import type { MarkChangeDto } from "./generated/MarkChangeDto";
 import type { IpcError } from "./generated/IpcError";
 import type { PreviewRequestDto } from "./generated/PreviewRequestDto";
 import type { QuitRequestedDto } from "./generated/QuitRequestedDto";
@@ -87,6 +91,13 @@ export const listFolder = (path: string) => invoke<FolderListingDto>("list_folde
 export const indexLibraryFolder = (path: string) => invoke<void>("index_library_folder", { path });
 
 export const libraryStatus = () => invoke<LibraryStatusDto>("library_status");
+
+/** Rates or flags photos; resolves to the new library-wide collection counts. */
+export const setPhotoMarks = (paths: string[], change: MarkChangeDto) =>
+  invoke<CollectionCountsDto>("set_photo_marks", { paths, change });
+
+export const libraryCollection = (kind: CollectionKindDto) =>
+  invoke<CollectionListingDto>("library_collection", { kind });
 
 /** A photo's thumbnail as JPEG bytes (long edge at most 512 px). */
 export async function libraryThumbnail(path: string): Promise<ArrayBuffer> {

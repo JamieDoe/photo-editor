@@ -247,6 +247,27 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       thumbnails.longEdges.every((e) => e > 0 && e <= 512) &&
       thumbnails.cachedLongEdge > 0;
 
+    // Ratings and flags through the real commands and catalogue: rate and pick the test
+    // photo, read it back from the folder listing and the Picks collection, then clear.
+    const marks = await (async () => {
+      if (!indexing) return null;
+      const target = config.imagePath;
+      await ipc.setPhotoMarks([target], { type: "rating", stars: 4 });
+      const counts = await ipc.setPhotoMarks([target], { type: "flag", flag: "pick" });
+      const listed = (await ipc.listFolder(indexing.folder)).photos.find((p) => p.path === target)?.marks ?? null;
+      const picks = await ipc.libraryCollection("picks");
+      await ipc.setPhotoMarks([target], { type: "rating", stars: 0 });
+      const cleared = await ipc.setPhotoMarks([target], { type: "flag", flag: "none" });
+      return { counts, listed, inPicks: picks.photos.some((p) => p.path === target), cleared };
+    })();
+    const marksOk =
+      marks !== null &&
+      marks.listed?.rating === 4 &&
+      marks.listed.flag === "pick" &&
+      marks.inPicks &&
+      marks.counts.picks >= 1 &&
+      marks.cleared.picks === marks.counts.picks - 1;
+
     // Quit guard: closing the window while an export runs must be held for
     // confirmation. The final shutdown (self_test_report) then cancels the export.
     let quitRequested: { exportsRunning: number } | null = null;
@@ -268,6 +289,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       quitHeldDuringExport: quitGuard.held,
       libraryIndexed: indexOk,
       libraryThumbnails: thumbnailsOk,
+      ratingsAndFlags: marksOk,
     };
     // Named so that a failing run explains itself.
     const failed = Object.entries(checks)
@@ -292,6 +314,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       quitGuard,
       indexing,
       thumbnails,
+      marks,
       detailFrame: { size: `${detail.frame.width}x${detail.frame.height}`, rustRenderMs: detail.frame.renderMs, roundTripMs: detail.info.roundTripMs },
       baselineUiFrameGapMs: summarise(baselineGaps),
       idleDrag,

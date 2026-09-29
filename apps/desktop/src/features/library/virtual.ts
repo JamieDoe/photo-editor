@@ -49,3 +49,21 @@ export function gridLayout(width: number): GridLayout {
   const cardWidth = (usable - GRID_GAP_X * (columns - 1)) / columns;
   return { columns, cardWidth, rowHeight: Math.round((cardWidth * 2) / 3 + CAPTION_HEIGHT + GRID_GAP_Y) };
 }
+
+/**
+ * The scroll position that brings row `rowIndex` fully into view, or null if it is
+ * already visible. Used when the keyboard moves the selection.
+ */
+export function scrollToReveal(v: {
+  scrollTop: number;
+  viewportHeight: number;
+  listTop: number;
+  rowHeight: number;
+  rowIndex: number;
+}): number | null {
+  const top = v.listTop + v.rowIndex * v.rowHeight;
+  const bottom = top + v.rowHeight;
+  if (top < v.scrollTop) return top;
+  if (bottom > v.scrollTop + v.viewportHeight) return bottom - v.viewportHeight;
+  return null;
+}
