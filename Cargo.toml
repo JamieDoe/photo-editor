@@ -8,6 +8,9 @@ members = [
     "crates/jobs",
     "crates/export",
     "crates/jpeg-turbo",
+    "crates/platform",
+    "crates/folders",
+    "crates/settings",
     "crates/app-core",
     "crates/fixtures",
     "crates/bench",
@@ -23,6 +26,9 @@ default-members = [
     "crates/jobs",
     "crates/export",
     "crates/jpeg-turbo",
+    "crates/platform",
+    "crates/folders",
+    "crates/settings",
     "crates/app-core",
     "crates/fixtures",
     "crates/bench",
@@ -43,6 +49,9 @@ cache = { path = "crates/cache" }
 jobs = { path = "crates/jobs" }
 export = { path = "crates/export" }
 jpeg-turbo = { path = "crates/jpeg-turbo" }
+platform = { path = "crates/platform" }
+folders = { path = "crates/folders" }
+settings = { path = "crates/settings" }
 app-core = { path = "crates/app-core" }
 fixtures = { path = "crates/fixtures" }
 
@@ -55,6 +64,7 @@ png = "0.18"
 ts-rs = "12"
 cc = "1"
 libc = "0.2"
+log = "0.4"
 
 [profile.dev]
 # Pixel loops are unusably slow at opt-level 0; keep debug builds interactive.

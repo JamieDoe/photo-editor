@@ -7,7 +7,7 @@
  */
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { createRoot } from "react-dom/client";
-import { App } from "../src/App";
+import { App } from "../src/app/App";
 import "../src/styles.css";
 
 const specs = [
@@ -16,6 +16,35 @@ const specs = [
   { key: "temperature", label: "Temperature", group: "Colour", min: -100, max: 100, step: 1, default: 0 },
   { key: "saturation", label: "Saturation", group: "Colour", min: -100, max: 100, step: 1, default: 0 },
 ];
+
+let mockSettings: Record<string, unknown> = {
+  version: 1,
+  general: { theme: "system" },
+  performance: { previewCacheMb: 256, backgroundIntensity: "balanced" },
+  library: { defaultFolder: null, recentFolders: [] },
+  export: { jpegQuality: 92 },
+};
+
+function mockListing(path: string) {
+  const parts = path.split("/").filter(Boolean);
+  const rootIndex = parts.indexOf("Photos");
+  const crumbs = parts.slice(rootIndex).map((name, i) => ({ name, path: "/" + parts.slice(0, rootIndex + i + 1).join("/") }));
+  const photos = Array.from({ length: 14 }, (_, i) => ({
+    name: `DSC_${String(i * 7 + 2).padStart(4, "0")}.${i % 5 === 4 ? "JPG" : "NEF"}`,
+    path: `${path}/DSC_${i}.NEF`,
+    sizeBytes: 24_000_000 + i * 731_000,
+    modifiedMs: Date.UTC(2026, 7, 14, 9, i * 3),
+    raw: i % 5 !== 4,
+  }));
+  return {
+    path,
+    name: parts[parts.length - 1],
+    breadcrumbs: crumbs,
+    folders: parts.length - rootIndex < 3 ? [{ name: "Day 1", path: `${path}/Day 1` }, { name: "Day 2", path: `${path}/Day 2` }] : [],
+    photos,
+    skipped: 0,
+  };
+}
 
 function placeholderFrame(w: number, h: number): ArrayBuffer {
   const buf = new ArrayBuffer(20 + w * h * 4);
@@ -32,7 +61,7 @@ function placeholderFrame(w: number, h: number): ArrayBuffer {
   return buf;
 }
 
-mockIPC((cmd) => {
+mockIPC((cmd, payload) => {
   switch (cmd) {
     case "engine_info":
       return { rendererVersion: 1, recipeVersion: 1, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs };
@@ -43,6 +72,29 @@ mockIPC((cmd) => {
       return placeholderFrame(600, 400);
     case "self_test_config":
       return null;
+    case "diagnostics":
+      return { appVersion: "0.0.1", os: "mock", arch: "mock", cpuThreads: 10, rendererVersion: 1, librawVersion: "mock", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", logDir: "/mock/logs" };
+    case "report_client_error":
+      return "E-MOCK-1";
+    case "update_settings":
+      mockSettings = (payload as { settings: Record<string, unknown> }).settings;
+      return { settings: mockSettings, restartRequired: false, recoveredFrom: null };
+    case "choose_folder": {
+      const lib = mockSettings.library as { recentFolders: string[] };
+      lib.recentFolders = ["/Users/me/Photos/2026 Iceland", ...lib.recentFolders.filter((f) => f !== "/Users/me/Photos/2026 Iceland")];
+      return mockListing("/Users/me/Photos/2026 Iceland");
+    }
+    case "list_folder":
+      return mockListing((payload as { path: string }).path);
+    case "set_default_folder":
+      (mockSettings.library as { defaultFolder: string | null }).defaultFolder = (payload as { path: string }).path;
+      return { settings: mockSettings, restartRequired: false, recoveredFrom: null };
+    case "get_settings":
+      return {
+        settings: mockSettings,
+        restartRequired: false,
+        recoveredFrom: null,
+      };
     default:
       return null;
   }

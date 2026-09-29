@@ -137,6 +137,17 @@ impl<K: Eq + Hash + Clone, V> ByteLru<K, V> {
         }
     }
 
+    /// Changes the byte budget, evicting least recently used entries to fit.
+    pub fn set_budget(&mut self, budget_bytes: usize) {
+        self.budget = budget_bytes;
+        self.stats.budget_bytes = budget_bytes;
+        while self.used > self.budget {
+            if !self.evict_oldest() {
+                break;
+            }
+        }
+    }
+
     fn evict_oldest(&mut self) -> bool {
         let oldest = self
             .map
@@ -204,6 +215,19 @@ mod tests {
         c.insert("c", Arc::new(3), 10); // "a" is still the oldest
         assert!(!c.contains(&"a"));
         assert_eq!((c.stats().hits, c.stats().misses), (0, 0));
+    }
+
+    #[test]
+    fn shrinking_budget_evicts_oldest_first() {
+        let mut c = ByteLru::new(100);
+        for k in 0..5 {
+            c.insert(k, Arc::new(()), 20);
+        }
+        c.get(&0); // most recently used survives
+        c.set_budget(40);
+        assert_eq!(c.used_bytes(), 40);
+        assert!(c.contains(&0) && c.contains(&4));
+        assert_eq!(c.stats().budget_bytes, 40);
     }
 
     #[test]

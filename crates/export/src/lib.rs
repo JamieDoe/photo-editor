@@ -4,7 +4,6 @@
 //! failed or cancelled export never leaves a truncated file behind.
 
 use std::fmt;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use image_core::{OutputImage, PixelFormat};
@@ -161,30 +160,12 @@ fn encode_pure_rust(image: &OutputImage, quality: u8) -> Result<Vec<u8>, ExportE
     Ok(out)
 }
 
-/// Writes `bytes` to `dest` atomically.
+/// Writes `bytes` to `dest` atomically (see [`platform::fs::write_atomic`]).
 pub fn write_atomic(dest: &Path, bytes: &[u8]) -> Result<(), ExportError> {
-    let dir = dest
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let name = dest
-        .file_name()
-        .ok_or_else(|| ExportError::InvalidDestination("no file name".into()))?;
-    let tmp: PathBuf = dir.join(format!(
-        ".{}.{}.tmp",
-        name.to_string_lossy(),
-        std::process::id()
-    ));
-    let result = (|| {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(bytes)?;
-        f.sync_all()?;
-        std::fs::rename(&tmp, dest)
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&tmp);
+    if dest.file_name().is_none() {
+        return Err(ExportError::InvalidDestination("no file name".into()));
     }
-    result.map_err(ExportError::Io)
+    platform::fs::write_atomic(dest, bytes).map_err(ExportError::Io)
 }
 
 fn to_u16(v: u32) -> Result<u16, ExportError> {

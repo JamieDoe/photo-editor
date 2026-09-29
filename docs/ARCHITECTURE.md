@@ -1,7 +1,7 @@
 # Architecture
 
-Status: **Phase 0 prototype** (RAW/rendering architecture spike). This document
-describes the system as it exists today. Product intent lives in `PRODUCT.md`;
+Status: **Phase 1, desktop shell** (on top of the Phase 0 rendering prototype). This
+document describes the system as it exists today. Product intent lives in `PRODUCT.md`;
 rendering detail in `RENDERING.md`; measurements in `PERFORMANCE.md`; decisions in
 `ADR/`.
 
@@ -10,11 +10,21 @@ rendering detail in `RENDERING.md`; measurements in `PERFORMANCE.md`; decisions 
 ```text
 apps/desktop (Tauri 2)
 ├── src/                React + TypeScript: controls, display, interaction only
+│   ├── app/            shell: modes, error boundary, error handling
+│   ├── components/     shared UI (error banner, quit dialog)
 │   ├── ipc/            typed command wrappers + generated payload types
-│   └── features/       editor (viewer, sliders, preview scheduler), selftest
+│   ├── lib/            small pure helpers (formatting, clipboard)
+│   └── features/       library, editor, settings, selftest
 └── src-tauri/          thin command layer: IPC payloads <-> engine calls
+    ├── commands/       images, export, library, settings, system, selftest
+    ├── state.rs        AppState: engine, settings, folder access, running exports
+    ├── lifecycle.rs    quit/close handling, shutdown
+    └── logging.rs      log sink, panic hook, error references
         │
         ▼
+crates/settings         typed, versioned settings; crash-safe JSON store
+crates/folders          one-level folder listings; FolderAccess scope
+crates/platform         OS-level helpers (atomic file writes)
 crates/app-core         Engine: open / render_preview / export / close
    ├── jobs             lanes, priority, supersession, cooperative cancellation
    ├── cache            bounded LRU (byte budget), stable render keys
@@ -38,13 +48,26 @@ workspace; `renderer` and `raw` never know about each other, jobs, caches or Tau
 | Layer | Owns | Must not |
 |---|---|---|
 | React (`apps/desktop/src`) | UI state, controls, when to request previews, blitting frames to a canvas | decode, process or resample pixels; touch the filesystem |
-| Tauri commands (`src-tauri`) | IPC payload conversion, native dialogs, event emission | do heavy work on the main thread; expose engine internals |
+| Tauri commands (`src-tauri`) | IPC payload conversion, native dialogs, event emission, folder access checks, lifecycle | do heavy work on the main thread; expose engine internals |
+| `settings` | preference schema, validation, persistence | contain catalogue data or UI state |
+| `folders` | listing folders, deciding which paths are granted | read photo contents |
 | `app-core` | orchestration: file identity, open images, preview cache, job submission, export flow | depend on Tauri or UI concepts |
 | `renderer` | recipe schema/versioning, render plan, CPU backend | do I/O; know which decoder produced the pixels |
 | `raw` | converting files into `LinearImage` | apply edits |
 | `jobs` | scheduling, cancellation, lane isolation | know what a job does |
 
 ## 3. Data flow
+
+### Browse (Library)
+
+```text
+UI "Choose folder…" ─► choose_folder (Rust shows native folder dialog)
+      ─► FolderAccess.grant(folder)   // canonical path; the only way to add access
+      ─► settings.recent_folders += folder
+      ─► folders::list_folder (subfolders + supported photos, natural order)
+UI clicks a subfolder / breadcrumb ─► list_folder(path)  // must be inside a grant
+UI clicks a photo ─► open_image_path(path)               // must be inside a grant
+```
 
 ### Open
 
@@ -104,9 +127,14 @@ UI "Export…" ─► export_image (Rust shows save dialog, validates destinatio
   silently ignored by the UI.
 - The webview is granted only `core:default`. Native dialogs are opened from Rust, so
   the frontend never receives dialog or filesystem permissions.
-- `open_image_path` accepts a path (needed for drag-and-drop and the self-test); it is
-  read-only. Writing to a caller-supplied path is refused unless the app was launched
-  in self-test mode.
+- **Folder access scope** (ADR 0010). The webview can list folders and open photos
+  only inside folders the user picked in the native dialog. Those grants are
+  remembered as the default and recent folders, and settings updates from the UI
+  cannot add folders. Paths are checked after canonicalisation, so `..` and
+  symlinks cannot escape. Writing to a caller-supplied path is refused unless the
+  app was launched in self-test mode.
+- Errors carry a reference (e.g. `E-M2P8J-1`) that also appears in the log line with
+  the technical detail (ADR 0008).
 
 ### Development aids
 
@@ -116,7 +144,24 @@ UI "Export…" ─► export_image (Rust shows save dialog, validates destinatio
 - `http://localhost:1420/dev/mock.html` (while `npm run dev` runs): the UI with IPC
   mocked by `@tauri-apps/api/mocks`, for layout work without Rust. Not bundled.
 
-## 5. Threads
+## 5. Settings, logging and lifecycle
+
+- **Settings** (ADR 0009): `settings.json` in the OS config directory (macOS
+  `~/Library/Application Support/dev.photoeditor.prototype/`). Loaded at start-up
+  with defaults for anything missing; a corrupt file is moved aside. Saved
+  atomically, debounced in the UI.
+  - Applied live: theme, preview cache size, export quality.
+  - Applied on next launch: background intensity.
+- **Logging** (ADR 0008): `photo-editor.log` in the OS log directory (macOS
+  `~/Library/Logs/dev.photoeditor.prototype/`), rotated at 5 MB × 5. It includes
+  UI errors, panics, opens, exports and settings changes. Nothing leaves the machine.
+- **Lifecycle** (ADR 0011):
+  - One instance: a second launch focuses the existing window.
+  - Window size and position are restored.
+  - Closing or quitting during an export asks for confirmation. Confirming cancels
+    the export and waits up to 5 s, so nothing half-written is left.
+
+## 6. Threads
 
 | Thread | Work |
 |---|---|
@@ -130,20 +175,21 @@ LibRaw is built with OpenMP by Homebrew. Each decode caps OpenMP at the calling
 lane's compute-pool size (`DecodeOptions::max_threads`), so background decodes stay
 within half the machine.
 
-## 6. Non-destructive guarantees
+## 7. Non-destructive guarantees
 
 - Decoders only read source files. No code path opens a source for writing.
 - `export::validate_destination` rejects the source path (after canonicalisation) and
   wrong extensions; writes are atomic via a temporary file in the same directory.
 - Integration tests assert source bytes and mtime are unchanged after export.
 
-## 7. Persistence
+## 8. Persistence
 
-Phase 0 persists nothing. There is no SQLite: recipes live in UI state for the session
-only. `EditRecipe` is already versioned and serialisable (`to_json`/`from_json` with
-migration hook) so Phase 2 can store it without changing its shape.
+- Persisted: settings (including default and recent folders), window state, logs.
+- Not persisted yet: edit recipes live in UI state for the session. There is no SQLite
+  or catalogue (Phase 2). `EditRecipe` is already versioned and serialisable, so
+  Phase 2 can store it without changing its shape.
 
-## 8. Known limitations (Phase 0)
+## 9. Known limitations
 
 See `PERFORMANCE.md` for measured consequences.
 
@@ -158,3 +204,8 @@ See `PERFORMANCE.md` for measured consequences.
 - Windows: LibRaw is opened with a narrow-character path (non-ASCII paths will fail);
   the LibRaw DLL is not bundled.
 - The recipe is not persisted and there is no undo history yet.
+- Library: one folder level at a time, no thumbnails, no search/sort options; very
+  large folders render every row (virtualised grid is Phase 2).
+- A granted folder that is later moved is not followed; the user chooses it again.
+- Recent folders cannot be removed from the list yet.
+- Background intensity changes need a restart (thread pools are created at start-up).

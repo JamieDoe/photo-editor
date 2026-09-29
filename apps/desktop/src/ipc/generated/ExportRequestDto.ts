@@ -3,10 +3,6 @@ import type { EditRecipe } from "./EditRecipe";
 
 export type ExportRequestDto = { imageId: number, recipe: EditRecipe, 
 /**
- * JPEG quality 1-100.
- */
-quality: number, 
-/**
  * Only honoured in self-test mode; otherwise a save dialog is shown.
  */
 destination: string | null, };

@@ -3,45 +3,77 @@
 
 mod commands;
 mod ipc;
+mod lifecycle;
+mod logging;
+mod state;
 
 use std::path::PathBuf;
-use std::sync::atomic::AtomicU64;
 
-use app_core::{Engine, EngineConfig};
+use tauri::Manager;
 
-/// Shared application state managed by Tauri.
-pub struct AppState {
-    pub engine: Engine,
-    /// Set when launched with `PE_SELF_TEST=<image path>` (see docs/PERFORMANCE.md).
-    pub self_test: Option<PathBuf>,
-    /// Export ids are allocated here (not by the job system) so progress events can
-    /// carry the id from the very first event.
-    pub next_export_id: AtomicU64,
-}
+pub use state::AppState;
 
 fn main() {
+    logging::install_panic_hook();
     let self_test = std::env::var_os("PE_SELF_TEST").map(PathBuf::from);
-    let state = AppState {
-        engine: Engine::new(EngineConfig::default()),
-        self_test,
-        next_export_id: AtomicU64::new(1),
-    };
 
-    tauri::Builder::default()
+    let result = tauri::Builder::default()
+        // Must be first: a second launch hands over to the running app and exits.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            log::info!("second launch; focusing the existing window");
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
+        // Registered early so that everything after it can log.
+        .plugin(logging::plugin())
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_dialog::init())
-        .manage(state)
+        .plugin(tauri_plugin_opener::init())
+        .setup(move |app| {
+            let info = app.package_info();
+            log::info!(
+                "{} {} starting ({} {})",
+                info.name,
+                info.version,
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            );
+            // Needs the app handle for the platform config directory, so the state is
+            // created here rather than before the builder.
+            let settings_path = app.path().app_config_dir()?.join("settings.json");
+            app.manage(AppState::new(settings_path, self_test.clone()));
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
-            commands::engine_info,
-            commands::open_image_dialog,
-            commands::open_image_path,
-            commands::render_preview,
-            commands::export_image,
-            commands::self_test_config,
-            commands::self_test_report,
+            commands::system::engine_info,
+            commands::system::diagnostics,
+            commands::system::open_logs_folder,
+            commands::system::report_client_error,
+            commands::settings::get_settings,
+            commands::settings::update_settings,
+            commands::library::choose_folder,
+            commands::library::list_folder,
+            commands::library::set_default_folder,
+            commands::images::open_image_dialog,
+            commands::images::open_image_path,
+            commands::images::render_preview,
+            commands::export::export_image,
+            commands::selftest::self_test_config,
+            commands::selftest::self_test_report,
+            commands::selftest::self_test_request_close,
+            lifecycle::quit,
         ])
-        .run(tauri::generate_context!())
-        .unwrap_or_else(|e| {
-            eprintln!("fatal: failed to run application: {e}");
+        .on_window_event(lifecycle::on_window_event)
+        .build(tauri::generate_context!());
+    let app = match result {
+        Ok(app) => app,
+        Err(e) => {
+            log::error!("fatal: failed to start application: {e}");
+            eprintln!("fatal: failed to start application: {e}");
             std::process::exit(1);
-        });
+        }
+    };
+    app.run(lifecycle::on_run_event);
 }

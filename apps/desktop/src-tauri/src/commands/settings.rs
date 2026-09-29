@@ -1,0 +1,97 @@
+use settings::Settings;
+use tauri::State;
+
+use super::IpcResult;
+use crate::AppState;
+use crate::ipc::{IpcError, SettingsViewDto};
+
+pub(super) fn view(state: &AppState) -> SettingsViewDto {
+    SettingsViewDto {
+        settings: state.settings.get(),
+        restart_required: state.restart_required(),
+        recovered_from: state
+            .settings_recovered_from
+            .as_ref()
+            .map(|p| p.display().to_string()),
+    }
+}
+
+#[tauri::command]
+pub fn get_settings(state: State<'_, AppState>) -> SettingsViewDto {
+    view(&state)
+}
+
+/// Validates, saves and applies settings. Returns what was actually stored (values are
+/// clamped to their ranges).
+#[tauri::command]
+pub async fn update_settings(
+    state: State<'_, AppState>,
+    settings: Settings,
+) -> IpcResult<SettingsViewDto> {
+    let before = state.settings.get();
+    let settings = guard_library_changes(&before, settings);
+    let saved = state
+        .settings
+        .update(settings)
+        .map_err(IpcError::internal)?;
+    if saved.performance.preview_cache_mb != before.performance.preview_cache_mb {
+        state
+            .engine
+            .set_preview_cache_budget(saved.performance.preview_cache_mb as usize * 1024 * 1024);
+    }
+    if saved != before {
+        log::info!(
+            "settings updated: {}",
+            serde_json::to_string(&saved).unwrap_or_default()
+        );
+    }
+    Ok(view(&state))
+}
+
+/// Library folders are granted only through the native dialog (see the library
+/// commands), so a settings update from the UI may *clear* the default folder but can
+/// never add or change folders, which would otherwise grant access at next launch.
+fn guard_library_changes(before: &Settings, mut requested: Settings) -> Settings {
+    requested.library.recent_folders = before.library.recent_folders.clone();
+    if requested.library.default_folder.is_some() {
+        requested.library.default_folder = before.library.default_folder.clone();
+    }
+    requested
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn with_folders(default: Option<&str>, recent: &[&str]) -> Settings {
+        let mut s = Settings::default();
+        s.library.default_folder = default.map(str::to_owned);
+        s.library.recent_folders = recent.iter().map(|f| (*f).to_owned()).collect();
+        s
+    }
+
+    #[test]
+    fn ui_cannot_add_or_change_folders() {
+        let before = with_folders(Some("/Photos"), &["/Photos"]);
+        let mut requested = with_folders(Some("/etc"), &["/etc", "/Photos"]);
+        requested.export.jpeg_quality = 80;
+        let result = guard_library_changes(&before, requested);
+        assert_eq!(result.library, before.library);
+        assert_eq!(result.export.jpeg_quality, 80, "other settings still apply");
+    }
+
+    #[test]
+    fn ui_can_clear_the_default_folder() {
+        let before = with_folders(Some("/Photos"), &["/Photos"]);
+        let result = guard_library_changes(&before, with_folders(None, &[]));
+        assert_eq!(result.library.default_folder, None);
+        assert_eq!(result.library.recent_folders, ["/Photos"]);
+    }
+
+    #[test]
+    fn ui_cannot_set_a_default_when_none_existed() {
+        let before = with_folders(None, &[]);
+        let result = guard_library_changes(&before, with_folders(Some("/"), &[]));
+        assert_eq!(result.library.default_folder, None);
+    }
+}

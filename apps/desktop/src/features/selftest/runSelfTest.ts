@@ -1,3 +1,4 @@
+import * as ipc from "../../ipc/client";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { SelfTestConfigDto } from "../../ipc/generated/SelfTestConfigDto";
@@ -103,7 +104,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     const openEventsStart = events.length;
     const tOpen = performance.now();
     const summary = await driver.editor().openPath(config.imagePath);
-    if (!summary) throw new Error(driver.editor().error ?? "open failed");
+    if (!summary) throw new Error(driver.editor().error?.message ?? "open failed");
     const openIpcMs = performance.now() - tOpen;
     const first = await waitFor(() => frames[0], 10_000, "first frame");
     const firstFrameMs = performance.now() - tOpen;
@@ -152,7 +153,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     const reopenEventsStart = events.length;
     const tReopen = performance.now();
     const reopened = await driver.editor().openPath(config.imagePath);
-    if (!reopened) throw new Error(driver.editor().error ?? "re-open failed");
+    if (!reopened) throw new Error(driver.editor().error?.message ?? "re-open failed");
     await waitFor(() => (frames.length > framesBefore ? true : null), 10_000, "re-open frame");
     const reopenEmbedded = embedded[embeddedBefore];
     await sleep(300); // let any late channel message arrive before checking order
@@ -164,16 +165,33 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       firstRenderMs: performance.now() - tReopen,
     };
 
+    // Quit guard: closing the window while an export runs must be held for
+    // confirmation. The final shutdown (self_test_report) then cancels the export.
+    let quitRequested: { exportsRunning: number } | null = null;
+    const unlistenQuit = await ipc.onQuitRequested((e) => (quitRequested = e));
+    const guardExport = await driver.editor().exportImage(config.exportPath);
+    await ipc.selfTestRequestClose();
+    await waitFor(() => quitRequested, 3_000, "quit confirmation request").catch(() => null);
+    unlistenQuit();
+    const quitGuard = { exportStarted: guardExport !== null, held: quitRequested !== null };
+
     const stats = driver.editor().schedulerStats();
-    const ok =
-      finished.type === "finished" &&
-      idleDrag.framesShown > 0 &&
-      dragDuringExport.framesShown > 0 &&
-      cacheHitOnReturn &&
-      !embeddedAfterRender &&
-      stats.errors === 0;
+    const checks = {
+      exportFinished: finished.type === "finished",
+      framesDuringDrag: idleDrag.framesShown > 0,
+      framesDuringExport: dragDuringExport.framesShown > 0,
+      cacheHitOnReturn,
+      previewOrdering: !embeddedAfterRender,
+      noSchedulerErrors: stats.errors === 0,
+      quitHeldDuringExport: quitGuard.held,
+    };
+    // Named so that a failing run explains itself.
+    const failed = Object.entries(checks)
+      .filter(([, passed]) => !passed)
+      .map(([name]) => name);
     return {
-      ok,
+      ok: failed.length === 0,
+      failed,
       file: summary.fileName,
       codecs: { jpegEncoder: info.jpegEncoder, embeddedJpegDecoder: info.embeddedJpegDecoder },
       camera: summary.camera,
@@ -187,6 +205,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       firstVisibleMs: firstEmbedded ? Math.min(firstEmbedded.sinceOpenMs, firstFrameMs) : firstFrameMs,
       embeddedAfterRender,
       reopen,
+      quitGuard,
       detailFrame: { size: `${detail.frame.width}x${detail.frame.height}`, rustRenderMs: detail.frame.renderMs, roundTripMs: detail.info.roundTripMs },
       baselineUiFrameGapMs: summarise(baselineGaps),
       idleDrag,

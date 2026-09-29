@@ -31,6 +31,13 @@ impl PreviewCache {
         }
     }
 
+    /// Resizes both pools (keeping the 1/8 transient share), evicting to fit.
+    pub fn set_budget(&mut self, budget_bytes: usize) {
+        let transient = budget_bytes / TRANSIENT_SHARE;
+        self.settled.set_budget(budget_bytes - transient);
+        self.transient.set_budget(transient);
+    }
+
     pub fn get(&mut self, key: &RenderKey) -> Option<Arc<OutputImage>> {
         // Probe `settled` without recording a miss, so the combined statistics count
         // one hit or one miss per lookup.

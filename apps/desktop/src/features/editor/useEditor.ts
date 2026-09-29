@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { toAppError, type AppError } from "../../app/errors";
 import * as ipc from "../../ipc/client";
 import type { PreviewFrame } from "../../ipc/frame";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
@@ -37,7 +38,9 @@ export function useEditor() {
   const [recipe, setRecipeState] = useState<EditRecipe | null>(null);
   const [displayed, setDisplayed] = useState<DisplayedFrame | null>(null);
   const [stats, setStats] = useState<SchedulerStats | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AppError | null>(null);
+  /** Shows an error to the user (logging it first if it did not come from Rust). */
+  const fail = useCallback((e: unknown) => void toAppError(e).then(setError), []);
   const [busy, setBusy] = useState(false);
   const [exportState, setExportState] = useState<ExportState | null>(null);
 
@@ -70,7 +73,7 @@ export function useEditor() {
       },
       isCancellation: ipc.isCancellation,
       onFrame: (r, frameInfo) => show({ source: "render", frame: r.frame, imageId: r.imageId, info: frameInfo }),
-      onError: (e) => setError(ipc.errorMessage(e)),
+      onError: fail,
       requestFrame: (cb) => requestAnimationFrame(cb),
       setTimer: (cb, ms) => window.setTimeout(cb, ms),
       clearTimer: (h) => window.clearTimeout(h),
@@ -91,15 +94,15 @@ export function useEditor() {
   }
 
   useEffect(() => {
-    ipc.engineInfo().then(setInfo, (e: unknown) => setError(ipc.errorMessage(e)));
+    ipc.engineInfo().then(setInfo, fail);
     const unlisten = ipc
       .onExportEvent((event) => {
         exportEventsRef.current.set(event.jobId, event);
         setExportState((s) => (s && s.jobId === event.jobId ? { ...s, last: event } : s));
-        if (event.type === "failed") setError(event.error.message);
+        if (event.type === "failed") setError({ message: event.error.message, reference: event.error.reference });
       })
       .catch((e: unknown) => {
-        setError(ipc.errorMessage(e));
+        fail(e);
         return () => {};
       });
     return () => void unlisten.then((u) => u());
@@ -151,7 +154,7 @@ export function useEditor() {
         return adopt(summary);
       } catch (e) {
         if (gen === openGenRef.current) restoreAfterFailedOpen(gen);
-        if (!ipc.isCancellation(e)) setError(ipc.errorMessage(e));
+        if (!ipc.isCancellation(e)) fail(e);
         return null;
       } finally {
         if (gen === openGenRef.current) setBusy(false);
@@ -176,14 +179,14 @@ export function useEditor() {
       const img = imageRef.current;
       if (!img || !recipe) return null;
       try {
-        const started = await ipc.exportImage({ imageId: img.id, recipe, quality: 92, destination });
+        const started = await ipc.exportImage({ imageId: img.id, recipe, destination });
         if (started) {
           const early = exportEventsRef.current.get(started.jobId) ?? null;
           setExportState({ jobId: started.jobId, path: started.path, last: early });
         }
         return started;
       } catch (e) {
-        setError(ipc.errorMessage(e));
+        fail(e);
         return null;
       }
     },

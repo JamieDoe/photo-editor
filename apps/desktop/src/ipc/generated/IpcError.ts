@@ -3,6 +3,7 @@ import type { IpcErrorKind } from "./IpcErrorKind";
 
 /**
  * Error returned to the UI: a category and a photographer-facing message.
- * Technical detail is logged on the Rust side, never shown.
+ * Technical detail is logged on the Rust side, never shown; `reference` links the
+ * two (it appears in the log line and in the UI's "Copy details").
  */
-export type IpcError = { kind: IpcErrorKind, message: string, };
+export type IpcError = { kind: IpcErrorKind, message: string, reference: string | null, };
