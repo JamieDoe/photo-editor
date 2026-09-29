@@ -17,6 +17,7 @@ pub struct Settings {
     pub performance: PerformanceSettings,
     pub library: LibrarySettings,
     pub export: ExportSettings,
+    pub backups: BackupSettings,
 }
 
 impl Default for Settings {
@@ -27,6 +28,7 @@ impl Default for Settings {
             performance: PerformanceSettings::default(),
             library: LibrarySettings::default(),
             export: ExportSettings::default(),
+            backups: BackupSettings::default(),
         }
     }
 }
@@ -109,6 +111,16 @@ pub struct LibrarySettings {
     pub recent_folders: Vec<String>,
 }
 
+/// Library backups (ADR 0021).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct BackupSettings {
+    /// A folder (typically on another drive) that also receives every backup. Set only
+    /// through the native folder dialog.
+    pub copy_folder: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -148,6 +160,11 @@ impl Settings {
         lib.recent_folders
             .retain(|f| !f.trim().is_empty() && seen.insert(f.clone()));
         lib.recent_folders.truncate(MAX_RECENT_FOLDERS);
+        self.backups.copy_folder = self
+            .backups
+            .copy_folder
+            .take()
+            .filter(|f| !f.trim().is_empty());
         self
     }
 

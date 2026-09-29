@@ -28,6 +28,25 @@ export function BackupSettings() {
     }
   };
 
+  const run = async (action: () => Promise<BackupStatusDto | null>) => {
+    setError(null);
+    try {
+      const next = await action();
+      if (next) setStatus(next);
+    } catch (e) {
+      setError(ipc.errorMessage(e));
+    }
+  };
+
+  const copy = status?.copy ?? null;
+  const copySummary = !copy
+    ? "Off. Backups stay on this computer’s disk only."
+    : !copy.connected
+      ? "Drive not connected. Copies resume when it’s back."
+      : copy.latestAtMs === null
+        ? "No copy yet."
+        : `Last copied ${formatDateTime(copy.latestAtMs)} · ${copy.count} kept`;
+
   const summary = !status
     ? "…"
     : !status.enabled
@@ -58,6 +77,33 @@ export function BackupSettings() {
             <button className="ghost" onClick={() => void ipc.showBackups().catch((e: unknown) => setError(ipc.errorMessage(e)))}>
               Show in Finder
             </button>
+          </div>
+        </div>
+        <div className="setting">
+          <div className="setting-text">
+            <span className="setting-name">Copy to another drive</span>
+            <small>
+              Also keeps copies in a folder you choose, such as an external drive, so they survive losing this
+              computer’s disk. Only the app’s own subfolder there is ever changed.
+            </small>
+            {copy && (
+              <small className="setting-path mono" title={copy.folder}>
+                {copy.folder}
+              </small>
+            )}
+            <small className={copy && !copy.connected ? "setting-status warn" : "setting-status"} aria-live="polite">
+              {copySummary}
+            </small>
+          </div>
+          <div className="setting-actions">
+            <button onClick={() => void run(ipc.chooseBackupCopyFolder)} disabled={!status?.enabled}>
+              {copy ? "Change…" : "Choose folder…"}
+            </button>
+            {copy && (
+              <button className="ghost" onClick={() => void run(ipc.stopBackupCopies)}>
+                Stop copying
+              </button>
+            )}
           </div>
         </div>
       </div>

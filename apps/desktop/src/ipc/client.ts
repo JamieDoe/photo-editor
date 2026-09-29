@@ -89,6 +89,9 @@ export const saveEdit = (path: string, recipe: EditRecipe) => invoke<EditSavedDt
 export const libraryBackups = () => invoke<BackupStatusDto>("library_backups");
 export const backUpLibrary = () => invoke<BackupStatusDto>("back_up_library");
 export const showBackups = () => invoke<void>("show_backups");
+/** Native folder dialog; null if cancelled. */
+export const chooseBackupCopyFolder = () => invoke<BackupStatusDto | null>("choose_backup_copy_folder");
+export const stopBackupCopies = () => invoke<BackupStatusDto>("stop_backup_copies");
 
 export const libraryCollection = (kind: CollectionKindDto) =>
   invoke<CollectionListingDto>("library_collection", { kind });

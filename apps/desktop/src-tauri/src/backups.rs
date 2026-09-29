@@ -18,6 +18,33 @@ const CHECK_EVERY: Duration = Duration::from_secs(15 * 60);
 const STALE_AFTER_MS: i64 = 12 * 60 * 60 * 1000;
 /// While running: at most hourly, and only if something changed.
 const MIN_INTERVAL_MS: i64 = 60 * 60 * 1000;
+/// Subfolder of the chosen folder that holds the copies, so pruning only ever touches
+/// the app's own files.
+pub const COPY_SUBFOLDER: &str = "Photo Editor Library Backups";
+
+/// Where backups are also copied (the "another drive" setting).
+pub enum CopyTarget {
+    Off,
+    /// The chosen folder is missing: typically its drive is not connected.
+    NotConnected,
+    Ready(BackupStore),
+}
+
+/// The copy target for the chosen folder. The chosen folder itself is never created:
+/// on macOS a missing drive's path would otherwise be created on the startup disk.
+pub fn copy_target(chosen: Option<&str>) -> CopyTarget {
+    match chosen {
+        None => CopyTarget::Off,
+        Some(folder) => {
+            let folder = Path::new(folder);
+            if folder.is_dir() {
+                CopyTarget::Ready(BackupStore::new(folder.join(COPY_SUBFOLDER)))
+            } else {
+                CopyTarget::NotConnected
+            }
+        }
+    }
+}
 
 /// Opens the catalogue at `path`, protecting what cannot be rebuilt:
 /// - before upgrading an existing catalogue to a new schema, it is backed up;
@@ -26,7 +53,11 @@ const MIN_INTERVAL_MS: i64 = 60 * 60 * 1000;
 /// - a catalogue from a newer app version is left untouched and an in-memory one used.
 ///
 /// Returns the catalogue and a notice to show once, if something happened.
-pub fn open_catalogue(path: &Path, store: &BackupStore) -> (Catalogue, Option<String>) {
+pub fn open_catalogue(
+    path: &Path,
+    store: &BackupStore,
+    copy: Option<&BackupStore>,
+) -> (Catalogue, Option<String>) {
     if let Ok(Some(version)) = app_core::schema_version_of(path)
         && version > 0
         && version < app_core::SCHEMA_VERSION
@@ -55,7 +86,8 @@ pub fn open_catalogue(path: &Path, store: &BackupStore) -> (Catalogue, Option<St
             for suffix in ["-wal", "-shm"] {
                 let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
             }
-            if let Some(backup) = store.latest_valid() {
+            let stores: Vec<&BackupStore> = std::iter::once(store).chain(copy).collect();
+            if let Some(backup) = app_core::newest_valid(&stores) {
                 match store
                     .restore(&backup, path)
                     .and_then(|()| Catalogue::open(path))
@@ -124,12 +156,34 @@ fn tick(state: &AppState, at_start_up: bool) -> Result<(), CatalogueError> {
         return Ok(()); // in-memory (self-test, or a catalogue that could not be opened)
     }
     let newest = state.backups.list()?.into_iter().next();
-    let age_ms = newest.map(|b| now_ms() - b.taken_at_ms);
+    let age_ms = newest.as_ref().map(|b| now_ms() - b.taken_at_ms);
     let changed = state.catalogue.change_count() > state.backup_changes.load(Ordering::Relaxed);
     if backup_due(age_ms, changed, at_start_up) {
         back_up(state, BackupKind::Auto)?;
+    } else if let Some(newest) = newest {
+        // The other drive may have been reconnected since the last backup.
+        copy_to_other_drive(state, &newest);
     }
     Ok(())
+}
+
+/// Copies `backup` to the chosen folder on another drive (if set and connected) and
+/// prunes old copies there. A failure is logged, never fatal: the local backup stands.
+pub fn copy_to_other_drive(state: &AppState, backup: &BackupInfo) {
+    let chosen = state.settings.get().backups.copy_folder;
+    let CopyTarget::Ready(other) = copy_target(chosen.as_deref()) else {
+        return;
+    };
+    match other
+        .import(backup)
+        .and_then(|_| Ok(other.prune(now_ms())?))
+    {
+        Ok(_) => log::debug!("backup copied to {}", other.dir().display()),
+        Err(e) => log::warn!(
+            "copying the backup to {} failed: {e}",
+            other.dir().display()
+        ),
+    }
 }
 
 /// Whether a scheduled backup is due, given the age of the newest backup (`None` if
@@ -150,6 +204,7 @@ pub fn back_up(state: &AppState, kind: BackupKind) -> Result<BackupInfo, Catalog
     let info = state.backups.back_up(&state.catalogue, kind)?;
     state.backup_changes.store(changes, Ordering::Relaxed);
     let removed = state.backups.prune(now_ms())?;
+    copy_to_other_drive(state, &info);
     log::info!(
         "catalogue backed up to {} ({} KB); {removed} old backup(s) removed",
         info.path.display(),
@@ -197,7 +252,7 @@ mod tests {
         let dir = fixtures::TempDir::new("app-restore");
         let (path, store) = library(dir.path());
         std::fs::write(&path, vec![0x42; 8192]).unwrap();
-        let (cat, notice) = open_catalogue(&path, &store);
+        let (cat, notice) = open_catalogue(&path, &store, None);
         assert_eq!(cat.folders().unwrap().len(), 1, "restored, not rebuilt");
         let notice = notice.expect("a notice");
         assert!(notice.contains("restored from the backup"), "{notice}");
@@ -216,7 +271,7 @@ mod tests {
         let path = dir.path().join("catalogue.sqlite");
         std::fs::write(&path, vec![0x42; 8192]).unwrap();
         let store = BackupStore::new(dir.path().join("backups"));
-        let (cat, notice) = open_catalogue(&path, &store);
+        let (cat, notice) = open_catalogue(&path, &store, None);
         assert!(cat.folders().unwrap().is_empty());
         assert!(notice.unwrap().contains("rebuilt"));
     }
@@ -226,7 +281,7 @@ mod tests {
         let dir = fixtures::TempDir::new("app-open");
         let (path, store) = library(dir.path());
         let before = store.list().unwrap().len();
-        let (_cat, notice) = open_catalogue(&path, &store);
+        let (_cat, notice) = open_catalogue(&path, &store, None);
         assert_eq!(notice, None);
         assert_eq!(
             store.list().unwrap().len(),
@@ -251,6 +306,39 @@ mod tests {
         assert!(backup_due(Some(hour), true, false), "changed, an hour on");
         assert!(!backup_due(Some(hour / 2), true, false), "at most hourly");
         assert!(!backup_due(Some(5 * hour), false, false), "nothing changed");
+    }
+
+    #[test]
+    fn a_missing_drive_is_reported_and_never_created() {
+        let dir = fixtures::TempDir::new("app-copy-target");
+        assert!(matches!(copy_target(None), CopyTarget::Off));
+        let unplugged = dir.path().join("Volumes/Backup");
+        assert!(matches!(
+            copy_target(Some(unplugged.to_str().unwrap())),
+            CopyTarget::NotConnected
+        ));
+        assert!(!unplugged.exists(), "the chosen folder is never created");
+        match copy_target(Some(dir.path().to_str().unwrap())) {
+            CopyTarget::Ready(store) => assert!(store.dir().ends_with(COPY_SUBFOLDER)),
+            _ => panic!("an existing folder is ready"),
+        }
+    }
+
+    #[test]
+    fn recovery_uses_the_other_drive_when_local_backups_are_gone() {
+        let dir = fixtures::TempDir::new("app-restore-copy");
+        let (path, local) = library(dir.path());
+        let other = BackupStore::new(dir.path().join("drive"));
+        other.import(&local.list().unwrap()[0]).unwrap();
+        std::fs::remove_dir_all(local.dir()).unwrap();
+        std::fs::write(&path, vec![0x42; 8192]).unwrap();
+        let (cat, notice) = open_catalogue(&path, &local, Some(&other));
+        assert_eq!(
+            cat.folders().unwrap().len(),
+            1,
+            "restored from the other drive"
+        );
+        assert!(notice.unwrap().contains("restored"));
     }
 
     #[test]

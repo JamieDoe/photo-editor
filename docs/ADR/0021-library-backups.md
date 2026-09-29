@@ -40,9 +40,23 @@ them. Everything must stay local (PRODUCT.md §2.6).
    - The Library shows a notice saying when that backup was taken and what was lost.
    - The catalogue is rebuilt empty only when no good backup exists.
 5. **Location.** Backups live in the app-data folder (`…/backups`), and Settings can
-   open it. They are on the same disk, which protects against damage but not against
-   losing the disk. Copying backups to a folder of the user's choosing (for example an
-   external drive) is deferred until wanted.
+   open it. That protects against damage, not against losing the disk.
+6. **Copy to another drive.**
+   - In Settings the user can choose a folder, typically on an external drive, with
+     the native dialog. The webview can never set this path (the same guard as for
+     library folders).
+   - Every backup is also copied into `<folder>/Photo Editor Library Backups/`: copied
+     to a temporary file, checked, then renamed, under the same name. The same
+     retention applies there, and only that subfolder is ever changed.
+   - If the chosen folder is missing (drive unplugged), nothing is written and
+     Settings says "Drive not connected". The folder is never created, because on macOS
+     that would silently create it on the startup disk.
+   - When the drive returns, the newest backup is copied at the next check (at most
+     15 minutes).
+   - Recovery restores the newest good backup from either location.
+   - Stopping copies keeps the ones already there.
+   - The subfolder name uses the working product name; renaming the product will need
+     to keep reading the old name.
 
 ## Consequences
 

@@ -53,6 +53,7 @@ impl AppState {
         self_test: Option<PathBuf>,
     ) -> Self {
         let backups = BackupStore::new(backups_dir);
+        let (settings, outcome) = SettingsStore::load(settings_path);
         // Self-test runs must never touch the user's library.
         let (catalogue, catalogue_notice) = if self_test.is_some() {
             (
@@ -60,9 +61,13 @@ impl AppState {
                 None,
             )
         } else {
-            crate::backups::open_catalogue(&catalogue_path, &backups)
+            let copy =
+                match crate::backups::copy_target(settings.get().backups.copy_folder.as_deref()) {
+                    crate::backups::CopyTarget::Ready(store) => Some(store),
+                    _ => None,
+                };
+            crate::backups::open_catalogue(&catalogue_path, &backups, copy.as_ref())
         };
-        let (settings, outcome) = SettingsStore::load(settings_path);
         match &outcome {
             LoadOutcome::Fresh => log::info!("no settings file yet; using defaults"),
             LoadOutcome::Loaded => log::info!("settings loaded from {}", settings.path().display()),

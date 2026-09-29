@@ -205,3 +205,37 @@ fn pruning_deletes_files_on_disk() {
     assert_eq!(store.prune(now_ms()).unwrap(), 2);
     assert_eq!(store.list().unwrap().len(), 3);
 }
+
+#[test]
+fn backups_are_imported_into_a_second_store_under_the_same_name() {
+    let l = library("backup-import");
+    let local = BackupStore::new(l.dir.path().join("backups"));
+    let other = BackupStore::new(l.dir.path().join("drive/copies"));
+    let b = local.back_up(&l.cat, BackupKind::Auto).unwrap();
+    let copied = other.import(&b).unwrap();
+    assert_eq!(copied.path.file_name(), b.path.file_name());
+    assert_eq!((copied.taken_at_ms, copied.kind), (b.taken_at_ms, b.kind));
+    // Importing again is a no-op; listing parses it like any backup.
+    other.import(&b).unwrap();
+    assert_eq!(other.list().unwrap().len(), 1);
+    assert!(Catalogue::open(&copied.path).is_ok());
+}
+
+#[test]
+fn the_newest_good_backup_is_found_across_stores() {
+    let l = library("backup-across");
+    let local = BackupStore::new(l.dir.path().join("backups"));
+    let other = BackupStore::new(l.dir.path().join("drive"));
+    let older = local.back_up(&l.cat, BackupKind::Auto).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let newer = local.back_up(&l.cat, BackupKind::Auto).unwrap();
+    other.import(&newer).unwrap();
+    // The local copy of the newest backup is damaged: the other drive's copy wins.
+    std::fs::write(&newer.path, b"damaged").unwrap();
+    let found = newest_valid(&[&local, &other]).unwrap();
+    assert_eq!(found.taken_at_ms, newer.taken_at_ms);
+    assert!(found.path.starts_with(other.dir()));
+    // With the other drive missing, the older local backup is the fallback.
+    let found = newest_valid(&[&local]).unwrap();
+    assert_eq!(found.path, older.path);
+}

@@ -91,6 +91,8 @@ fn main() {
             commands::backups::library_backups,
             commands::backups::back_up_library,
             commands::backups::show_backups,
+            commands::backups::choose_backup_copy_folder,
+            commands::backups::stop_backup_copies,
             commands::images::open_image_dialog,
             commands::images::open_image_path,
             commands::images::render_preview,

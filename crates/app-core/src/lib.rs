@@ -17,7 +17,7 @@ mod types;
 pub use catalogue::{
     BackupInfo, BackupKind, BackupStore, Catalogue, CatalogueError, Collection, CollectionCounts,
     CollectionEntry, FileStatus, Flag, MarkChange, Marks, PhotoDetails, PhotoId, Rating,
-    SourceIdentity, StoredEdit,
+    SourceIdentity, StoredEdit, newest_valid,
 };
 pub use catalogue::{SCHEMA_VERSION, schema_version_of};
 pub use config::EngineConfig;

@@ -134,6 +134,34 @@ impl BackupStore {
         })
     }
 
+    /// Copies `backup` (from another store) into this one under the same name, so both
+    /// folders apply the same retention. Verified before it counts; a copy already here
+    /// is left as is.
+    pub fn import(&self, backup: &BackupInfo) -> Result<BackupInfo> {
+        let name = backup
+            .path
+            .file_name()
+            .ok_or_else(|| CatalogueError::Io(io::Error::other("backup has no file name")))?;
+        let dest = self.dir.join(name);
+        if !dest.exists() {
+            std::fs::create_dir_all(&self.dir)?;
+            let temp = self.dir.join(format!(".{}.tmp", name.to_string_lossy()));
+            let copied = std::fs::copy(&backup.path, &temp)
+                .map_err(CatalogueError::from)
+                .and_then(|_| verify(&temp));
+            if let Err(e) = copied {
+                let _ = std::fs::remove_file(&temp);
+                return Err(e);
+            }
+            std::fs::rename(&temp, &dest)?;
+        }
+        Ok(BackupInfo {
+            bytes: std::fs::metadata(&dest)?.len(),
+            path: dest,
+            ..backup.clone()
+        })
+    }
+
     /// Deletes backups the retention policy no longer keeps; returns how many.
     pub fn prune(&self, now_ms: i64) -> io::Result<usize> {
         let all = self.list()?;
@@ -166,6 +194,18 @@ impl BackupStore {
         std::fs::rename(&temp, dest)?;
         Ok(())
     }
+}
+
+/// The newest backup that passes an integrity check, across several stores (the local
+/// folder and a copy on another drive).
+pub fn newest_valid(stores: &[&BackupStore]) -> Option<BackupInfo> {
+    let mut all: Vec<BackupInfo> = stores
+        .iter()
+        .filter_map(|s| s.list().ok())
+        .flatten()
+        .collect();
+    all.sort_by_key(|b| std::cmp::Reverse(b.taken_at_ms));
+    all.into_iter().find(|b| verify(&b.path).is_ok())
 }
 
 /// The schema version of the catalogue file at `path` without opening it for writing

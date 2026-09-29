@@ -625,6 +625,22 @@ pub struct BackupStatusDto {
     #[ts(type = "number | null")]
     pub latest_at_ms: Option<i64>,
     pub folder: String,
+    /// Copies on another drive; null when not set up.
+    pub copy: Option<BackupCopyDto>,
+}
+
+/// Backups also copied to a chosen folder, typically on another drive.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct BackupCopyDto {
+    /// The chosen folder (copies go into a subfolder of it).
+    pub folder: String,
+    /// False when the folder is missing, typically because its drive is unplugged.
+    pub connected: bool,
+    pub count: u32,
+    #[ts(type = "number | null")]
+    pub latest_at_ms: Option<i64>,
 }
 
 /// Library-wide facts for the Library screen.
