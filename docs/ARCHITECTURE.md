@@ -138,7 +138,8 @@ slider change ─► setRecipe ─► PreviewScheduler (≤ 1 request per animat
                hit  ─► respond immediately, cancel in-flight viewer render
                miss ─► job on interactive lane, supersede key "viewer-preview"
                         (cancels the previous render) ─► CpuRenderer ─► cache insert
-  ◄─ binary frame: 20-byte header + RGBA8 pixels
+  ◄─ binary frame: 28-byte header (incl. the full-resolution output size after crop,
+     which the viewer's box follows) + RGBA8 pixels
   ─► putImageData on a canvas (no pixel processing in JS)
 ... 180 ms after the last change: one "detail" render at viewport resolution
 ```

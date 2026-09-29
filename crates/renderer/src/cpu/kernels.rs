@@ -4,6 +4,7 @@ use image_core::LinearImage;
 use image_core::color::REC709_LUMA;
 
 use super::lut::CurveLut;
+use crate::geometry::Geometry;
 use crate::ops::colour_mixer::{self, MixerTable};
 use crate::ops::dehaze::DehazeModel;
 use crate::ops::detail::{self, DetailParams};
@@ -109,6 +110,27 @@ fn source_key(source: &LinearImage) -> SourceKey {
 }
 
 type GainBits = [u32; 3];
+
+/// The most recent framed (cropped and straightened) source, so dragging other
+/// controls does not resample again, and the maps built from it stay cached (they key
+/// on its buffer). One entry.
+pub(super) fn cached_frame(source: &LinearImage, g: &Geometry) -> Arc<LinearImage> {
+    type Key = (SourceKey, [u32; 5]);
+    static LAST: Mutex<Option<(Key, Arc<LinearImage>)>> = Mutex::new(None);
+    let c = g.crop;
+    let key: Key = (
+        source_key(source),
+        [g.straighten, c.x, c.y, c.w, c.h].map(f32::to_bits),
+    );
+    if let Some((k, frame)) = LAST.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+        && *k == key
+    {
+        return Arc::clone(frame);
+    }
+    let frame = Arc::new(crate::geometry::resample(source, g));
+    *LAST.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, Arc::clone(&frame)));
+    frame
+}
 /// A cached map and what it was built for.
 type Keyed<K, T> = Option<(K, Arc<T>)>;
 

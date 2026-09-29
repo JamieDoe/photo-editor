@@ -63,6 +63,14 @@ export const ColourIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** The design's crop / Geometry icon. */
+export const CropIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 1.5V12h10.5" />
+    <path d="M1.5 4H12v10.5" />
+  </Icon>
+);
+
 export const DetailIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M2 5V3a1 1 0 0 1 1-1h2M11 2h2a1 1 0 0 1 1 1v2M14 11v2a1 1 0 0 1-1 1h-2M5 14H3a1 1 0 0 1-1-1v-2" />

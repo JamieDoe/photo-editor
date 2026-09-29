@@ -213,6 +213,11 @@ impl RenderBackend for GpuRenderer {
 /// Maps the plan onto the shader's fixed stage order. Returns an error for plans the
 /// spike's single fused kernel cannot express.
 fn params_for(plan: &RenderPlan, pixel_count: u32) -> Result<Params, RenderError> {
+    if plan.geometry.is_some() {
+        return Err(RenderError::Backend(
+            "crop and straighten are not supported by the GPU spike".into(),
+        ));
+    }
     let mut p = Params {
         gains: [1.0, 1.0, 1.0, 1.0],
         contrast_gamma: 1.0,

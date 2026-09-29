@@ -277,6 +277,50 @@ button.flag-button.reject[aria-pressed="true"] { background: var(--danger-soft);
 .photo-counter { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .viewer-canvas { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 3px; box-shadow: var(--photo-shadow); background: #000; }
 .viewer-empty { color: var(--text-3); font-size: 12.5px; }
+.viewer-frame { position: relative; max-width: 100%; max-height: 100%; }
+/* Crop tool, as in the design (ADR 0032). */
+.crop-overlay { position: absolute; inset: 0; touch-action: none; }
+button.tool-button { height: 32px; padding: 0 10px; border-radius: 8px; gap: 7px; font-size: 12.5px; font-weight: 400; background: transparent; border-color: transparent; color: var(--text-2); }
+button.tool-button:hover:not(:disabled) { background: var(--hover-strong); color: var(--text); }
+.crop-rect { position: absolute; box-shadow: 0 0 0 2000px rgb(8 8 10 / 62%); outline: 1px solid rgb(255 255 255 / 85%); cursor: move; }
+.viewer-frame { overflow: hidden; }
+.crop-third { position: absolute; background: rgb(255 255 255 / 35%); pointer-events: none; }
+.crop-third.v1, .crop-third.v2 { top: 0; bottom: 0; width: 1px; }
+.crop-third.v1 { left: 33.333%; }
+.crop-third.v2 { left: 66.666%; }
+.crop-third.h1, .crop-third.h2 { left: 0; right: 0; height: 1px; }
+.crop-third.h1 { top: 33.333%; }
+.crop-third.h2 { top: 66.666%; }
+.crop-handle { position: absolute; }
+/* Handles sit just inside the rectangle (the design draws them 3 px outside), so they
+   stay whole when the crop reaches the photo's edge, which clips the overlay. */
+.crop-handle.nw, .crop-handle.ne, .crop-handle.sw, .crop-handle.se { width: 22px; height: 22px; border: 0 solid #fff; }
+.crop-handle.nw { left: 0; top: 0; border-left-width: 3px; border-top-width: 3px; cursor: nwse-resize; }
+.crop-handle.ne { right: 0; top: 0; border-right-width: 3px; border-top-width: 3px; cursor: nesw-resize; }
+.crop-handle.sw { left: 0; bottom: 0; border-left-width: 3px; border-bottom-width: 3px; cursor: nesw-resize; }
+.crop-handle.se { right: 0; bottom: 0; border-right-width: 3px; border-bottom-width: 3px; cursor: nwse-resize; }
+.crop-handle.n, .crop-handle.s { left: 50%; width: 22px; margin-left: -11px; height: 3px; background: #fff; cursor: ns-resize; }
+.crop-handle.n { top: 0; }
+.crop-handle.s { bottom: 0; }
+.crop-handle.e, .crop-handle.w { top: 50%; height: 22px; margin-top: -11px; width: 3px; background: #fff; cursor: ew-resize; }
+.crop-handle.w { left: 0; }
+.crop-handle.e { right: 0; }
+.crop-size { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); height: 24px; padding: 0 10px; border-radius: 12px; background: rgb(11 12 14 / 70%); font-size: 11.5px; font-family: var(--mono); display: flex; align-items: center; color: var(--text); pointer-events: none; }
+.crop-toolbar { padding: 0 6px 0 8px; gap: 4px; }
+button.crop-ratio { height: 28px; padding: 0 10px; border-radius: 7px; font-size: 12px; font-weight: 400; background: transparent; border-color: transparent; color: var(--text-2); }
+button.crop-ratio[aria-pressed="true"] { background: rgb(255 255 255 / 10%); color: var(--text); }
+.crop-label { font-size: 12px; color: var(--text-2); }
+.crop-straighten { width: 120px; margin: 0 8px; }
+.crop-angle { font-family: var(--mono); font-size: 11.5px; color: var(--text); width: 44px; }
+button.crop-reset { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; font-weight: 400; background: transparent; border-color: transparent; color: var(--text-2); }
+button.crop-done { height: 30px; padding: 0 14px; border-radius: 8px; font-size: 12.5px; }
+.geometry-aspect { display: flex; flex-direction: column; gap: 9px; }
+.geometry-label { font-size: 12.5px; color: var(--text-2); }
+.aspect-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; }
+button.aspect-button { height: 30px; padding: 0; border-radius: 7px; font-size: 11.5px; font-weight: 400; background: rgb(255 255 255 / 2%); border-color: transparent; box-shadow: inset 0 0 0 1px var(--hairline); color: var(--text-2); }
+button.aspect-button[aria-pressed="true"] { background: rgb(255 255 255 / 10%); color: var(--text); }
+button.geometry-crop { height: 34px; border-radius: 8px; justify-content: center; }
+.viewer-canvas.fill { display: block; width: 100%; height: 100%; }
 .viewer { position: relative; }
 .viewer-canvas { transition: opacity 0.15s ease; }
 .viewer-canvas.loading { opacity: 0.45; }

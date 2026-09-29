@@ -9,6 +9,8 @@ function makeFrame(width: number, height: number, flags: number, renderMs: numbe
   v.setUint32(8, 2, true);
   v.setUint32(12, flags, true);
   v.setFloat32(16, renderMs, true);
+  v.setUint32(20, 6000, true);
+  v.setUint32(24, 4000, true);
   new Uint8Array(buf, FRAME_HEADER_BYTES).fill(7);
   return buf;
 }
@@ -18,6 +20,7 @@ describe("decodeFrame", () => {
     const buf = makeFrame(3, 2, 1, 12.5);
     const f = decodeFrame(buf);
     expect([f.width, f.height, f.level, f.cacheHit, f.renderMs]).toEqual([3, 2, 2, true, 12.5]);
+    expect([f.fullWidth, f.fullHeight]).toEqual([6000, 4000]);
     expect(decodeFrame(makeFrame(1, 1, 0, 0)).cacheHit).toBe(false);
     expect(f.pixels.length).toBe(24);
     expect(f.pixels.buffer).toBe(buf);

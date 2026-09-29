@@ -6,4 +6,8 @@ export type EngineInfoDto = { rendererVersion: number, recipeVersion: number, de
 /**
  * The colour mixer's bands and per-band controls (ADR 0025).
  */
-mixer: MixerSpec, };
+mixer: MixerSpec, 
+/**
+ * The Geometry section's Straighten slider (ADR 0032).
+ */
+straighten: AdjustmentSpec, };

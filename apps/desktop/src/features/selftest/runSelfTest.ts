@@ -325,6 +325,31 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     };
     const toneCurveOk = toneCurve.points === 49 && toneCurve.maxOffDiagonal < 0.01 && toneCurve.shadowsLift > 0.02;
 
+    // Crop through the real pipeline (ADR 0032): the frame shows the cropped part and
+    // reports its full-resolution size, which the viewer's box follows.
+    const [fullW, fullH] = [summary.fullWidth, summary.fullHeight];
+    const beforeCrop = driver.editor().recipe!;
+    const framesBeforeCrop = frames.length;
+    driver.editor().setRecipe({
+      ...beforeCrop,
+      geometry: { straighten: 0, crop: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, aspect: "free" },
+    });
+    const cropped = await waitFor(
+      () => frames.slice(framesBeforeCrop).find((f) => f.frame.fullWidth === Math.round(fullW / 2)) ?? null,
+      10_000,
+      "cropped frame",
+    ).catch(() => null);
+    driver.editor().setRecipe(beforeCrop);
+    const crop = {
+      expected: `${Math.round(fullW / 2)}x${Math.round(fullH / 2)}`,
+      fullSize: cropped ? `${cropped.frame.fullWidth}x${cropped.frame.fullHeight}` : null,
+      frameSize: cropped ? `${cropped.frame.width}x${cropped.frame.height}` : null,
+    };
+    const cropOk =
+      cropped !== null &&
+      cropped.frame.fullHeight === Math.round(fullH / 2) &&
+      Math.abs(cropped.frame.width / cropped.frame.height - fullW / fullH) < 0.02;
+
     const stats = driver.editor().schedulerStats();
     const checks = {
       exportFinished: finished.type === "finished",
@@ -339,6 +364,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       ratingsAndFlags: marksOk,
       savedEdits: editsOk,
       toneCurve: toneCurveOk,
+      crop: cropOk,
     };
     // Named so that a failing run explains itself.
     const failed = Object.entries(checks)
@@ -357,6 +383,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       firstVisibleMs: firstFrameMs,
       reopen,
       toneCurve,
+      crop,
       quitGuard,
       indexing,
       thumbnails,

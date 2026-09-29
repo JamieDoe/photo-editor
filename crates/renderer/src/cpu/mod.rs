@@ -26,8 +26,24 @@ pub struct CpuRenderer;
 
 impl CpuRenderer {
     /// Renders into an existing buffer (reused across interactive frames by callers
-    /// that own one). `out` must match the source dimensions.
+    /// that own one). `out` must have the plan's output size for this source
+    /// ([`RenderPlan::output_size`]).
     pub fn render_into(
+        &self,
+        plan: &RenderPlan,
+        source: &LinearImage,
+        out: &mut OutputImage,
+        cancel: &dyn Cancellation,
+    ) -> Result<(), RenderError> {
+        match &plan.geometry {
+            // Crop and straighten first; the stages run on the framed image, which is
+            // cached while other controls change.
+            Some(g) => self.render_frame(plan, &kernels::cached_frame(source, g), out, cancel),
+            None => self.render_frame(plan, source, out, cancel),
+        }
+    }
+
+    fn render_frame(
         &self,
         plan: &RenderPlan,
         source: &LinearImage,
@@ -93,8 +109,9 @@ impl RenderBackend for CpuRenderer {
         format: PixelFormat,
         cancel: &dyn Cancellation,
     ) -> Result<OutputImage, RenderError> {
-        let mut out = OutputImage::new(source.width(), source.height(), format)
-            .map_err(|e| RenderError::Backend(e.to_string()))?;
+        let (w, h) = plan.output_size(source.width(), source.height());
+        let mut out =
+            OutputImage::new(w, h, format).map_err(|e| RenderError::Backend(e.to_string()))?;
         self.render_into(plan, source, &mut out, cancel)?;
         Ok(out)
     }

@@ -29,5 +29,7 @@ export function sliderTrack(value: number, min: number, max: number): SliderTrac
 export function formatSliderValue(value: number, min: number, step: number, unit = ""): string {
   const text = step < 1 ? value.toFixed(2) : String(Math.round(value));
   const signed = min < 0 && value > 0 ? `+${text}` : text;
-  return unit ? `${signed} ${unit}` : signed;
+  if (!unit) return signed;
+  // Degrees attach to the number ("+1.4°", as in the design); other units are words.
+  return unit === "°" ? `${signed}${unit}` : `${signed} ${unit}`;
 }

@@ -205,6 +205,20 @@ pub const GRAIN: AdjustmentSpec = AdjustmentSpec {
     ..TEXTURE
 };
 
+/// The Geometry section's Straighten slider (ADR 0032): degrees, stored in the
+/// recipe's `geometry`, not as a top-level field.
+pub const STRAIGHTEN: AdjustmentSpec = AdjustmentSpec {
+    key: "straighten",
+    label: "Straighten",
+    group: "Geometry",
+    min: -crate::geometry::MAX_STRAIGHTEN,
+    max: crate::geometry::MAX_STRAIGHTEN,
+    step: 0.1,
+    default: 0.0,
+    more: false,
+    unit: "°",
+};
+
 /// The colour mixer's controls, per band (ADR 0025). Keys are `HslShift` fields.
 pub const MIXER_HUE: AdjustmentSpec = AdjustmentSpec {
     key: "hue",

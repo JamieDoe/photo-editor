@@ -38,6 +38,11 @@ describe("nextBoxShape", () => {
     expect(s).toEqual({ owner: 8, width: 4000, height: 6000 });
   });
 
+  it("starts a new box when the crop changes the photo's shape", () => {
+    const s = nextBoxShape({ owner: 7, width: 6048, height: 4024 }, 7, { width: 1000, height: 1000 }, { width: 4024, height: 4024 });
+    expect(s).toEqual({ owner: 7, width: 4024, height: 4024 });
+  });
+
   it("falls back to the frame's shape if the full size is unknown", () => {
     expect(nextBoxShape(null, 9, { width: 1500, height: 1000 }, null)).toEqual({ owner: 9, width: 1500, height: 1000 });
   });

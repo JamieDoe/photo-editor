@@ -39,6 +39,8 @@ exceed white, so `u16` storage loses nothing.
 RAW decode (LibRaw)            camera WB (as shot), demosaic, camera matrix -> linear sRGB
     │                          (JPEG: sRGB decode + linearise via LUT)
     ▼
+Crop and straighten            the source resampled into the output frame, cached
+                               (ADR 0032); every stage below runs on that frame
 White balance (temperature,    per-channel gains, relative to the as-shot light
                tint)           (ADR 0024)
 Exposure                       multiply by 2^EV
