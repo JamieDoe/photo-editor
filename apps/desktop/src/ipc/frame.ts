@@ -10,9 +10,7 @@ export interface PreviewFrame {
   height: number;
   level: number;
   cacheHit: boolean;
-  /** The file's embedded camera preview (shown while decoding), not a render. */
-  embedded: boolean;
-  /** Rust-side render time (0 for cache hits), or extraction time if embedded. */
+  /** Rust-side render time (0 for cache hits). */
   renderMs: number;
   pixels: Uint8ClampedArray<ArrayBuffer>;
 }
@@ -36,7 +34,6 @@ export function decodeFrame(buffer: ArrayBuffer): PreviewFrame {
     height,
     level,
     cacheHit: (flags & 1) !== 0,
-    embedded: (flags & 2) !== 0,
     renderMs,
     pixels: new Uint8ClampedArray(buffer, FRAME_HEADER_BYTES, width * height * 4),
   };

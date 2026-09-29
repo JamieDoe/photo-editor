@@ -17,8 +17,8 @@ describe("decodeFrame", () => {
   it("reads the header and exposes pixels without copying", () => {
     const buf = makeFrame(3, 2, 1, 12.5);
     const f = decodeFrame(buf);
-    expect([f.width, f.height, f.level, f.cacheHit, f.embedded, f.renderMs]).toEqual([3, 2, 2, true, false, 12.5]);
-    expect(decodeFrame(makeFrame(1, 1, 2, 0)).embedded).toBe(true);
+    expect([f.width, f.height, f.level, f.cacheHit, f.renderMs]).toEqual([3, 2, 2, true, 12.5]);
+    expect(decodeFrame(makeFrame(1, 1, 0, 0)).cacheHit).toBe(false);
     expect(f.pixels.length).toBe(24);
     expect(f.pixels.buffer).toBe(buf);
     expect(f.pixels[0]).toBe(7);

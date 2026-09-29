@@ -190,7 +190,7 @@ Same plan and pixels (max difference 1 code). ms, median of 10 runs after warm-u
 | Interactive preview round trip p95 | 4–5 ms | ≤ 16 ms |
 | Frames shown during drag | 119/120 | ≥ 95% at display rate |
 | Interactive p95 while exporting | 10–22 ms | ≤ 2× idle |
-| Time to first visible image after open | 230–370 ms → **25–74 ms** with embedded preview (§9) | ≤ 150 ms (embedded preview), ≤ 600 ms rendered |
+| Time to first visible image after open | 230–370 ms → 25–74 ms with embedded preview (§9); since ADR 0020 the editor shows only renders: **116–345 ms** | ≤ 600 ms rendered |
 | 24 MP export | 0.65–1.2 s | ≤ 3 s |
 | Editing memory, 24 MP open | ~170 MB | ≤ 300 MB |
 | Export peak memory, 24 MP | ~645 MB | ≤ 400 MB |

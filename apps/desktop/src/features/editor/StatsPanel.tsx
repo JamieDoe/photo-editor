@@ -17,14 +17,7 @@ export function StatsPanel({ editor }: { editor: Editor }) {
     rows.push(["Pyramid", image.levels.map(([w, h]) => `${w}×${h}`).join(" · ")]);
     rows.push(["Open", `decode ${fmt(image.decodeMs)} · pyramid ${fmt(image.pyramidMs)} · id ${fmt(image.identityMs)}`]);
   }
-  if (image?.embeddedPreviewMs != null) {
-    rows.push(["Embedded", `extracted in ${fmt(image.embeddedPreviewMs)}`]);
-  }
-  if (displayed?.source === "embedded") {
-    const f = displayed.frame;
-    rows.push(["Frame", `${f.width}×${f.height} · embedded camera preview (decoding…)`]);
-    rows.push(["Shown after", fmt(displayed.sinceOpenMs)]);
-  } else if (displayed) {
+  if (displayed) {
     const f = displayed.frame;
     rows.push(["Frame", `${f.width}×${f.height} · L${f.level} · ${displayed.info.quality}${f.cacheHit ? " · cache hit" : ""}`]);
     rows.push(["Render (Rust)", fmt(f.renderMs)]);

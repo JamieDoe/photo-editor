@@ -17,30 +17,23 @@ export function fitSize(
 
 /** The shape the viewer's box keeps while one photo is open. */
 export interface BoxShape {
-  /** The open image this shape belongs to, or "opening" while only its camera preview is shown. */
-  owner: number | "opening";
+  /** The open image this shape belongs to. */
+  owner: number;
   width: number;
   height: number;
 }
 
-type ShownFrame =
-  | { source: "embedded"; frame: { width: number; height: number } }
-  | { source: "render"; imageId: number; frame: { width: number; height: number } };
-
 /**
- * The box shape after `shown` is displayed. The first frame of each opening sets it,
- * and every later frame of that photo (sharper renders, after edits) keeps it. The
- * camera's preview and the sensor image differ in shape by a fraction of a percent,
- * too little to see when drawn into the same box, but enough to make the photo
- * visibly twitch if the box followed each frame.
+ * The box shape after a render of `imageId` is shown. Each photo gets one box, from its
+ * full size (exact shape), kept for all its renders: preview levels round their sizes,
+ * so fitting each frame by its own shape would move the photo by a pixel or two.
  */
-export function nextBoxShape(previous: BoxShape | null, shown: ShownFrame, fullSize: { width: number; height: number } | null): BoxShape {
-  if (shown.source === "embedded") {
-    // A camera preview starts a new opening, unless this opening already has one.
-    return previous?.owner === "opening" ? previous : { owner: "opening", ...shown.frame };
-  }
-  if (previous?.owner === "opening") return { ...previous, owner: shown.imageId };
-  if (previous?.owner === shown.imageId) return previous;
-  // A new image without a camera preview: its full size gives the exact shape.
-  return { owner: shown.imageId, ...(fullSize ?? shown.frame) };
+export function nextBoxShape(
+  previous: BoxShape | null,
+  imageId: number,
+  frame: { width: number; height: number },
+  fullSize: { width: number; height: number } | null,
+): BoxShape {
+  if (previous?.owner === imageId) return previous;
+  return { owner: imageId, ...(fullSize ?? frame) };
 }

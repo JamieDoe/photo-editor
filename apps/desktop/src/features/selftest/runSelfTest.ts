@@ -5,8 +5,7 @@ import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { SelfTestConfigDto } from "../../ipc/generated/SelfTestConfigDto";
 import type { DisplayedFrame, Editor } from "../editor/useEditor";
 
-type RenderedFrame = Extract<DisplayedFrame, { source: "render" }>;
-type EmbeddedShown = Extract<DisplayedFrame, { source: "embedded" }>;
+type RenderedFrame = DisplayedFrame;
 
 /**
  * End-to-end self-test, run only when the app is launched with PE_SELF_TEST=<file>.
@@ -89,35 +88,18 @@ async function drag(driver: SelfTestDriver, base: EditRecipe, steps: number, fra
 
 export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDriver): Promise<Record<string, unknown>> {
   const frames: RenderedFrame[] = [];
-  const embedded: EmbeddedShown[] = [];
-  // Display order, to check the invariant: once a render of an opened image is shown,
-  // no embedded preview may follow it within that open.
-  const events: Array<{ kind: "render"; imageId: number } | { kind: "embedded" }> = [];
-  // On-screen size of the photo after each frame is painted: a quick preview and the
-  // later sharp renders must occupy the same box (no shrink-then-grow on open).
-  const shownSizes: Array<{ kind: "render" | "embedded"; width: number; height: number }> = [];
+  // On-screen size of the photo after each frame is painted: every render of an opened
+  // photo (quick interactive, then sharp detail) must occupy the same box.
+  const shownSizes: Array<{ imageId: number; quality: string; width: number; height: number }> = [];
   const unsubscribe = driver.editor().subscribeFrames((f) => {
     requestAnimationFrame(() =>
       setTimeout(() => {
         const r = document.querySelector(".viewer-canvas")?.getBoundingClientRect();
-        if (r) shownSizes.push({ kind: f.source, width: Math.round(r.width), height: Math.round(r.height) });
+        if (r) shownSizes.push({ imageId: f.imageId, quality: f.info.quality, width: Math.round(r.width), height: Math.round(r.height) });
       }, 0),
     );
-    if (f.source === "render") {
-      frames.push(f);
-      events.push({ kind: "render", imageId: f.imageId });
-    } else {
-      embedded.push(f);
-      events.push({ kind: "embedded" });
-    }
+    frames.push(f);
   });
-  /** Whether an embedded preview was shown after a render of `imageId`, looking only
-   * at events from `fromIndex` (the start of that open). */
-  const embeddedAfterRenderOf = (imageId: number, fromIndex: number) => {
-    const firstRender = events.findIndex((e, i) => i >= fromIndex && e.kind === "render" && e.imageId === imageId);
-    return firstRender >= 0 && events.slice(firstRender).some((e) => e.kind === "embedded");
-  };
-  let embeddedAfterRender = false;
   try {
     const info = await waitFor(() => driver.editor().info, 10_000, "engine info");
 
@@ -131,14 +113,12 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       prev = now;
     }
 
-    const openEventsStart = events.length;
     const tOpen = performance.now();
     const summary = await driver.editor().openPath(config.imagePath);
     if (!summary) throw new Error(driver.editor().error?.message ?? "open failed");
     const openIpcMs = performance.now() - tOpen;
     const first = await waitFor(() => frames[0], 10_000, "first frame");
     const firstFrameMs = performance.now() - tOpen;
-    const firstEmbedded = embedded[0];
     const detail = await waitFor(() => frames.find((f) => f.info.quality === "detail"), 10_000, "detail frame");
 
     const base = driver.editor().recipe!;
@@ -176,32 +156,30 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
 
     // Re-open the same file once the app has settled: separates app-startup effects
     // from steady-state open cost, and exercises opening while an image is open.
-    const embeddedBefore = embedded.length;
     const framesBefore = frames.length;
-    // Checked for the first open once all its frames (including late ones) are in.
-    embeddedAfterRender ||= embeddedAfterRenderOf(summary.id, openEventsStart);
-    const reopenEventsStart = events.length;
     const reopenSizesStart = shownSizes.length;
     const tReopen = performance.now();
     const reopened = await driver.editor().openPath(config.imagePath);
     if (!reopened) throw new Error(driver.editor().error?.message ?? "re-open failed");
-    await waitFor(() => (frames.length > framesBefore ? true : null), 10_000, "re-open frame");
-    const reopenEmbedded = embedded[embeddedBefore];
-    await sleep(300); // let any late channel message arrive before checking order
-    embeddedAfterRender ||= embeddedAfterRenderOf(reopened.id, reopenEventsStart);
-    const reopenSizes = shownSizes.slice(reopenSizesStart);
+    await waitFor(() => (frames.slice(framesBefore).some((f) => f.imageId === reopened.id) ? true : null), 10_000, "re-open frame");
+    const firstRenderMs = performance.now() - tReopen;
+    await waitFor(
+      () => (frames.slice(framesBefore).some((f) => f.imageId === reopened.id && f.info.quality === "detail") ? true : null),
+      10_000,
+      "re-open detail frame",
+    );
+    await sleep(200); // the size of the last frame is sampled after it is painted
+    const reopenSizes = shownSizes.slice(reopenSizesStart).filter((s) => s.imageId === reopened.id);
     const last = reopenSizes.at(-1);
     const sizeStable =
+      reopenSizes.length >= 2 &&
       last !== undefined &&
-      reopenSizes.some((s) => s.kind === "embedded") &&
       reopenSizes.every((s) => Math.abs(s.width - last.width) <= 1 && Math.abs(s.height - last.height) <= 1);
     const reopen = {
-      sizes: reopenSizes.map((s) => `${s.kind}:${s.width}x${s.height}`),
+      sizes: reopenSizes.map((s) => `${s.quality}:${s.width}x${s.height}`),
       sizeStable,
-      embeddedShownMs: reopenEmbedded?.sinceOpenMs ?? null,
-      embeddedExtractMs: reopened.embeddedPreviewMs,
       decodeMs: reopened.decodeMs,
-      firstRenderMs: performance.now() - tReopen,
+      firstRenderMs,
     };
 
     // Library indexing through the real command and events: first pass, then a
@@ -340,7 +318,6 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       framesDuringDrag: idleDrag.framesShown > 0,
       framesDuringExport: dragDuringExport.framesShown > 0,
       cacheHitOnReturn,
-      previewOrdering: !embeddedAfterRender,
       noSchedulerErrors: stats.errors === 0,
       quitHeldDuringExport: quitGuard.held,
       libraryIndexed: indexOk,
@@ -363,11 +340,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       pyramid: summary.levels.map(([w, h]) => `${w}x${h}`),
       open: { decodeMs: summary.decodeMs, pyramidMs: summary.pyramidMs, identityMs: summary.identityMs, ipcTotalMs: openIpcMs },
       firstFrame: { ms: firstFrameMs, size: `${first.frame.width}x${first.frame.height}`, quality: first.info.quality },
-      embeddedPreview: firstEmbedded
-        ? { shownAfterMs: firstEmbedded.sinceOpenMs, extractMs: summary.embeddedPreviewMs, size: `${firstEmbedded.frame.width}x${firstEmbedded.frame.height}` }
-        : null,
-      firstVisibleMs: firstEmbedded ? Math.min(firstEmbedded.sinceOpenMs, firstFrameMs) : firstFrameMs,
-      embeddedAfterRender,
+      firstVisibleMs: firstFrameMs,
       reopen,
       quitGuard,
       indexing,

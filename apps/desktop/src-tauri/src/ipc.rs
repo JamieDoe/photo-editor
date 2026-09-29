@@ -26,8 +26,6 @@ pub const EXPORT_EVENT: &str = "export://event";
 pub const FRAME_HEADER_BYTES: usize = 20;
 /// The frame was served from the preview cache.
 pub const FRAME_FLAG_CACHE_HIT: u32 = 1;
-/// The frame is the file's embedded camera preview, not a render of the recipe.
-pub const FRAME_FLAG_EMBEDDED: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

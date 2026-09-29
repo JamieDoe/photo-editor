@@ -6,6 +6,8 @@ interface Props {
   displayed: DisplayedFrame | null;
   /** The open image: its full size gives renders their exact shape. */
   image: { id: number; fullWidth: number; fullHeight: number } | null;
+  /** Another photo is opening: the current one stays, dimmed, until it arrives. */
+  loading: boolean;
   /** Reports the viewport's long edge in device pixels. */
   onResize: (longEdgeDevicePx: number) => void;
   placeholder: string;
@@ -16,7 +18,7 @@ interface Props {
  * canvas is sized to fit the viewer (not to the frame's pixel count), so a quick
  * low-resolution frame and the later sharp one appear at the same size.
  */
-export function Viewer({ displayed, image, onResize, placeholder }: Props) {
+export function Viewer({ displayed, image, loading, onResize, placeholder }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [space, setSpace] = useState({ width: 0, height: 0 });
@@ -27,9 +29,8 @@ export function Viewer({ displayed, image, onResize, placeholder }: Props) {
   useEffect(() => {
     if (!displayed) return;
     const img = imageRef.current;
-    const full =
-      displayed.source === "render" && img && img.id === displayed.imageId ? { width: img.fullWidth, height: img.fullHeight } : null;
-    setShape((prev) => nextBoxShape(prev, displayed, full));
+    const full = img && img.id === displayed.imageId ? { width: img.fullWidth, height: img.fullHeight } : null;
+    setShape((prev) => nextBoxShape(prev, displayed.imageId, displayed.frame, full));
   }, [displayed]);
 
   useEffect(() => {
@@ -60,9 +61,19 @@ export function Viewer({ displayed, image, onResize, placeholder }: Props) {
   return (
     <div className="viewer" ref={containerRef}>
       {displayed ? (
-        <canvas ref={canvasRef} className="viewer-canvas" style={canvasStyle(space, shape ?? displayed.frame)} />
+        <canvas
+          ref={canvasRef}
+          className={loading ? "viewer-canvas loading" : "viewer-canvas"}
+          style={canvasStyle(space, shape ?? displayed.frame)}
+        />
       ) : (
-        <p className="viewer-empty">{placeholder}</p>
+        !loading && <p className="viewer-empty">{placeholder}</p>
+      )}
+      {loading && (
+        <span className="viewer-loading" role="status">
+          <span className="spinner" aria-hidden="true" />
+          Loading…
+        </span>
       )}
     </div>
   );

@@ -24,29 +24,21 @@ describe("fitSize", () => {
 });
 
 describe("nextBoxShape", () => {
-  const preview = { source: "embedded" as const, frame: { width: 1616, height: 1080 } };
-  const render = (imageId: number, width = 1516, height = 1010) => ({ source: "render" as const, imageId, frame: { width, height } });
   const full = { width: 6048, height: 4024 };
 
-  it("keeps the camera preview's box for every render of that opening", () => {
-    let s = nextBoxShape(null, preview, null);
-    expect(s).toEqual({ owner: "opening", width: 1616, height: 1080 });
-    s = nextBoxShape(s, render(7), full);
-    expect(s).toEqual({ owner: 7, width: 1616, height: 1080 });
-    s = nextBoxShape(s, render(7, 3024, 2012), full);
-    expect(s).toEqual({ owner: 7, width: 1616, height: 1080 });
+  it("keeps one box per photo, from its full size, for every render", () => {
+    let s = nextBoxShape(null, 7, { width: 1516, height: 1010 }, full);
+    expect(s).toEqual({ owner: 7, width: 6048, height: 4024 });
+    s = nextBoxShape(s, 7, { width: 3024, height: 2011 }, full);
+    expect(s).toEqual({ owner: 7, width: 6048, height: 4024 });
   });
 
-  it("starts a new box when the next photo opens", () => {
-    let s = nextBoxShape(null, preview, null);
-    s = nextBoxShape(s, render(7), full);
-    s = nextBoxShape(s, { source: "embedded", frame: { width: 1080, height: 1616 } }, null); // portrait
-    expect(s).toEqual({ owner: "opening", width: 1080, height: 1616 });
-    expect(nextBoxShape(s, render(8), null).owner).toBe(8);
+  it("starts a new box for the next photo", () => {
+    const s = nextBoxShape({ owner: 7, width: 6048, height: 4024 }, 8, { width: 1000, height: 1500 }, { width: 4000, height: 6000 });
+    expect(s).toEqual({ owner: 8, width: 4000, height: 6000 });
   });
 
-  it("uses the full size for photos without a camera preview", () => {
-    const s = nextBoxShape({ owner: 7, width: 3, height: 2 }, render(9, 1499, 1000), { width: 4000, height: 2667 });
-    expect(s).toEqual({ owner: 9, width: 4000, height: 2667 });
+  it("falls back to the frame's shape if the full size is unknown", () => {
+    expect(nextBoxShape(null, 9, { width: 1500, height: 1000 }, null)).toEqual({ owner: 9, width: 1500, height: 1000 });
   });
 });

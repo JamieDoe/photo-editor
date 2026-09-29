@@ -92,8 +92,9 @@ export function EditView({ editor, marks, onMark, onStep, onOpenFile }: Props) {
         <Viewer
           displayed={editor.displayed}
           image={image}
+          loading={busy}
           onResize={editor.setTargetLongEdge}
-          placeholder={busy ? "Opening…" : "Open a photo from the Library, or use “Open photo…”."}
+          placeholder="Open a photo from the Library, or use “Open photo…”."
         />
       </div>
       <aside className="panel-right" aria-label="Adjustments">

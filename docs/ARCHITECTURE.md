@@ -111,17 +111,17 @@ follows what is visible.
 ### Open
 
 ```text
-UI "Open…" ─► open_image_dialog(onPreview channel) (Rust shows native dialog)
-           ─► Engine::open_with_preview(path)   [interactive lane, supersedes previous open]
+UI "Open…" / Library ─► open_image_dialog / open_image_path(path)
+           ─► Engine::open(path)   [interactive lane, supersedes previous open]
                 SourceIdentity (size + mtime + head/tail fingerprint)
-                embedded camera preview (≥ 1024px, DCT-scaled)  ──► channel ──► shown at ~15–75 ms
                 DecoderRegistry.decode(AtLeast 1600px)   // LibRaw half-size for RAW
                 Pyramid::build (2x box, down to >= 256px)
-           ◄─ ImageSummary (dims, levels, timings)   ──► first real render replaces it
+           ◄─ ImageSummary (dims, levels, timings) + saved recipe (ADR 0019)
+           ──► first render (116–345 ms); until then the previous photo stays, dimmed
 ```
 
-The embedded preview is a display-only placeholder (ADR 0007). The UI never lets it
-replace a real render, and never lets frames of the previous image replace it.
+The editor never shows the camera's embedded JPEG (ADR 0020): its look and framing
+differ from our render, so the switch was jarring.
 
 Full resolution is **not** decoded on open. Previews come from the pyramid built on
 a reduced-resolution decode; full resolution is decoded only for export.
