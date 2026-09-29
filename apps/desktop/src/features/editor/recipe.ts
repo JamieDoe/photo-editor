@@ -1,8 +1,46 @@
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
+import type { ColourMixer } from "../../ipc/generated/ColourMixer";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
+import type { HslShift } from "../../ipc/generated/HslShift";
 
-/** Recipe fields set with sliders (the look is a choice, not a slider). */
-export type AdjustmentKey = Exclude<keyof EditRecipe, "version" | "look">;
+/** Recipe fields set with sliders (the look is a choice, and the mixer has its own
+ *  controls). */
+export type AdjustmentKey = Exclude<keyof EditRecipe, "version" | "look" | "mixer">;
+
+const MIXER_BANDS: readonly (keyof ColourMixer)[] = [
+  "red",
+  "orange",
+  "yellow",
+  "green",
+  "aqua",
+  "blue",
+  "purple",
+  "magenta",
+];
+const MIXER_CONTROLS: readonly (keyof HslShift)[] = ["hue", "saturation", "luminance"];
+
+export function isMixerBand(key: string): key is keyof ColourMixer {
+  return (MIXER_BANDS as readonly string[]).includes(key);
+}
+
+export function isMixerControl(key: string): key is keyof HslShift {
+  return (MIXER_CONTROLS as readonly string[]).includes(key);
+}
+
+export function mixerBandEdited(shift: HslShift): boolean {
+  return MIXER_CONTROLS.some((k) => shift[k] !== 0);
+}
+
+/** The recipe's colour mixer; an absent mixer (the recipe never used it) is neutral. */
+export function mixerOf(r: EditRecipe): ColourMixer {
+  if (r.mixer) return r.mixer;
+  const neutral = { hue: 0, saturation: 0, luminance: 0 };
+  return Object.fromEntries(MIXER_BANDS.map((b) => [b, { ...neutral }])) as ColourMixer;
+}
+
+export function mixerEdited(r: EditRecipe): boolean {
+  return r.mixer !== undefined && MIXER_BANDS.some((b) => mixerBandEdited(mixerOf(r)[b]));
+}
 
 const ADJUSTMENT_KEYS: readonly AdjustmentKey[] = [
   "exposure",
@@ -23,7 +61,7 @@ export function isAdjustmentKey(key: string): key is AdjustmentKey {
 
 /** Whether `r` is the default: every adjustment neutral, on the default look. */
 export function isIdentity(r: EditRecipe): boolean {
-  return ADJUSTMENT_KEYS.every((k) => r[k] === 0) && r.look === "standard";
+  return ADJUSTMENT_KEYS.every((k) => r[k] === 0) && !mixerEdited(r) && r.look === "standard";
 }
 
 /** Every adjustment at zero on the Standard look: the one place new fields are added. */

@@ -146,6 +146,64 @@ pub const SATURATION: AdjustmentSpec = AdjustmentSpec {
     unit: "",
 };
 
+/// The colour mixer's controls, per band (ADR 0025). Keys are `HslShift` fields.
+pub const MIXER_HUE: AdjustmentSpec = AdjustmentSpec {
+    key: "hue",
+    label: "Hue",
+    group: "Colour mixer",
+    min: -100.0,
+    max: 100.0,
+    step: 1.0,
+    default: 0.0,
+    more: true,
+    unit: "",
+};
+pub const MIXER_SATURATION: AdjustmentSpec = AdjustmentSpec {
+    key: "saturation",
+    label: "Saturation",
+    ..MIXER_HUE
+};
+pub const MIXER_LUMINANCE: AdjustmentSpec = AdjustmentSpec {
+    key: "luminance",
+    label: "Luminance",
+    ..MIXER_HUE
+};
+
+/// One colour mixer band. Keys are `ColourMixer` fields, in band order.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct MixerBandSpec {
+    pub key: &'static str,
+    pub label: &'static str,
+}
+
+/// The colour mixer as the UI builds it: bands, and the controls each band has.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct MixerSpec {
+    pub bands: Vec<MixerBandSpec>,
+    pub controls: Vec<AdjustmentSpec>,
+}
+
+pub fn mixer_spec() -> MixerSpec {
+    let band = |key, label| MixerBandSpec { key, label };
+    MixerSpec {
+        bands: vec![
+            band("red", "Reds"),
+            band("orange", "Oranges"),
+            band("yellow", "Yellows"),
+            band("green", "Greens"),
+            band("aqua", "Aquas"),
+            band("blue", "Blues"),
+            band("purple", "Purples"),
+            band("magenta", "Magentas"),
+        ],
+        controls: vec![MIXER_HUE, MIXER_SATURATION, MIXER_LUMINANCE],
+    }
+}
+
 /// In display order: the design's Light section (Exposure, Contrast, Highlights,
 /// Shadows; Whites and Blacks behind "More controls"), then Colour (Temperature, Tint,
 /// Vibrance, Saturation).
@@ -167,6 +225,20 @@ pub fn specs() -> Vec<AdjustmentSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mixer_spec_covers_every_band_and_control() {
+        let json = serde_json::to_value(crate::ops::colour_mixer::ColourMixer::default()).unwrap();
+        let bands: Vec<_> = json.as_object().unwrap().keys().cloned().collect();
+        let spec = mixer_spec();
+        let keys: Vec<_> = spec.bands.iter().map(|b| b.key.to_owned()).collect();
+        assert_eq!(bands.len(), keys.len());
+        assert!(bands.iter().all(|b| keys.contains(b)));
+        let controls: Vec<_> = json["red"].as_object().unwrap().keys().cloned().collect();
+        let keys: Vec<_> = spec.controls.iter().map(|c| c.key.to_owned()).collect();
+        assert_eq!(controls.len(), keys.len());
+        assert!(controls.iter().all(|c| keys.contains(c)));
+    }
 
     #[test]
     fn specs_cover_every_recipe_field() {

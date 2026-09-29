@@ -55,6 +55,9 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                 Stage::BaseCurve => rgb.map(ops::look::standard),
                 Stage::Saturation { factor } => ops::saturation::apply(rgb, factor),
                 Stage::Vibrance { amount } => ops::vibrance::apply(rgb, amount),
+                Stage::ColourMixer { bands } => {
+                    ops::colour_mixer::apply(rgb, &ops::colour_mixer::MixerTable::new(&bands))
+                }
             };
         }
         out.extend(rgb.map(|c| (color::linear_to_srgb(c.clamp(0.0, 1.0)) * 255.0).round() as u8));

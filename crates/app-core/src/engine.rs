@@ -85,6 +85,7 @@ impl Engine {
             jpeg_encoder: export::JpegEncoder::preferred().name(),
             embedded_jpeg_decoder: raw::embedded_jpeg_decoder(),
             adjustments: renderer::adjustments::specs(),
+            mixer: renderer::adjustments::mixer_spec(),
         }
     }
 

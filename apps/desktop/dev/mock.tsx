@@ -12,6 +12,11 @@ import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "../src/styles.css";
 
+const mixerControl = { group: "Colour mixer", min: -100, max: 100, step: 1, default: 0, more: true, unit: "" };
+const mixerSpec = {
+  bands: [["red", "Reds"], ["orange", "Oranges"], ["yellow", "Yellows"], ["green", "Greens"], ["aqua", "Aquas"], ["blue", "Blues"], ["purple", "Purples"], ["magenta", "Magentas"]].map(([key, label]) => ({ key, label })),
+  controls: [{ key: "hue", label: "Hue", ...mixerControl }, { key: "saturation", label: "Saturation", ...mixerControl }, { key: "luminance", label: "Luminance", ...mixerControl }],
+};
 const specs = [
   { key: "exposure", label: "Exposure", group: "Light", min: -5, max: 5, step: 0.01, default: 0, more: false, unit: "EV" },
   { key: "contrast", label: "Contrast", group: "Light", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
@@ -110,7 +115,7 @@ function counts() {
 mockIPC((cmd, payload) => {
   switch (cmd) {
     case "engine_info":
-      return { rendererVersion: 3, recipeVersion: 4, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs };
+      return { rendererVersion: 3, recipeVersion: 5, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs, mixer: mixerSpec };
     case "open_image_dialog":
     case "open_image_path":
       openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";

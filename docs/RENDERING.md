@@ -46,6 +46,7 @@ Tone (highlights, shadows,     local gains from an edge-aware surroundings map, 
       whites, blacks)          end-point gains (ADR 0023)
 Contrast                       S-curve around mid grey (scene-referred)
 Base look (Standard)           camera-like tone curve: lift, toe, shoulder (ADR 0022)
+Colour mixer                   hue/saturation/luminance per colour band (ADR 0025)
 Colour (vibrance, saturation)  chroma scale around Rec.709 luminance
     ▼
 Output transform               clip [0,1], sRGB OETF, 8-bit quantise
@@ -77,6 +78,12 @@ Output transform               clip [0,1], sRGB OETF, 8-bit quantise
     (slope 1.65, pivot 0.55), normalised so sensor white stays white. Its
     parameters were fitted to six cameras' own JPEGs.
   - **Flat** is no curve: the look of version-1 recipes, kept for their edits.
+- **Colour mixer** (8 bands × hue, saturation, luminance, each `-100..100`, ADR 0025):
+  - Works on square-rooted display values. The pixel's hue blends the two nearest
+    band centres (smoothstep); the centres are 0/30/60/120/180/225/270/300°.
+  - Hue rotates around the grey axis (±30°). Saturation scales chroma (0–2×). Both
+    keep luminance.
+  - Luminance is a ±1 stop gain. Near-grey pixels fade out.
 - **Vibrance** (`-100..100`, ADR 0024): chroma scaled around Rec.709 luminance,
   weighted per pixel.
   - Positive: up to 2× for muted colours, none for fully saturated ones, and skin

@@ -120,6 +120,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
           {info && recipe && (
             <AdjustmentPanel
               specs={info.adjustments}
+              mixerSpec={info.mixer}
               recipe={recipe}
               onChange={editor.setRecipe}
               disabled={!image}
