@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::CatalogueError;
 
 /// Schema version this build creates and understands.
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 const MIGRATIONS: &[&str] = &[
     // 1: library folders, photos, files.
@@ -69,6 +69,13 @@ const MIGRATIONS: &[&str] = &[
     r#"
     DROP INDEX files_by_content;
     CREATE INDEX files_by_content ON files(size, fingerprint, last_seen_scan);
+    "#,
+    // 4: the photographer's marks (ADR 0018). Partial indexes: most photos have none.
+    r#"
+    ALTER TABLE photos ADD COLUMN rating INTEGER NOT NULL DEFAULT 0 CHECK (rating BETWEEN 0 AND 5);
+    ALTER TABLE photos ADD COLUMN flag INTEGER NOT NULL DEFAULT 0 CHECK (flag IN (-1, 0, 1));
+    CREATE INDEX photos_by_rating ON photos(rating) WHERE rating > 0;
+    CREATE INDEX photos_by_flag ON photos(flag) WHERE flag <> 0;
     "#,
 ];
 
@@ -141,6 +148,23 @@ mod tests {
             (1, 0),
             "existing photos kept, marked as needing details"
         );
+    }
+
+    #[test]
+    fn marks_default_to_none_and_out_of_range_values_are_rejected() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        migrate_to(&mut conn, 3).unwrap();
+        conn.execute("INSERT INTO photos (created_at_ms) VALUES (1)", [])
+            .unwrap();
+        migrate(&mut conn).unwrap();
+        let (rating, flag): (i64, i64) = conn
+            .query_row("SELECT rating, flag FROM photos", [], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        assert_eq!((rating, flag), (0, 0));
+        assert!(conn.execute("UPDATE photos SET rating = 6", []).is_err());
+        assert!(conn.execute("UPDATE photos SET flag = 2", []).is_err());
     }
 
     #[test]

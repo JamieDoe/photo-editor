@@ -51,10 +51,10 @@ pub fn camera_name(make: Option<&str>, model: Option<&str>) -> Option<String> {
     }
 }
 
-const COLUMNS: &str = "p.camera_make, p.camera_model, p.lens, p.captured_at, p.iso, p.aperture, p.shutter, \
+pub(crate) const COLUMNS: &str = "p.camera_make, p.camera_model, p.lens, p.captured_at, p.iso, p.aperture, p.shutter, \
                        p.focal_length, p.width, p.height, p.rotation, p.latitude, p.longitude";
 
-fn from_row(r: &Row<'_>, first: usize) -> rusqlite::Result<PhotoDetails> {
+pub(crate) fn from_row(r: &Row<'_>, first: usize) -> rusqlite::Result<PhotoDetails> {
     let lat: Option<f64> = r.get(first + 11)?;
     let lon: Option<f64> = r.get(first + 12)?;
     Ok(PhotoDetails {

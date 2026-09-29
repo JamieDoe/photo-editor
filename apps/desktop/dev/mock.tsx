@@ -27,6 +27,12 @@ let mockSettings: Record<string, unknown> = {
   export: { jpegQuality: 92 },
 };
 
+/** Marks by photo path; seeded with a few, updated by set_photo_marks. */
+const mockMarks = new Map<string, { rating: number; flag: "none" | "pick" | "reject" }>();
+const marksOf = (path: string, i: number) =>
+  mockMarks.get(path) ?? { rating: i % 9 === 0 ? 4 : i % 13 === 0 ? 2 : 0, flag: i % 7 === 0 ? ("pick" as const) : i % 17 === 0 ? ("reject" as const) : ("none" as const) };
+let lastListing: ReturnType<typeof mockListing> | null = null;
+
 function mockListing(path: string) {
   const parts = path.split("/").filter(Boolean);
   const rootIndex = parts.indexOf("Photos");
@@ -37,6 +43,7 @@ function mockListing(path: string) {
     sizeBytes: 24_000_000 + i * 731_000,
     modifiedMs: Date.UTC(2026, 7, 14, 9, i % 60),
     raw: i % 5 !== 4,
+    marks: marksOf(`${path}/DSC_${i}.NEF`, i),
     details: i % 3 === 2 ? null : { camera: "Nikon Z 6", lens: "NIKKOR Z 24-70mm f/4 S", capturedAt: `2026-09-${24 + (i % 3)}T06:${String(10 + (i % 50)).padStart(2, "0")}:12`, iso: 100, aperture: 8, shutterSeconds: 1 / 125, focalLengthMm: 35, width: 6048, height: 4024 },
   }));
   return {
@@ -80,6 +87,15 @@ async function mockThumbnail(path: string): Promise<ArrayBuffer> {
   return (await canvas.convertToBlob({ type: "image/jpeg", quality: 0.8 })).arrayBuffer();
 }
 
+function counts() {
+  const all = (lastListing ?? mockListing("/Users/me/Photos/2026 Iceland")).photos.map((p, i) => marksOf(p.path, i));
+  return {
+    picks: all.filter((m) => m.flag === "pick").length,
+    rated: all.filter((m) => m.rating > 0).length,
+    rejected: all.filter((m) => m.flag === "reject").length,
+  };
+}
+
 mockIPC((cmd, payload) => {
   switch (cmd) {
     case "engine_info":
@@ -101,14 +117,35 @@ mockIPC((cmd, payload) => {
     case "choose_folder": {
       const lib = mockSettings.library as { recentFolders: string[] };
       lib.recentFolders = ["/Users/me/Photos/2026 Iceland", ...lib.recentFolders.filter((f) => f !== "/Users/me/Photos/2026 Iceland")];
-      return mockListing("/Users/me/Photos/2026 Iceland");
+      lastListing = mockListing("/Users/me/Photos/2026 Iceland");
+      return lastListing;
     }
     case "index_library_folder":
       return null;
     case "library_status":
-      return { photos: 1284, folders: ["/Users/me/Photos/2026 Iceland"], notice: null };
+      return { photos: 1284, folders: ["/Users/me/Photos/2026 Iceland"], notice: null, collections: counts() };
     case "list_folder":
-      return mockListing((payload as { path: string }).path);
+      lastListing = mockListing((payload as { path: string }).path);
+      return lastListing;
+    case "set_photo_marks": {
+      const { paths, change } = payload as { paths: string[]; change: { type: "rating"; stars: number } | { type: "flag"; flag: "none" | "pick" | "reject" } };
+      for (const p of paths) {
+        const i = lastListing?.photos.findIndex((x) => x.path === p) ?? -1;
+        const m = { ...marksOf(p, i) };
+        if (change.type === "rating") m.rating = change.stars;
+        else m.flag = change.flag;
+        mockMarks.set(p, m);
+      }
+      return counts();
+    }
+    case "library_collection": {
+      const kind = (payload as { kind: "picks" | "rated" | "rejected" }).kind;
+      const all = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");
+      const photos = all.photos
+        .map((p, i) => ({ ...p, marks: marksOf(p.path, i) }))
+        .filter((p) => (kind === "picks" ? p.marks.flag === "pick" : kind === "rejected" ? p.marks.flag === "reject" : p.marks.rating > 0));
+      return { kind, photos };
+    }
     case "library_thumbnail":
       return mockThumbnail((payload as { path: string }).path);
     case "cancel_thumbnail":

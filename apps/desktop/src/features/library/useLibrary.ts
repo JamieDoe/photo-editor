@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toAppError, type AppError } from "../../app/errors";
 import * as ipc from "../../ipc/client";
+import type { CollectionKindDto } from "../../ipc/generated/CollectionKindDto";
+import type { CollectionListingDto } from "../../ipc/generated/CollectionListingDto";
 import type { FolderListingDto } from "../../ipc/generated/FolderListingDto";
+import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
+import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { LibraryStatusDto } from "../../ipc/generated/LibraryStatusDto";
+import { applyChange, stepFrom, visiblePhotos, type LibraryFilter } from "./marks";
 
 export type IndexProgress = Extract<IndexEvent, { type: "progress" }>;
 export type IndexFinished = Extract<IndexEvent, { type: "finished" }>;
@@ -21,8 +26,12 @@ export function useLibrary() {
   const [indexing, setIndexing] = useState<IndexProgress | null>(null);
   const [lastIndex, setLastIndex] = useState<IndexFinished | null>(null);
   const [status, setStatus] = useState<LibraryStatusDto | null>(null);
-  // Kept here (not in the view) so it survives switching to Edit and back.
+  // Kept here (not in the view) so they survive switching to Edit and back.
   const [layout, setLayout] = useState<LibraryLayout>("grid");
+  const [filter, setFilter] = useState<LibraryFilter>("all");
+  const [selected, setSelected] = useState<string | null>(null);
+  /** A library-wide collection being viewed instead of a folder. */
+  const [collection, setCollection] = useState<CollectionListingDto | null>(null);
   const requestRef = useRef(0);
   const listingRef = useRef<FolderListingDto | null>(null);
   listingRef.current = listing;
@@ -88,7 +97,68 @@ export function useLibrary() {
     return result;
   }, [load, index]);
 
-  const openFolder = useCallback((path: string) => load(() => ipc.listFolder(path)), [load]);
+  const openFolder = useCallback(
+    async (path: string) => {
+      const result = await load(() => ipc.listFolder(path));
+      if (result) setCollection(null);
+      return result;
+    },
+    [load],
+  );
+
+  const openCollection = useCallback(async (kind: CollectionKindDto) => {
+    setLoading(true);
+    requestRef.current++; // a folder listing still in flight must not replace this view
+    try {
+      setCollection(await ipc.libraryCollection(kind));
+      setError(null);
+    } catch (e) {
+      setError(await toAppError(e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  /** The photos of the current view (collection or folder), before filtering. */
+  const photos: PhotoEntryDto[] = collection?.photos ?? listing?.photos ?? [];
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+  /** What the grid shows: the view's photos after the filter (and collection membership). */
+  const visible = useMemo(() => visiblePhotos(photos, filter, collection?.kind ?? null), [photos, filter, collection?.kind]);
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+
+  /** The photo `delta` places after `path` among the visible ones (Edit's ← →). */
+  const neighbour = useCallback(
+    (path: string | null, delta: number) => stepFrom(photosRef.current, visibleRef.current, path, delta),
+    [],
+  );
+
+  /**
+   * Rates or flags photos. Shown at once, then stored; the collection counts come back
+   * from the catalogue. On failure the view is reloaded so it shows what was stored.
+   */
+  const setMarks = useCallback(
+    async (paths: string[], change: MarkChangeDto) => {
+      if (paths.length === 0) return;
+      const targets = new Set(paths);
+      const update = (ps: PhotoEntryDto[]) =>
+        ps.map((p) => (targets.has(p.path) ? { ...p, marks: applyChange(p.marks, change) } : p));
+      setListing((l) => (l ? { ...l, photos: update(l.photos) } : l));
+      setCollection((c) => (c ? { ...c, photos: update(c.photos) } : c));
+      try {
+        const collections = await ipc.setPhotoMarks(paths, change);
+        setStatus((s) => (s ? { ...s, collections } : s));
+      } catch (e) {
+        setError(await toAppError(e));
+        const open = listingRef.current;
+        if (open) void load(() => ipc.listFolder(open.path));
+      }
+    },
+    [load],
+  );
+
+  const findPhoto = useCallback((path: string | null) => (path ? (photosRef.current.find((p) => p.path === path) ?? null) : null), []);
 
   /** Re-lists the open folder and re-indexes its library root (fast when unchanged). */
   const refresh = useCallback(async () => {
@@ -108,6 +178,17 @@ export function useLibrary() {
     status,
     layout,
     setLayout,
+    filter,
+    setFilter,
+    selected,
+    setSelected,
+    collection,
+    openCollection,
+    photos,
+    visible,
+    neighbour,
+    setMarks,
+    findPhoto,
     chooseFolder,
     openFolder,
     refresh,

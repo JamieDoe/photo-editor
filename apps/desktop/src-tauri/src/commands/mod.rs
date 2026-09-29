@@ -6,6 +6,7 @@
 pub mod export;
 pub mod images;
 pub mod library;
+pub mod marks;
 pub mod selftest;
 pub mod settings;
 pub mod system;

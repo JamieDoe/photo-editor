@@ -50,6 +50,10 @@ existing screens to the design now, and to match it for every screen built from 
    The Library grid (3:2 cards with a caption, 16 px by 20 px gaps, a column count
    that keeps cards at most 280 px wide) was the first screen added this way. A
    Grid/List switch keeps the details list, which the design does not have.
+   Ratings and flags followed (ADR 0018): stars and a pick badge on cards, rejects at
+   38% opacity, a white selection ring, and the star and flag controls in Edit's header.
+   One deliberate change: a click *selects* a card and a double-click opens it (the
+   design opens on click), because culling needs a selection.
 
 ## Consequences
 

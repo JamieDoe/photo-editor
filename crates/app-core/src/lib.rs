@@ -13,7 +13,10 @@ mod session;
 mod thumbnails;
 mod types;
 
-pub use catalogue::{Catalogue, CatalogueError, FileStatus, PhotoDetails, SourceIdentity};
+pub use catalogue::{
+    Catalogue, CatalogueError, Collection, CollectionCounts, CollectionEntry, FileStatus, Flag,
+    MarkChange, Marks, PhotoDetails, PhotoId, Rating, SourceIdentity,
+};
 pub use config::EngineConfig;
 pub use engine::Engine;
 pub use error::{EngineError, ErrorKind};

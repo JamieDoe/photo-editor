@@ -11,12 +11,14 @@ mod catalogue;
 mod details;
 mod error;
 mod identity;
+mod marks;
 mod schema;
 
 pub use catalogue::{Catalogue, FileRecord, FileStatus, LibraryFolder, RecordOutcome, ScanId};
 pub use details::{METADATA_VERSION, PhotoDetails, camera_name};
 pub use error::CatalogueError;
 pub use identity::SourceIdentity;
+pub use marks::{Collection, CollectionCounts, CollectionEntry, Flag, MarkChange, Marks, Rating};
 pub use schema::SCHEMA_VERSION;
 
 /// Row id of a photo.

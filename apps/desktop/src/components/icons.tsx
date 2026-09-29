@@ -97,6 +97,26 @@ export const StarIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** Rating star; filled stars use the accent. */
+export const RatingStar = ({ filled }: { filled: boolean }) => (
+  <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true" className={filled ? "rating-star filled" : "rating-star"}>
+    <path d="M8 2l1.8 3.8 4.2.5-3.1 2.9.8 4.1L8 11.3l-3.7 2 .8-4.1L2 6.3l4.2-.5z" />
+  </svg>
+);
+
+export const PickIcon = ({ size = 15, filled = false }: IconProps & { filled?: boolean }) => (
+  <svg className="icon" width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M3.5 14V2.5M3.5 3h8l-1.8 3 1.8 3h-8" style={filled ? { fill: "currentColor" } : undefined} />
+  </svg>
+);
+
+export const RejectIcon = (p: IconProps) => (
+  <Icon size={15} {...p}>
+    <circle cx="8" cy="8" r="6" />
+    <path d="M5.5 5.5l5 5M10.5 5.5l-5 5" />
+  </Icon>
+);
+
 export const DiagnosticsIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M1.5 8h3l1.5-4 3 8 1.5-4h4" />
