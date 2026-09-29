@@ -287,6 +287,8 @@ button.flag-button.reject[aria-pressed="true"] { background: var(--danger-soft);
 .panel-exif { flex-shrink: 0; height: 40px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; font-family: var(--mono); font-size: 11px; color: var(--text-2); }
 .panel-exif.empty { justify-content: flex-start; color: var(--text-3); }
 .panel-scroll { flex: 1; min-height: 0; }
+.look-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--hairline); }
+.look-label { font-size: 13px; font-weight: 500; }
 .panel-section { border-top: 1px solid var(--hairline); }
 button.section-header {
   width: 100%; height: 46px; padding: 0 16px; gap: 10px; justify-content: flex-start;

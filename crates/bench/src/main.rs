@@ -9,6 +9,7 @@
 //! are printed as a markdown table and written as JSON for comparison over time.
 
 mod index_bench;
+mod look;
 mod measure;
 mod report;
 mod thumb_bench;
@@ -28,6 +29,8 @@ fn main() {
     let mut index_scale: Option<usize> = None;
     let mut index_links: Option<usize> = None;
     let mut thumbnails = false;
+    let mut look = false;
+    let mut args_flat = false;
     let mut inputs = Vec::new();
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
@@ -42,6 +45,8 @@ fn main() {
             "--index-scale" => index_scale = it.next().and_then(|v| v.parse().ok()),
             "--index-links" => index_links = it.next().and_then(|v| v.parse().ok()),
             "--thumbnails" => thumbnails = true,
+            "--look" => look = true,
+            "--flat" => args_flat = true,
             "-h" | "--help" => {
                 println!("bench [--iterations N] [--out DIR] [FILE|DIR ...]");
                 return;
@@ -50,6 +55,22 @@ fn main() {
         }
     }
 
+    if look {
+        let recipe = if args_flat {
+            app_core::EditRecipe {
+                look: app_core::Look::Flat,
+                ..app_core::EditRecipe::default()
+            }
+        } else {
+            app_core::EditRecipe::default()
+        };
+        let result = look::run(&camera_files(), recipe);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&result).expect("serialisable result")
+        );
+        return;
+    }
     if thumbnails {
         let fixtures = workspace_root().join("tests/fixtures");
         let files = collect_files(&[fixtures.join("synthetic"), fixtures.join("local")]);

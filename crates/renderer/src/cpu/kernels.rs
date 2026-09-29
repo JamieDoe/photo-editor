@@ -1,7 +1,7 @@
 use image_core::color::REC709_LUMA;
 
 use super::lut::CurveLut;
-use crate::ops::contrast;
+use crate::ops::{contrast, look};
 use crate::{RenderPlan, Stage};
 
 /// A compiled, fused CPU operation over interleaved RGB `f32` samples.
@@ -64,6 +64,7 @@ pub(super) fn compile(plan: &RenderPlan) -> Vec<Kernel> {
                     contrast::apply(x, gamma)
                 }))));
             }
+            Stage::BaseCurve => out.push(Kernel::Curve(Box::new(CurveLut::build(look::standard)))),
             Stage::Saturation { factor } => out.push(Kernel::Saturation(factor)),
             Stage::WhiteBalance { .. } | Stage::Exposure { .. } => unreachable!("handled above"),
         }

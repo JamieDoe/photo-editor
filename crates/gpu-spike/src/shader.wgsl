@@ -5,7 +5,7 @@ struct Params {
     gains: vec4<f32>,
     contrast_gamma: f32,
     saturation: f32,
-    flags: u32,        // bit 0: contrast, bit 1: saturation
+    flags: u32,        // bit 0: contrast, bit 1: saturation, bit 2: base curve
     pixel_count: u32,
 };
 
@@ -34,6 +34,21 @@ fn contrast(x: f32, g: f32) -> f32 {
     return pow(q, PERCEPTUAL_GAMMA);
 }
 
+// Standard look (renderer::ops::look::standard): log-logistic S-curve after a lift.
+const LOOK_LIFT: f32 = 2.3784142;
+const LOOK_SLOPE: f32 = 1.65;
+const LOOK_PIVOT: f32 = 0.55;
+
+fn log_logistic(v: f32) -> f32 {
+    return 1.0 / (1.0 + pow(LOOK_PIVOT / v, LOOK_SLOPE));
+}
+
+fn base_curve(x: f32) -> f32 {
+    if (x <= 0.0) { return 0.0; }
+    if (x >= 1.0) { return x; }
+    return log_logistic(x * LOOK_LIFT) / log_logistic(LOOK_LIFT);
+}
+
 fn encode(x: f32) -> u32 {
     let v = clamp(x, 0.0, 1.0);
     let s = select(1.055 * pow(v, 1.0 / 2.4) - 0.055, v * 12.92, v <= 0.0031308);
@@ -49,6 +64,9 @@ fn main(@builtin(workgroup_id) wg: vec3<u32>, @builtin(num_workgroups) nwg: vec3
     if ((params.flags & 1u) != 0u) {
         rgb = vec3<f32>(contrast(rgb.x, params.contrast_gamma), contrast(rgb.y, params.contrast_gamma),
                         contrast(rgb.z, params.contrast_gamma));
+    }
+    if ((params.flags & 4u) != 0u) {
+        rgb = vec3<f32>(base_curve(rgb.x), base_curve(rgb.y), base_curve(rgb.z));
     }
     if ((params.flags & 2u) != 0u) {
         let y = dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));

@@ -1,4 +1,5 @@
 use crate::EditRecipe;
+use crate::Look;
 use crate::ops::{contrast, saturation, white_balance};
 
 /// One processing stage, in pipeline order. Parameters are resolved from the recipe
@@ -16,6 +17,8 @@ pub enum Stage {
     Exposure { multiplier: f32 },
     /// Tone S-curve around mid grey, applied per channel in a perceptual domain.
     Contrast { gamma: f32 },
+    /// The Standard base look's tone curve, per channel (ADR 0022).
+    BaseCurve,
     /// Blend towards/away from Rec.709 luminance.
     Saturation { factor: f32 },
 }
@@ -26,6 +29,7 @@ impl Stage {
             Self::WhiteBalance { .. } => "white_balance",
             Self::Exposure { .. } => "exposure",
             Self::Contrast { .. } => "contrast",
+            Self::BaseCurve => "base_curve",
             Self::Saturation { .. } => "saturation",
         }
     }
@@ -55,8 +59,10 @@ impl RenderPlan {
 
     /// Builds the plan for a recipe. Identity stages are omitted.
     ///
-    /// Order: white balance -> exposure -> tone (contrast) -> colour (saturation) ->
-    /// output transform, matching the conceptual pipeline in CLAUDE.md.
+    /// Order: white balance -> exposure -> contrast -> base look (scene to display
+    /// tones) -> colour (saturation) -> output transform, matching the conceptual
+    /// pipeline in CLAUDE.md. Exposure and contrast act on scene-referred values, so
+    /// the base look's shoulder still rolls off highlights they push up.
     pub fn from_recipe(recipe: &EditRecipe) -> Self {
         let r = recipe.sanitized();
         let mut stages = Vec::new();
@@ -75,6 +81,9 @@ impl RenderPlan {
                 gamma: contrast::gamma_for(r.contrast),
             });
         }
+        if r.look == Look::Standard {
+            stages.push(Stage::BaseCurve);
+        }
         if r.saturation != 0.0 {
             stages.push(Stage::Saturation {
                 factor: saturation::factor_for(r.saturation),
@@ -89,12 +98,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn identity_recipe_has_no_stages() {
-        assert!(
-            RenderPlan::from_recipe(&EditRecipe::default())
-                .stages
-                .is_empty()
+    fn default_recipe_is_just_the_standard_look() {
+        assert_eq!(
+            RenderPlan::from_recipe(&EditRecipe::default()).stages,
+            vec![Stage::BaseCurve]
         );
+        let flat = EditRecipe {
+            look: Look::Flat,
+            ..Default::default()
+        };
+        assert!(RenderPlan::from_recipe(&flat).stages.is_empty());
     }
 
     #[test]
@@ -113,7 +126,13 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            ["white_balance", "exposure", "contrast", "saturation"]
+            [
+                "white_balance",
+                "exposure",
+                "contrast",
+                "base_curve",
+                "saturation"
+            ]
         );
     }
 
@@ -121,6 +140,7 @@ mod tests {
     fn exposure_resolves_to_multiplier() {
         let r = EditRecipe {
             exposure: 1.0,
+            look: Look::Flat,
             ..Default::default()
         };
         assert_eq!(

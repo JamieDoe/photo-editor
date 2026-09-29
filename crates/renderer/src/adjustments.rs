@@ -83,7 +83,8 @@ mod tests {
             .as_object()
             .unwrap()
             .keys()
-            .filter(|k| *k != "version")
+            // Not sliders: the schema version, and the look (a choice of profile).
+            .filter(|k| *k != "version" && *k != "look")
             .cloned()
             .collect();
         let keys: Vec<_> = specs().iter().map(|s| s.key.to_owned()).collect();

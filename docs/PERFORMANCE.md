@@ -306,3 +306,17 @@ cache, warm OS cache.
   - a real low-end machine;
   - UI frame times while 48 thumbnails decode in the webview.
 
+## 12. Default look vs camera JPEGs (ADR 0022)
+
+`cargo run -p bench --release -- --look` compares, per camera file, our default render's
+luminance distribution with the camera's embedded JPEG (11 percentiles; RMS in sRGB
+units). `--flat` measures the old flat look.
+
+| | Canon R6 | Fuji X-T3 | Nikon Z 6 | Ricoh GR III | Sony A7 III | Sony A7R IV | Mean |
+|---|---|---|---|---|---|---|---|
+| Flat (recipe v1) | 0.207 | 0.094 | 0.204 | 0.105 | 0.176 | 0.023 | 0.135 |
+| Standard (v2 default) | 0.072 | 0.083 | 0.046 | 0.052 | 0.018 | 0.045 | 0.053 |
+
+The base curve is one lookup-table pass (the same cost as contrast). Its effect on
+interactive render time is within noise.
+

@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use app_core::{EditRecipe, Engine, EngineConfig, PreviewQuality, PreviewRequest};
+use app_core::{EditRecipe, Engine, EngineConfig, Look, PreviewQuality, PreviewRequest};
 
 const TOLERANCE: u8 = 4;
 
@@ -26,8 +26,13 @@ fn raw_pipeline_matches_golden() {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/golden/raw");
     let update = std::env::var_os("UPDATE_GOLDEN").is_some();
 
+    // The first two predate the Standard look: flat, unchanged images.
+    let flat = EditRecipe {
+        look: Look::Flat,
+        ..EditRecipe::default()
+    };
     for (name, recipe) in [
-        ("dng_identity", EditRecipe::default()),
+        ("dng_identity", flat),
         (
             "dng_edited",
             EditRecipe {
@@ -35,9 +40,10 @@ fn raw_pipeline_matches_golden() {
                 contrast: 30.0,
                 temperature: 25.0,
                 saturation: 20.0,
-                ..Default::default()
+                ..flat
             },
         ),
+        ("dng_standard", EditRecipe::default()),
     ] {
         let frame = engine
             .render_preview(PreviewRequest {

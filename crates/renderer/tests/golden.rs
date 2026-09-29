@@ -10,14 +10,31 @@
 use std::path::PathBuf;
 
 use image_core::{NeverCancel, PixelFormat};
-use renderer::{CpuRenderer, EditRecipe, RenderBackend, RenderPlan};
+use renderer::{CpuRenderer, EditRecipe, Look, RenderBackend, RenderPlan};
 
 /// Allowed per-channel difference, absorbing libm differences across platforms.
 const TOLERANCE: u8 = 1;
 
 fn cases() -> Vec<(&'static str, EditRecipe)> {
-    let r = EditRecipe::default();
+    // Single adjustments on the flat look (no base curve), so each image shows just
+    // that adjustment; these images predate the Standard look and are unchanged.
+    let r = EditRecipe {
+        look: Look::Flat,
+        ..EditRecipe::default()
+    };
+    let standard = EditRecipe::default();
     vec![
+        ("standard_identity", standard),
+        (
+            "standard_combined",
+            EditRecipe {
+                exposure: 0.4,
+                contrast: 25.0,
+                temperature: 20.0,
+                saturation: 15.0,
+                ..standard
+            },
+        ),
         ("identity", r),
         ("exposure_plus1", EditRecipe { exposure: 1.0, ..r }),
         (
