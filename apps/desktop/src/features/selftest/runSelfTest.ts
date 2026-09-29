@@ -1,6 +1,7 @@
 import * as ipc from "../../ipc/client";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
+import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { SelfTestConfigDto } from "../../ipc/generated/SelfTestConfigDto";
 import type { DisplayedFrame, Editor } from "../editor/useEditor";
 
@@ -16,7 +17,27 @@ export interface SelfTestDriver {
   editor: () => Editor;
 }
 
-const nextFrame = () => new Promise<number>((r) => requestAnimationFrame(r));
+/**
+ * The next animation frame. The OS stops delivering frames to a hidden or occluded
+ * window (or a sleeping display); rather than hang, the run then fails with a report
+ * that says so.
+ */
+const nextFrame = () =>
+  new Promise<number>((resolve, reject) => {
+    const timer = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `animation frames stopped (page visibility: ${document.visibilityState}); the window was probably hidden, covered or on another Space`,
+          ),
+        ),
+      2_000,
+    );
+    requestAnimationFrame((t) => {
+      clearTimeout(timer);
+      resolve(t);
+    });
+  });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function percentile(values: number[], p: number): number {
@@ -165,6 +186,67 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       firstRenderMs: performance.now() - tReopen,
     };
 
+    // Library indexing through the real command and events: first pass, then a
+    // rescan that must take the fast path (everything unchanged).
+    const indexing = await (async () => {
+      const folder = await ipc.selfTestGrantFolder();
+      if (!folder) return null;
+      const runIndex = async () => {
+        let done: IndexEvent | null = null;
+        const unlisten = await ipc.onIndexEvent((e) => {
+          if (e.type !== "progress") done = e;
+        });
+        const t0 = performance.now();
+        await ipc.indexLibraryFolder(folder);
+        const result = await waitFor(() => done, 60_000, "index result");
+        unlisten();
+        return { event: result, wallMs: performance.now() - t0 };
+      };
+      const first = await runIndex();
+      const rescan = await runIndex();
+      return { folder, first, rescan };
+    })();
+    const indexOk =
+      indexing !== null &&
+      indexing.first.event.type === "finished" &&
+      indexing.first.event.found > 0 &&
+      indexing.rescan.event.type === "finished" &&
+      indexing.rescan.event.new + indexing.rescan.event.changed === 0;
+
+    // Library thumbnails through the real command: every photo in the folder at once
+    // (the self-test cache starts empty), then the test image again from the cache.
+    // Each must decode as an image whose long edge is at most 512 px.
+    const thumbnails = await (async () => {
+      if (!indexing) return null;
+      const listing = await ipc.listFolder(indexing.folder);
+      const longEdge = async (bytes: ArrayBuffer) => {
+        const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/jpeg" }));
+        const edge = Math.max(bitmap.width, bitmap.height);
+        bitmap.close();
+        return edge;
+      };
+      const t0 = performance.now();
+      const all = await Promise.all(listing.photos.map((p) => ipc.libraryThumbnail(p.path)));
+      const allMs = performance.now() - t0;
+      const edges = await Promise.all(all.map(longEdge));
+      const t1 = performance.now();
+      const again = await ipc.libraryThumbnail(config.imagePath);
+      const cachedMs = performance.now() - t1;
+      return {
+        photos: listing.photos.length,
+        allMs,
+        cachedMs,
+        maxKb: Math.max(...all.map((b) => b.byteLength)) / 1024,
+        longEdges: [...new Set(edges)],
+        cachedLongEdge: await longEdge(again),
+      };
+    })();
+    const thumbnailsOk =
+      thumbnails !== null &&
+      thumbnails.photos > 0 &&
+      thumbnails.longEdges.every((e) => e > 0 && e <= 512) &&
+      thumbnails.cachedLongEdge > 0;
+
     // Quit guard: closing the window while an export runs must be held for
     // confirmation. The final shutdown (self_test_report) then cancels the export.
     let quitRequested: { exportsRunning: number } | null = null;
@@ -184,6 +266,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       previewOrdering: !embeddedAfterRender,
       noSchedulerErrors: stats.errors === 0,
       quitHeldDuringExport: quitGuard.held,
+      libraryIndexed: indexOk,
+      libraryThumbnails: thumbnailsOk,
     };
     // Named so that a failing run explains itself.
     const failed = Object.entries(checks)
@@ -206,6 +290,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       embeddedAfterRender,
       reopen,
       quitGuard,
+      indexing,
+      thumbnails,
       detailFrame: { size: `${detail.frame.width}x${detail.frame.height}`, rustRenderMs: detail.frame.renderMs, roundTripMs: detail.info.roundTripMs },
       baselineUiFrameGapMs: summarise(baselineGaps),
       idleDrag,

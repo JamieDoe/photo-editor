@@ -152,3 +152,47 @@ fn camera_files_yield_oriented_embedded_previews() {
         );
     }
 }
+
+#[test]
+fn camera_files_report_metadata() {
+    let local = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/local");
+    let Ok(entries) = std::fs::read_dir(&local) else {
+        return;
+    };
+    for path in entries.filter_map(|e| e.ok().map(|e| e.path())) {
+        if !LibRawDecoder.handles(&path) || path.to_string_lossy().contains("synthetic") {
+            continue;
+        }
+        let m = LibRawDecoder
+            .read_metadata(&path)
+            .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let name = path.display();
+        assert!(
+            m.camera_make.is_some() && m.camera_model.is_some(),
+            "{name}: {m:?}"
+        );
+        assert!(
+            m.width.unwrap_or(0) > 1000 && m.height.unwrap_or(0) > 1000,
+            "{name}: {m:?}"
+        );
+        let date = m
+            .captured_at
+            .as_deref()
+            .unwrap_or_else(|| panic!("{name}: no capture time"));
+        assert_eq!(date.len(), 19, "{name}: {date}");
+        assert!(
+            m.iso.is_some() && m.aperture.is_some() && m.shutter_seconds.is_some(),
+            "{name}: {m:?}"
+        );
+    }
+}
+
+#[test]
+fn synthetic_dng_metadata_has_camera_and_size() {
+    let dir = fixtures::TempDir::new("libraw-meta");
+    let path = synthetic_dng(dir.path(), 640, 400);
+    let m = LibRawDecoder.read_metadata(&path).unwrap();
+    assert_eq!(m.camera_make.as_deref(), Some(fixtures::DNG_MAKE));
+    assert_eq!((m.width, m.height), (Some(640), Some(400)));
+    assert_eq!(m.captured_at, None);
+}

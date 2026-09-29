@@ -58,6 +58,31 @@ pub struct PeThumbInfo {
     pub available: u32,
 }
 
+#[repr(C)]
+pub struct PeRawMeta {
+    pub make: [c_char; 64],
+    pub model: [c_char; 64],
+    pub lens: [c_char; 128],
+    pub captured_at: [c_char; 20],
+    pub iso: f32,
+    pub aperture: f32,
+    pub shutter: f32,
+    pub focal_length: f32,
+    pub width: u32,
+    pub height: u32,
+    pub flip: i32,
+    pub has_gps: i32,
+    pub latitude: f64,
+    pub longitude: f64,
+}
+
+impl Default for PeRawMeta {
+    fn default() -> Self {
+        // SAFETY: plain C data; all-zero is a valid (empty) value for every field.
+        unsafe { std::mem::zeroed() }
+    }
+}
+
 pub const THUMB_JPEG: i32 = 1;
 pub const THUMB_BITMAP: i32 = 2;
 pub const LIBRAW_NO_THUMBNAIL: c_int = -5;
@@ -92,6 +117,7 @@ unsafe extern "C" {
         len: *mut usize,
     ) -> c_int;
     pub fn pe_raw_thumb_release(thumb: *mut PeRawThumb);
+    pub fn pe_raw_metadata(path: *const c_char, out: *mut PeRawMeta) -> c_int;
     pub fn pe_raw_strerror(code: c_int) -> *const c_char;
     pub fn pe_raw_libraw_version() -> *const c_char;
 }

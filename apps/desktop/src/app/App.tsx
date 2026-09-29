@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { BrandMark, ExportIcon, SettingsIcon } from "../components/icons";
 import { QuitDialog } from "../components/QuitDialog";
 import { EditView } from "../features/editor/EditView";
 import { useEditor } from "../features/editor/useEditor";
@@ -9,7 +10,7 @@ import { SettingsView } from "../features/settings/SettingsView";
 import { useSettings } from "../features/settings/useSettings";
 import { runSelfTest } from "../features/selftest/runSelfTest";
 import * as ipc from "../ipc/client";
-import { MODES, type Mode } from "./modes";
+import { WORKSPACES, type Mode } from "./modes";
 
 let selfTestStarted = false;
 
@@ -25,6 +26,9 @@ export function App() {
   const [mode, setMode] = useState<Mode>("library");
   const editorRef = useRef(editor);
   editorRef.current = editor;
+  // Closing Settings returns to the workspace it was opened from.
+  const workspaceRef = useRef<Mode>("library");
+  if (mode !== "settings") workspaceRef.current = mode;
 
   useEffect(() => {
     if (selfTestStarted) return;
@@ -42,6 +46,11 @@ export function App() {
     await open();
   };
 
+  const exporting =
+    editor.exportState !== null && (editor.exportState.last === null || editor.exportState.last.type === "progress");
+  const context =
+    mode === "settings" ? "Settings" : mode === "edit" ? (editor.image?.fileName ?? "") : (library.listing?.name ?? "");
+
   // One banner; the most relevant source first.
   const sources = [editor, library, settings];
   const source = sources.find((s) => s.error !== null);
@@ -50,19 +59,47 @@ export function App() {
 
   return (
     <div className="app">
-      <header className="toolbar">
-        <nav className="modes" aria-label="Modes">
-          {MODES.map((m) => (
-            <button
-              key={m.id}
-              className={m.id === mode ? "active" : undefined}
-              aria-current={m.id === mode ? "page" : undefined}
-              onClick={() => setMode(m.id)}
-            >
+      <header className="topbar">
+        <div className="topbar-left">
+          <BrandMark />
+          {/* Working name until the product is named. */}
+          <span className="brand">Photo Editor</span>
+          {context && (
+            <>
+              <span className="topbar-divider" />
+              <span className="topbar-context" title={context}>
+                {context}
+              </span>
+            </>
+          )}
+        </div>
+        <nav className="segmented" aria-label="Workspace">
+          {WORKSPACES.map((m) => (
+            <button key={m.id} aria-current={m.id === mode ? "page" : undefined} onClick={() => setMode(m.id)}>
               {m.label}
             </button>
           ))}
         </nav>
+        <div className="topbar-right">
+          <button
+            className="icon-button"
+            aria-label="Settings"
+            title="Settings"
+            aria-pressed={mode === "settings"}
+            onClick={() => setMode(mode === "settings" ? workspaceRef.current : "settings")}
+          >
+            <SettingsIcon />
+          </button>
+          <button
+            className="primary"
+            onClick={() => void editor.exportImage()}
+            disabled={mode !== "edit" || !editor.image || exporting}
+            title={editor.image ? "Export this photo as a JPEG" : "Open a photo to export it"}
+          >
+            <ExportIcon />
+            {exporting ? "Exporting…" : "Export"}
+          </button>
+        </div>
       </header>
       {error && <ErrorBanner error={error} onDismiss={clearError} />}
       <div className="mode-body">

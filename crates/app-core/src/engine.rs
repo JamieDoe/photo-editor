@@ -28,16 +28,19 @@ const INTERACTIVE_UNDERSAMPLE_PERCENT: u32 = 85;
 
 /// The application engine. Cheap to share behind an `Arc`; all methods take `&self`.
 pub struct Engine {
-    shared: Arc<Shared>,
+    pub(crate) shared: Arc<Shared>,
     // Owned outside `Shared` so job closures (which hold `Arc<Shared>`) never keep the
     // job system alive; dropping the engine stops the workers.
-    jobs: JobSystem,
+    pub(crate) jobs: JobSystem,
 }
 
-struct Shared {
+pub(crate) struct Shared {
     config: EngineConfig,
-    decoders: DecoderRegistry,
-    renderer: CpuRenderer,
+    pub(crate) decoders: DecoderRegistry,
+    pub(crate) renderer: CpuRenderer,
+    pub(crate) thumbnails: Option<cache::DiskCache>,
+    /// Cancel tokens of thumbnail pre-generation batches, by batch key (library root).
+    pub(crate) thumbnail_batches: Mutex<std::collections::HashMap<String, CancelToken>>,
     images: Mutex<OpenImages>,
     previews: Mutex<PreviewCache>,
     next_image_id: AtomicU64,
@@ -53,6 +56,11 @@ impl Engine {
         let shared = Arc::new(Shared {
             images: Mutex::new(OpenImages::new(config.max_open_images)),
             previews: Mutex::new(PreviewCache::new(config.preview_cache_bytes)),
+            thumbnails: config
+                .thumbnail_cache_dir
+                .clone()
+                .map(|dir| cache::DiskCache::new(dir, "jpg", config.thumbnail_cache_bytes)),
+            thumbnail_batches: Mutex::new(std::collections::HashMap::new()),
             config,
             decoders,
             renderer: CpuRenderer,
@@ -317,7 +325,11 @@ impl Shared {
                 .unwrap_or_default(),
             decoder: info.decoder,
             kind: info.kind,
-            camera: format!("{} {}", info.make, info.model).trim().to_owned(),
+            camera: catalogue::camera_name(Some(&info.make), Some(&info.model)).unwrap_or_default(),
+            iso: info.iso,
+            aperture: info.aperture,
+            shutter_seconds: info.shutter_seconds,
+            focal_length_mm: info.focal_length_mm,
             full_width: info.full_width,
             full_height: info.full_height,
             levels: pyramid

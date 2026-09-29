@@ -8,6 +8,8 @@
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { createRoot } from "react-dom/client";
 import { App } from "../src/app/App";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import "../src/styles.css";
 
 const specs = [
@@ -29,12 +31,13 @@ function mockListing(path: string) {
   const parts = path.split("/").filter(Boolean);
   const rootIndex = parts.indexOf("Photos");
   const crumbs = parts.slice(rootIndex).map((name, i) => ({ name, path: "/" + parts.slice(0, rootIndex + i + 1).join("/") }));
-  const photos = Array.from({ length: 14 }, (_, i) => ({
+  const photos = Array.from({ length: 2400 }, (_, i) => ({
     name: `DSC_${String(i * 7 + 2).padStart(4, "0")}.${i % 5 === 4 ? "JPG" : "NEF"}`,
     path: `${path}/DSC_${i}.NEF`,
     sizeBytes: 24_000_000 + i * 731_000,
-    modifiedMs: Date.UTC(2026, 7, 14, 9, i * 3),
+    modifiedMs: Date.UTC(2026, 7, 14, 9, i % 60),
     raw: i % 5 !== 4,
+    details: i % 3 === 2 ? null : { camera: "Nikon Z 6", lens: "NIKKOR Z 24-70mm f/4 S", capturedAt: `2026-09-${24 + (i % 3)}T06:${String(10 + (i % 50)).padStart(2, "0")}:12`, iso: 100, aperture: 8, shutterSeconds: 1 / 125, focalLengthMm: 35, width: 6048, height: 4024 },
   }));
   return {
     path,
@@ -61,13 +64,29 @@ function placeholderFrame(w: number, h: number): ArrayBuffer {
   return buf;
 }
 
+/** A gradient "photo" as JPEG bytes; every fourth one is portrait. Arrives after a
+ *  short random delay, like a thumbnail being generated. */
+async function mockThumbnail(path: string): Promise<ArrayBuffer> {
+  const n = Number(/_(\d+)\./.exec(path)?.[1] ?? 0);
+  const [w, h] = n % 4 === 3 ? [341, 512] : [512, 341];
+  const canvas = new OffscreenCanvas(w, h);
+  const g = canvas.getContext("2d")!;
+  const grad = g.createLinearGradient(0, 0, w, h);
+  grad.addColorStop(0, `hsl(${(n * 47) % 360} 45% 35%)`);
+  grad.addColorStop(1, `hsl(${(n * 47 + 60) % 360} 50% 70%)`);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, w, h);
+  await new Promise((r) => setTimeout(r, 20 + Math.random() * 150));
+  return (await canvas.convertToBlob({ type: "image/jpeg", quality: 0.8 })).arrayBuffer();
+}
+
 mockIPC((cmd, payload) => {
   switch (cmd) {
     case "engine_info":
       return { rendererVersion: 1, recipeVersion: 1, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs };
     case "open_image_dialog":
     case "open_image_path":
-      return { id: 1, fileName: "mock.nef", decoder: "libraw", cameraRaw: true, camera: "Mock Camera", fullWidth: 6000, fullHeight: 4000, levels: [[3000, 2000], [1500, 1000], [750, 500], [375, 250]], pyramidBytes: 0, identityMs: 0.5, decodeMs: 380, pyramidMs: 2, embeddedPreviewMs: 12 };
+      return { id: 1, fileName: "mock.nef", decoder: "libraw", cameraRaw: true, camera: "Mock Camera", iso: 100, aperture: 6.7, shutterSeconds: 1, focalLengthMm: 52, fullWidth: 6000, fullHeight: 4000, levels: [[3000, 2000], [1500, 1000], [750, 500], [375, 250]], pyramidBytes: 0, identityMs: 0.5, decodeMs: 380, pyramidMs: 2, embeddedPreviewMs: 12 };
     case "render_preview":
       return placeholderFrame(600, 400);
     case "self_test_config":
@@ -84,8 +103,16 @@ mockIPC((cmd, payload) => {
       lib.recentFolders = ["/Users/me/Photos/2026 Iceland", ...lib.recentFolders.filter((f) => f !== "/Users/me/Photos/2026 Iceland")];
       return mockListing("/Users/me/Photos/2026 Iceland");
     }
+    case "index_library_folder":
+      return null;
+    case "library_status":
+      return { photos: 1284, folders: ["/Users/me/Photos/2026 Iceland"], notice: null };
     case "list_folder":
       return mockListing((payload as { path: string }).path);
+    case "library_thumbnail":
+      return mockThumbnail((payload as { path: string }).path);
+    case "cancel_thumbnail":
+      return null;
     case "set_default_folder":
       (mockSettings.library as { defaultFolder: string | null }).defaultFolder = (payload as { path: string }).path;
       return { settings: mockSettings, restartRequired: false, recoveredFrom: null };

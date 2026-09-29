@@ -3,6 +3,7 @@
 #include <libraw/libraw.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #ifndef _WIN32
 #include <dlfcn.h>
 #endif
@@ -203,6 +204,51 @@ int pe_raw_thumbnail(const char *path, uint32_t min_long_edge, pe_raw_thumb **ou
 fail:
     pe_raw_thumb_release(t);
     return rc != LIBRAW_SUCCESS ? rc : LIBRAW_UNSPECIFIED_ERROR;
+}
+
+static double gps_degrees(const float dms[3], char ref) {
+    double d = dms[0] + dms[1] / 60.0 + dms[2] / 3600.0;
+    return (ref == 'S' || ref == 'W') ? -d : d;
+}
+
+int pe_raw_metadata(const char *path, pe_raw_meta *out) {
+    memset(out, 0, sizeof(*out));
+    libraw_data_t *lr = libraw_init(0);
+    if (!lr) return LIBRAW_UNSUFFICIENT_MEMORY;
+    int rc = libraw_open_file(lr, path); /* parses headers only */
+    if (rc != LIBRAW_SUCCESS) {
+        libraw_close(lr);
+        return rc;
+    }
+    copy_str(out->make, lr->idata.make, sizeof(out->make));
+    copy_str(out->model, lr->idata.model, sizeof(out->model));
+    const char *lens = lr->lens.Lens[0] ? lr->lens.Lens : lr->lens.makernotes.Lens;
+    copy_str(out->lens, lens, sizeof(out->lens));
+    if (lr->other.timestamp > 0) {
+        /* LibRaw built the timestamp from the camera's local fields with mktime();
+         * localtime() on this machine recovers those fields exactly. */
+        time_t ts = lr->other.timestamp;
+        struct tm tm_buf;
+        if (localtime_r(&ts, &tm_buf)) {
+            strftime(out->captured_at, sizeof(out->captured_at), "%Y-%m-%dT%H:%M:%S", &tm_buf);
+        }
+    }
+    out->iso = lr->other.iso_speed;
+    out->aperture = lr->other.aperture;
+    out->shutter = lr->other.shutter;
+    out->focal_length = lr->other.focal_len;
+    uint32_t w = lr->sizes.width, h = lr->sizes.height;
+    if (lr->sizes.flip & 4) { uint32_t t = w; w = h; h = t; }
+    out->width = w;
+    out->height = h;
+    out->flip = lr->sizes.flip;
+    if (lr->other.parsed_gps.gpsparsed) {
+        out->has_gps = 1;
+        out->latitude = gps_degrees(lr->other.parsed_gps.latitude, lr->other.parsed_gps.latref);
+        out->longitude = gps_degrees(lr->other.parsed_gps.longitude, lr->other.parsed_gps.longref);
+    }
+    libraw_close(lr);
+    return LIBRAW_SUCCESS;
 }
 
 const char *pe_raw_strerror(int code) { return libraw_strerror(code); }

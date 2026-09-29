@@ -91,10 +91,14 @@ borders). The recipe/plan/backend split does not change.
 
 | Quality | Source | Target |
 |---|---|---|
-| Thumbnail | smallest pyramid level ≥ 256 px | library grids |
+| Thumbnail | smallest pyramid level ≥ 256 px | small views of an open image |
 | Interactive | smallest level ≥ 85% of min(viewport, 1280 px) | while dragging |
 | Detail | smallest level ≥ viewport (device px) | 180 ms after changes settle |
 | Export | full-resolution decode (separate path) | final output |
+
+Library thumbnails are a separate path: they come from the camera's embedded preview
+(or a reduced decode plus default render), not from an open image's pyramid. See
+ADR 0015.
 
 The preview pyramid is built from a **reduced-resolution decode**: LibRaw
 `half_size` (skips demosaic, bins 2×2) when half resolution still has a long edge

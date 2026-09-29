@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDateTime } from "./format";
+import {
+  formatAperture,
+  formatBytes,
+  formatCaptured,
+  formatDateRange,
+  formatDateTime,
+  formatExposure,
+  formatShutter,
+} from "./format";
 
 describe("formatBytes", () => {
   it("uses decimal units with sensible precision", () => {
@@ -16,5 +24,42 @@ describe("formatDateTime", () => {
   });
   it("formats known times", () => {
     expect(formatDateTime(Date.UTC(2026, 8, 28, 10, 0), "en-GB")).toMatch(/2026/);
+  });
+});
+
+describe("exposure formatting", () => {
+  it("writes shutter speeds the way photographers do", () => {
+    expect(formatShutter(1 / 250)).toBe("1/250 s");
+    expect(formatShutter(0.0025)).toBe("1/400 s");
+    expect(formatShutter(0.4)).toBe("0.4 s");
+    expect(formatShutter(4)).toBe("4 s");
+    expect(formatShutter(0)).toBeNull();
+  });
+
+  it("formats apertures and the combined line", () => {
+    expect(formatAperture(8)).toBe("f/8");
+    expect(formatAperture(6.7)).toBe("f/6.7");
+    expect(formatExposure({ iso: 100, focalLengthMm: 52, aperture: 6.7, shutterSeconds: 1 })).toBe("ISO 100 · 52 mm · f/6.7 · 1 s");
+    expect(formatExposure({ aperture: 2 })).toBe("f/2");
+    expect(formatExposure({})).toBe("");
+  });
+
+  it("shows capture times exactly as recorded, whatever the local zone", () => {
+    const text = formatCaptured("2026-09-24T06:41:12", "en-GB");
+    expect(text).toMatch(/24 Sept? 2026/);
+    expect(text).toMatch(/06:41/);
+    expect(formatCaptured(null)).toBeNull();
+    expect(formatCaptured("garbage")).toBeNull();
+  });
+});
+
+describe("formatDateRange", () => {
+  it("spans the earliest and latest capture day", () => {
+    const r = formatDateRange(["2026-09-26T08:00:00", null, "2026-09-24T06:41:12", "2026-09-25T23:59:00"], "en-GB");
+    expect(r).toMatch(/24\s*[–-]\s*26 Sept? 2026/);
+  });
+  it("shows one day once and ignores missing times", () => {
+    expect(formatDateRange(["2026-09-24T06:41:12", "2026-09-24T20:00:00"], "en-GB")).toMatch(/^24 Sept? 2026$/);
+    expect(formatDateRange([null, undefined, "garbage"])).toBeNull();
   });
 });

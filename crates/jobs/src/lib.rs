@@ -1,9 +1,9 @@
 //! Background job system.
 //!
 //! Work is submitted to a [`Lane`]. Each lane has its own worker threads and priority
-//! queue, so long background work (export, indexing) can never occupy the worker that
-//! interactive renders need. Within a lane, jobs run in [`Priority`] order, FIFO for
-//! equal priorities.
+//! queue, so long background work (export, indexing) can never occupy the workers that
+//! interactive renders or on-screen thumbnails need. Within a lane, jobs run in
+//! [`Priority`] order, FIFO for equal priorities.
 //!
 //! Jobs submitted with a *supersede key* cancel any earlier job with the same key.
 //! Cancellation is cooperative: queued jobs are skipped, running jobs observe their
@@ -28,7 +28,10 @@ pub use token::CancelToken;
 pub enum Lane {
     /// Latency-sensitive work the user is waiting on (open, interactive render).
     Interactive,
-    /// Throughput work that must not starve interactive work (export, thumbnails).
+    /// Short jobs for what is on screen while browsing (library thumbnails). Separate
+    /// from `Background` so a long indexing pass or export never delays them.
+    Browse,
+    /// Throughput work that must not starve interactive work (export, indexing).
     Background,
 }
 
@@ -147,6 +150,7 @@ pub struct LaneConfig {
 #[derive(Debug, Clone)]
 pub struct JobSystemConfig {
     pub interactive: LaneConfig,
+    pub browse: LaneConfig,
     pub background: LaneConfig,
 }
 
@@ -157,6 +161,12 @@ impl Default for JobSystemConfig {
             interactive: LaneConfig {
                 workers: 1,
                 compute_threads: None,
+            },
+            // Thumbnail jobs are single-threaded; a few run side by side. The pool
+            // matches the worker count so a rare full decode stays within it.
+            browse: LaneConfig {
+                workers: (cores / 3).clamp(1, 4),
+                compute_threads: Some((cores / 3).clamp(1, 4)),
             },
             background: LaneConfig {
                 workers: 1,
@@ -213,8 +223,9 @@ struct LaneQueue {
 /// The job system. Dropping it stops workers after their current job.
 pub struct JobSystem {
     interactive: Arc<LaneQueue>,
+    browse: Arc<LaneQueue>,
     background: Arc<LaneQueue>,
-    superseded: Mutex<HashMap<String, CancelToken>>,
+    superseded: Arc<Mutex<HashMap<String, CancelToken>>>,
     next_id: AtomicU64,
     workers: Vec<JoinHandle<()>>,
 }
@@ -222,10 +233,12 @@ pub struct JobSystem {
 impl JobSystem {
     pub fn new(config: JobSystemConfig) -> Self {
         let interactive = Arc::new(LaneQueue::default());
+        let browse = Arc::new(LaneQueue::default());
         let background = Arc::new(LaneQueue::default());
         let mut workers = Vec::new();
         for (lane, queue, cfg) in [
             (Lane::Interactive, &interactive, &config.interactive),
+            (Lane::Browse, &browse, &config.browse),
             (Lane::Background, &background, &config.background),
         ] {
             let pool = cfg.compute_threads.map(|n| {
@@ -249,8 +262,9 @@ impl JobSystem {
         }
         Self {
             interactive,
+            browse,
             background,
-            superseded: Mutex::new(HashMap::new()),
+            superseded: Arc::new(Mutex::new(HashMap::new())),
             next_id: AtomicU64::new(1),
             workers,
         }
@@ -271,6 +285,9 @@ impl JobSystem {
 
         let (tx, rx) = mpsc::sync_channel(1);
         let job_token = token.clone();
+        let registration = spec
+            .supersede_key
+            .map(|key| (key, Arc::downgrade(&self.superseded)));
         let task: Task = Box::new(move |skip| {
             let result = if skip || job_token.is_cancelled() {
                 Err(JobError::Cancelled)
@@ -284,6 +301,15 @@ impl JobSystem {
                     Err(panic) => Err(JobError::Panicked(panic_message(panic.as_ref()))),
                 }
             };
+            // Finished jobs leave the supersede map, so per-item keys (one per
+            // thumbnail) do not accumulate. A newer job under the key stays.
+            if let Some((key, map)) = registration
+                && let Some(map) = map.upgrade()
+                && let Ok(mut map) = map.lock()
+                && map.get(&key).is_some_and(|t| t.same_as(&job_token))
+            {
+                map.remove(&key);
+            }
             // The receiver may have been dropped (caller lost interest); that is fine.
             let _ = tx.send(result);
         });
@@ -312,6 +338,11 @@ impl JobSystem {
         JobId(self.next_id.fetch_add(1, Ordering::Relaxed))
     }
 
+    /// Number of supersede keys currently registered (queued or running keyed jobs).
+    pub fn keyed_jobs(&self) -> usize {
+        self.superseded.lock().map_or(0, |m| m.len())
+    }
+
     /// Number of jobs waiting (not running) in a lane.
     pub fn queued(&self, lane: Lane) -> usize {
         self.queue(lane)
@@ -335,6 +366,7 @@ impl JobSystem {
     fn queue(&self, lane: Lane) -> &LaneQueue {
         match lane {
             Lane::Interactive => &self.interactive,
+            Lane::Browse => &self.browse,
             Lane::Background => &self.background,
         }
     }
@@ -348,7 +380,7 @@ impl Default for JobSystem {
 
 impl Drop for JobSystem {
     fn drop(&mut self) {
-        for queue in [&self.interactive, &self.background] {
+        for queue in [&self.interactive, &self.browse, &self.background] {
             if let Ok(mut state) = queue.state.lock() {
                 state.shutdown = true;
                 // Dropping queued tasks drops their senders; waiters see Cancelled.

@@ -19,6 +19,10 @@ pub struct ImageSummary {
     pub decoder: &'static str,
     pub kind: SourceKind,
     pub camera: String,
+    pub iso: Option<f32>,
+    pub aperture: Option<f32>,
+    pub shutter_seconds: Option<f32>,
+    pub focal_length_mm: Option<f32>,
     pub full_width: u32,
     pub full_height: u32,
     /// Dimensions of each preview pyramid level, largest first.

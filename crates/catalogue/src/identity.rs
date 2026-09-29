@@ -26,14 +26,28 @@ pub struct SourceIdentity {
 impl SourceIdentity {
     pub fn from_path(path: &Path) -> std::io::Result<Self> {
         let canonical_path = path.canonicalize()?;
-        let meta = std::fs::metadata(&canonical_path)?;
-        let size = meta.len();
-        let modified_unix_ns = meta
+        let (size, modified_unix_ns) = Self::stat(&canonical_path)?;
+        Self::from_known(canonical_path, size, modified_unix_ns)
+    }
+
+    /// Size and modification time (ns since the Unix epoch) without reading content.
+    pub fn stat(path: &Path) -> std::io::Result<(u64, u128)> {
+        let meta = std::fs::metadata(path)?;
+        let modified = meta
             .modified()
             .ok()
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
             .map_or(0, |d| d.as_nanos());
+        Ok((meta.len(), modified))
+    }
 
+    /// Completes an identity for an already canonical, already stat'ed path by reading
+    /// the fingerprint (head and tail of the file).
+    pub fn from_known(
+        canonical_path: PathBuf,
+        size: u64,
+        modified_unix_ns: u128,
+    ) -> std::io::Result<Self> {
         let mut file = std::fs::File::open(&canonical_path)?;
         let mut hasher = Fnv64::new();
         hasher.write_u64(size);

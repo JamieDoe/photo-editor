@@ -9,6 +9,10 @@ fn single_worker() -> JobSystem {
             workers: 1,
             compute_threads: None,
         },
+        browse: LaneConfig {
+            workers: 1,
+            compute_threads: Some(1),
+        },
         background: LaneConfig {
             workers: 1,
             compute_threads: Some(1),
@@ -125,6 +129,10 @@ fn superseding_cancels_running_job() {
             workers: 2,
             compute_threads: None,
         },
+        browse: LaneConfig {
+            workers: 1,
+            compute_threads: Some(1),
+        },
         background: LaneConfig {
             workers: 1,
             compute_threads: Some(1),
@@ -212,4 +220,60 @@ fn drop_cancels_queued_jobs() {
     releaser.join().unwrap();
     let _ = blocker.wait();
     assert_eq!(queued.wait(), Err(JobError::Cancelled));
+}
+
+#[test]
+fn finished_keyed_jobs_leave_the_supersede_map() {
+    let jobs = single_worker();
+    let handles: Vec<_> = (0..50)
+        .map(|i| {
+            jobs.submit(
+                JobSpec::new(Lane::Browse, Priority::VisibleThumbnail, "t")
+                    .superseding(format!("thumb-{i}")),
+                |_| Ok::<_, ()>(()),
+            )
+        })
+        .collect();
+    for h in handles {
+        h.wait().unwrap();
+    }
+    // A cancelled (skipped) job is removed too.
+    let (release, blocker) = block_lane(&jobs, Lane::Browse);
+    let queued = jobs.submit(
+        JobSpec::new(Lane::Browse, Priority::VisibleThumbnail, "t").superseding("x"),
+        |_| Ok::<_, ()>(()),
+    );
+    jobs.cancel_key("x");
+    drop(release);
+    blocker.wait().unwrap();
+    assert_eq!(queued.wait(), Err(JobError::Cancelled));
+    assert_eq!(jobs.keyed_jobs(), 0);
+}
+
+#[test]
+fn a_superseding_job_keeps_its_key_when_the_older_one_finishes() {
+    let jobs = single_worker();
+    let (release, blocker) = block_lane(&jobs, Lane::Browse);
+    let spec = || JobSpec::new(Lane::Browse, Priority::VisibleThumbnail, "t").superseding("k");
+    let older = jobs.submit(spec(), |_| Ok::<_, ()>(1));
+    let newer = jobs.submit(spec(), |_| Ok::<_, ()>(2));
+    drop(release);
+    blocker.wait().unwrap();
+    assert_eq!(older.wait(), Err(JobError::Cancelled));
+    // The older job's cleanup ran first and must not have removed the newer key...
+    assert_eq!(newer.wait(), Ok(2));
+    assert_eq!(jobs.keyed_jobs(), 0);
+}
+
+#[test]
+fn browse_lane_runs_while_background_is_busy() {
+    let jobs = single_worker();
+    let (release, blocker) = block_lane(&jobs, Lane::Background);
+    let thumb = jobs.submit(
+        JobSpec::new(Lane::Browse, Priority::VisibleThumbnail, "t"),
+        |_| Ok::<_, ()>("thumb"),
+    );
+    assert_eq!(thumb.wait(), Ok("thumb"));
+    drop(release);
+    blocker.wait().unwrap();
 }
