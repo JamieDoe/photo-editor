@@ -72,7 +72,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Edit header: name, mono file details, "● Edited", "N of M" counter | as designed |
 | Floating photo toolbar under the photo: rating stars, pick, reject | as designed (zoom, crop, masks and compare to follow) |
 | Panel: exposure strip, collapsible sections, sliders with reset-on-hover | as designed |
-| Light section: Exposure (in EV), Contrast, Highlights, Shadows; Whites, Blacks and Dehaze behind "More controls" | as designed (the tone curve graph above Whites to follow) |
+| Light section: Exposure (in EV), Contrast, Highlights, Shadows; "More controls" with the tone curve graph, then Whites, Blacks and Dehaze | as designed (the curve is the renderer's real response, ADR 0029) |
 | Colour section: Temperature in kelvin on a blue–amber track, Tint on a green–magenta track, Vibrance, Saturation | as designed |
 | Detail section: Texture, Clarity, Sharpening (default 40) | as designed (Noise reduction, and Vignette / Grain behind "More controls" to follow) |
 | Colour mixer behind "More controls": label and range name, eight dots (Blues first), Hue / Saturation / Luminance | as designed |
@@ -95,8 +95,7 @@ existing screens to the design now, and to match it for every screen built from 
 
 ### Not built yet (and so not shown)
 
-Search, Recently imported, albums, histogram, presets and Auto, tone curve,
-Noise reduction, Vignette, Grain, crop, masks, compare, zoom, the filmstrip, batch selection and Export
+Search, Recently imported, albums, histogram, presets and Auto, Noise reduction, Vignette, Grain, crop, masks, compare, zoom, the filmstrip, batch selection and Export
 dialog.
 
 ## Consequences

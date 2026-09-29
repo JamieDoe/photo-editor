@@ -72,3 +72,14 @@ pub async fn save_edit(
     .map_err(IpcError::from)?;
     Ok(EditSavedDto { edited })
 }
+
+/// Points of the tone curve the Light section draws for `recipe` (ADR 0029): the
+/// display value of each of `TONE_CURVE_POINTS` evenly spaced tones, against how the
+/// default recipe shows them. Pure and cheap (a few microseconds).
+#[tauri::command]
+pub fn tone_curve(recipe: EditRecipe) -> Vec<f32> {
+    renderer::tone_curve(&recipe, TONE_CURVE_POINTS)
+}
+
+/// As the design samples it.
+const TONE_CURVE_POINTS: usize = 49;

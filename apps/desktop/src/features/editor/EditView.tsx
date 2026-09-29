@@ -13,6 +13,7 @@ import { AdjustmentPanel } from "./AdjustmentPanel";
 import { PanelSection } from "./PanelSection";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
+import { useToneCurve } from "./useToneCurve";
 import { Viewer } from "./Viewer";
 
 interface Props {
@@ -30,6 +31,7 @@ interface Props {
 /** The Edit mode: photograph in the centre, adjustments on the right. */
 export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }: Props) {
   const { info, image, recipe, busy } = editor;
+  const toneCurve = useToneCurve(recipe);
 
   // Keyboard: 0–5 / P / X / U mark the photo, ← → move through the Library's photos.
   // Ignored while a control (such as a slider) has focus, so its own keys still work.
@@ -121,6 +123,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
             <AdjustmentPanel
               specs={info.adjustments}
               mixerSpec={info.mixer}
+              toneCurve={toneCurve}
               recipe={recipe}
               onChange={editor.setRecipe}
               disabled={!image}

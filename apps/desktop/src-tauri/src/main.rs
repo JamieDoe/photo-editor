@@ -88,6 +88,7 @@ fn main() {
             commands::marks::set_photo_marks,
             commands::marks::library_collection,
             commands::edits::save_edit,
+            commands::edits::tone_curve,
             commands::backups::library_backups,
             commands::backups::back_up_library,
             commands::backups::show_backups,
