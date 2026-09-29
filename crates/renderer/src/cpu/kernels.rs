@@ -111,6 +111,8 @@ pub(super) struct DetailKernel {
     /// them (as the tone stage's map is).
     gains: [f32; 3],
     radius: usize,
+    /// Rows either side the stage reads (see `DetailParams::reach`).
+    reach: usize,
     base: Option<BaseWithColumns>,
     exp2: SignedStopsLut,
 }
@@ -120,6 +122,8 @@ pub(super) struct DetailKernel {
 struct DetailScratch {
     log_y: Vec<f32>,
     small: Vec<f32>,
+    sharp_row: Vec<f32>,
+    vertical: Vec<f32>,
     blur: detail::BlurScratch,
     a_row: Vec<f32>,
     b_row: Vec<f32>,
@@ -160,7 +164,7 @@ impl DetailKernel {
     /// Rows a chunk should have so the band it measures (the chunk plus the blur's
     /// reach either side) is mostly the chunk itself.
     pub(super) fn min_chunk_rows(&self) -> usize {
-        8 * self.radius
+        4 * self.reach
     }
 
     fn new(source: &LinearImage, gains: [f32; 3], params: DetailParams) -> Self {
@@ -169,10 +173,12 @@ impl DetailKernel {
             let cols = base.columns(source.width() as usize);
             (base, cols)
         });
+        let (w, h) = (source.width() as usize, source.height() as usize);
         Self {
             params,
             gains,
-            radius: detail::radius_for(source.width() as usize, source.height() as usize),
+            radius: detail::radius_for(w, h),
+            reach: params.reach(w, h),
             base,
             exp2: SignedStopsLut::new(),
         }
@@ -181,19 +187,24 @@ impl DetailKernel {
     fn apply(&self, rgb: &mut [f32], span: RowSpan<'_>) {
         let w = span.width;
         let rows = rgb.len() / (w * 3);
-        // The blur reaches 2 * radius rows: measure on a band that far beyond the
-        // chunk, so every chunk sees exactly what a whole-image blur would.
-        let apron = 2 * self.radius;
-        let top = span.first_row.saturating_sub(apron);
-        let bottom = (span.first_row + rows + apron).min(span.height);
+        // Measure on a band reaching as far beyond the chunk as the blurs do, so
+        // every chunk sees exactly what a whole-image blur would.
+        let top = span.first_row.saturating_sub(self.reach);
+        let bottom = (span.first_row + rows + self.reach).min(span.height);
+        let band = bottom - top;
         DETAIL_SCRATCH.with_borrow_mut(|s| {
-            s.log_y.resize((bottom - top) * w, 0.0);
+            s.log_y.resize(band * w, 0.0);
             for (y, out) in (top..bottom).zip(s.log_y.chunks_mut(w)) {
                 detail::log_luminance_row(span.source.row(y as u32), self.gains, out);
             }
-            s.small.clear();
-            s.small.extend_from_slice(&s.log_y);
-            detail::blur_plane(&mut s.small, w, bottom - top, self.radius, &mut s.blur);
+            let small_blur = self.params.uses_small_blur();
+            if small_blur {
+                s.small.clear();
+                s.small.extend_from_slice(&s.log_y);
+                detail::blur_plane(&mut s.small, w, band, self.radius, &mut s.blur);
+            }
+            let sharpen = self.params.sharpening != 0.0;
+            s.sharp_row.resize(w, 0.0);
 
             for (r, row) in rgb.chunks_mut(w * 3).enumerate() {
                 let y = span.first_row + r;
@@ -201,9 +212,28 @@ impl DetailKernel {
                 if let Some((base, _)) = &self.base {
                     base.row(y, span.height, &mut s.a_row, &mut s.b_row);
                 }
+                if sharpen {
+                    // Neighbouring rows are in the band (or clamped at the image's edges).
+                    let band_row = |by: usize| &s.log_y[by * w..(by + 1) * w];
+                    let by = y - top;
+                    let (above, below) = (by.saturating_sub(1), (by + 1).min(band - 1));
+                    detail::sharpen_blur_row(
+                        band_row(above),
+                        band_row(by),
+                        band_row(below),
+                        &mut s.vertical,
+                        &mut s.sharp_row,
+                    );
+                }
                 for (x, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
                     let log_y = s.log_y[offset + x];
-                    let small = s.small[offset + x];
+                    // Unused blurs read as the pixel itself, which zeroes their terms.
+                    let small = if small_blur {
+                        s.small[offset + x]
+                    } else {
+                        log_y
+                    };
+                    let sharp = if sharpen { s.sharp_row[x] } else { log_y };
                     let base_log = match &self.base {
                         Some((_, cols)) => {
                             let (x0, x1, t) = cols[x];
@@ -214,9 +244,12 @@ impl DetailKernel {
                         }
                         None => small,
                     };
-                    let gain =
-                        self.exp2
-                            .eval(detail::gain_stops(&self.params, log_y, small, base_log));
+                    let stops = if small_blur {
+                        detail::gain_stops(&self.params, log_y, small, base_log, sharp)
+                    } else {
+                        detail::sharpen_stops(&self.params, log_y, sharp)
+                    };
+                    let gain = self.exp2.eval(stops);
                     px[0] *= gain;
                     px[1] *= gain;
                     px[2] *= gain;

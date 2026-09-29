@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::Look;
 use crate::adjustments::{
-    BLACKS, CLARITY, CONTRAST, EXPOSURE, HIGHLIGHTS, SATURATION, SHADOWS, TEMPERATURE, TEXTURE,
-    TINT, VIBRANCE, WHITES,
+    BLACKS, CLARITY, CONTRAST, EXPOSURE, HIGHLIGHTS, SATURATION, SHADOWS, SHARPENING, TEMPERATURE,
+    TEXTURE, TINT, VIBRANCE, WHITES,
 };
 use crate::ops::colour_mixer::ColourMixer;
 
@@ -20,7 +20,9 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 5: adds the colour mixer (ADR 0025), written only when used; older recipes have
 ///   none.
 /// - 6: adds texture and clarity (ADR 0026); older recipes read them as 0.
-pub const RECIPE_VERSION: u32 = 6;
+/// - 7: adds sharpening (ADR 0027). New recipes default to 40, as in the design;
+///   older recipes had none and keep none, so they render as they did.
+pub const RECIPE_VERSION: u32 = 7;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -57,6 +59,8 @@ pub struct EditRecipe {
     pub texture: f32,
     /// Medium-scale local contrast, -100 (softer) .. 100 (punchier).
     pub clarity: f32,
+    /// Capture sharpening, 0..150 (default 40).
+    pub sharpening: f32,
     /// Hue, saturation and luminance per colour band. `None` (and omitted from the
     /// JSON) when unused, so recipes without it read and hash as before.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,6 +86,7 @@ impl Default for EditRecipe {
             saturation: 0.0,
             texture: 0.0,
             clarity: 0.0,
+            sharpening: SHARPENING.default,
             mixer: None,
             look: Look::Standard,
         }
@@ -122,16 +127,20 @@ impl EditRecipe {
             0 | 1 => Ok(Self {
                 version: RECIPE_VERSION,
                 look: Look::Flat,
+                sharpening: 0.0,
                 ..recipe
             }
             .sanitized()),
-            // Later fields are missing from older versions and read as 0, which is
-            // exact.
+            // Later fields are missing from older versions. They read as 0, which is
+            // exact, except sharpening: its default is 40, so it is set to the 0 these
+            // recipes rendered with.
             2..=6 => Ok(Self {
                 version: RECIPE_VERSION,
+                sharpening: 0.0,
                 ..recipe
             }
             .sanitized()),
+            7 => Ok(recipe.sanitized()),
             v => Err(RecipeError::UnsupportedVersion(v)),
         }
     }
@@ -157,6 +166,7 @@ impl EditRecipe {
             saturation: SATURATION.clamp(self.saturation),
             texture: TEXTURE.clamp(self.texture),
             clarity: CLARITY.clamp(self.clarity),
+            sharpening: SHARPENING.clamp(self.sharpening),
             mixer: self.mixer.map(sanitize_mixer).filter(|m| !m.is_identity()),
             look: self.look,
         }
@@ -172,11 +182,12 @@ impl EditRecipe {
         }
     }
 
-    /// The detail controls (texture, clarity).
+    /// The detail controls (texture, clarity, sharpening).
     pub fn detail(&self) -> crate::ops::detail::DetailParams {
         crate::ops::detail::DetailParams {
             texture: self.texture,
             clarity: self.clarity,
+            sharpening: self.sharpening,
         }
     }
 
@@ -196,7 +207,9 @@ impl EditRecipe {
             && s.tint == 0.0
             && s.vibrance == 0.0
             && s.saturation == 0.0
-            && s.detail().is_identity()
+            && s.texture == 0.0
+            && s.clarity == 0.0
+            && s.sharpening == SHARPENING.default
             && s.mixer.is_none()
             && s.look == Look::default()
     }
@@ -241,7 +254,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":6,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"look":"standard"}"#
+            r#"{"version":7,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"look":"standard"}"#
         );
     }
 
@@ -252,6 +265,8 @@ mod tests {
             r,
             EditRecipe {
                 exposure: 1.0,
+                // Version 2 had no sharpening, and keeps none.
+                sharpening: 0.0,
                 ..Default::default()
             }
         );
@@ -292,6 +307,23 @@ mod tests {
         assert_eq!(r.version, RECIPE_VERSION);
         assert_eq!((r.tint, r.vibrance), (0.0, 0.0));
         assert_eq!((r.temperature, r.shadows), (20.0, 10.0));
+    }
+
+    #[test]
+    fn sharpening_defaults_to_40_but_older_recipes_keep_none() {
+        assert_eq!(EditRecipe::default().sharpening, 40.0);
+        let new = EditRecipe::from_json(r#"{"version":7,"exposure":0.5}"#).unwrap();
+        assert_eq!(new.sharpening, 40.0);
+        for old in [
+            r#"{"version":6,"texture":10.0}"#,
+            r#"{"version":2}"#,
+            r#"{"version":1}"#,
+        ] {
+            let r = EditRecipe::from_json(old).unwrap();
+            assert_eq!(r.sharpening, 0.0, "{old}");
+            // Without sharpening it differs from the default, so it stays an edit.
+            assert!(!r.is_identity());
+        }
     }
 
     #[test]

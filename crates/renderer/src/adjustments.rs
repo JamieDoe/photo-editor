@@ -162,6 +162,15 @@ pub const CLARITY: AdjustmentSpec = AdjustmentSpec {
     label: "Clarity",
     ..TEXTURE
 };
+/// Capture sharpening; on by default, as in the design (ADR 0027).
+pub const SHARPENING: AdjustmentSpec = AdjustmentSpec {
+    key: "sharpening",
+    label: "Sharpening",
+    min: 0.0,
+    max: 150.0,
+    default: 40.0,
+    ..TEXTURE
+};
 
 /// The colour mixer's controls, per band (ADR 0025). Keys are `HslShift` fields.
 pub const MIXER_HUE: AdjustmentSpec = AdjustmentSpec {
@@ -223,7 +232,7 @@ pub fn mixer_spec() -> MixerSpec {
 
 /// In display order: the design's Light section (Exposure, Contrast, Highlights,
 /// Shadows; Whites and Blacks behind "More controls"), then Colour (Temperature, Tint,
-/// Vibrance, Saturation), then Detail (Texture, Clarity).
+/// Vibrance, Saturation), then Detail (Texture, Clarity, Sharpening).
 pub fn specs() -> Vec<AdjustmentSpec> {
     vec![
         EXPOSURE,
@@ -238,6 +247,7 @@ pub fn specs() -> Vec<AdjustmentSpec> {
         SATURATION,
         TEXTURE,
         CLARITY,
+        SHARPENING,
     ]
 }
 

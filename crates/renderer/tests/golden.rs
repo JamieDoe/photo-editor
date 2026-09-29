@@ -20,10 +20,24 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
     // that adjustment; these images predate the Standard look and are unchanged.
     let r = EditRecipe {
         look: Look::Flat,
+        sharpening: 0.0,
         ..EditRecipe::default()
     };
-    let standard = EditRecipe::default();
+    // These images predate default sharpening (ADR 0027) and stay unchanged.
+    let standard = EditRecipe {
+        sharpening: 0.0,
+        ..EditRecipe::default()
+    };
     vec![
+        // The default recipe as new photos get it: capture sharpening, Standard look.
+        ("default", EditRecipe::default()),
+        (
+            "sharpening_150",
+            EditRecipe {
+                sharpening: 150.0,
+                ..r
+            },
+        ),
         ("standard_identity", standard),
         (
             "standard_combined",

@@ -102,10 +102,18 @@ mod tests {
         assert_eq!(SavedEdit::from_stored(None), SavedEdit::None);
         let r = SavedEdit::from_stored(Some(&stored(1, r#"{"version":1,"exposure":1.5}"#)));
         assert_eq!(r.recipe().map(|r| r.exposure), Some(1.5));
-        // An identity recipe (no adjustments, default look) is no edit.
+        // An identity recipe (default adjustments and look) is no edit.
         assert_eq!(
-            SavedEdit::from_stored(Some(&stored(2, r#"{"version":2}"#))),
+            SavedEdit::from_stored(Some(&stored(7, r#"{"version":7}"#))),
             SavedEdit::None
+        );
+        // Before version 7 there was no sharpening, and such recipes keep none (ADR
+        // 0027), so even an empty one is an edit now.
+        assert_eq!(
+            SavedEdit::from_stored(Some(&stored(2, r#"{"version":2}"#)))
+                .recipe()
+                .map(|r| r.sharpening),
+            Some(0.0)
         );
         // A version 1 recipe keeps the flat look it was made on (ADR 0022), so even
         // without adjustments it is an edit.

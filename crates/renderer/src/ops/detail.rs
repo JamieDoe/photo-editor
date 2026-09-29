@@ -12,8 +12,13 @@
 //!   strong edges, so clarity has no halos along them; flat regions get their
 //!   texture's contrast raised or lowered.
 //!
-//! Deep shadows fade out of Texture (mostly noise there) and Clarity eases off towards
-//! white and black, where extra contrast would clip.
+//! - **Sharpening** (ADR 0027) is capture sharpening: an unsharp mask of about one
+//!   pixel *at the rendered size* (sharpness is a property of output pixels, so unlike
+//!   Texture it does not scale with the image). Its change is limited to ±0.5 stop,
+//!   which keeps halos along edges faint.
+//!
+//! Deep shadows fade out of Texture and Sharpening (mostly noise there) and Clarity
+//! eases off towards white and black, where extra contrast would clip.
 
 use image_core::color::REC709_LUMA;
 
@@ -35,11 +40,41 @@ pub struct DetailParams {
     pub texture: f32,
     /// -100..100.
     pub clarity: f32,
+    /// 0..150.
+    pub sharpening: f32,
 }
+
+/// Rows the sharpening blur reads either side (a 3x3 binomial, see
+/// [`sharpen_blur_row`]).
+pub const SHARPEN_REACH: usize = 1;
+/// Sharpening at 100 multiplies one-pixel detail by 2.5 (the 3x3 blur captures only
+/// the finest detail, so this matches a wider 1-px unsharp mask at 100 %).
+const SHARPEN_STRENGTH: f32 = 1.5;
+const SHARPEN_MAX_STOPS: f32 = 0.5;
 
 impl DetailParams {
     pub fn is_identity(&self) -> bool {
-        self.texture == 0.0 && self.clarity == 0.0
+        self.texture == 0.0 && self.clarity == 0.0 && self.sharpening == 0.0
+    }
+
+    /// Whether Texture or Clarity (which use the small blur) are set.
+    pub fn uses_small_blur(&self) -> bool {
+        self.texture != 0.0 || self.clarity != 0.0
+    }
+
+    /// Rows either side of a pixel the stage reads, for an image of this size.
+    pub fn reach(&self, width: usize, height: usize) -> usize {
+        let small = if self.uses_small_blur() {
+            2 * radius_for(width, height)
+        } else {
+            0
+        };
+        let sharp = if self.sharpening != 0.0 {
+            SHARPEN_REACH
+        } else {
+            0
+        };
+        small.max(sharp)
     }
 
     /// Clarity needs the surroundings map.
@@ -166,23 +201,65 @@ fn vertical_pass(src: &[f32], out: &mut [f32], w: usize, h: usize, r: usize, sum
     }
 }
 
+/// The sharpening blur of one row: a 3x3 binomial ([1 2 1] x [1 2 1] / 16, about a
+/// 0.7-px Gaussian) from the row and its neighbours (pass the row itself at the
+/// image's top or bottom). `vertical` is scratch.
+pub fn sharpen_blur_row(
+    above: &[f32],
+    row: &[f32],
+    below: &[f32],
+    vertical: &mut Vec<f32>,
+    out: &mut [f32],
+) {
+    let n = row.len();
+    vertical.clear();
+    vertical.extend(
+        above
+            .iter()
+            .zip(row)
+            .zip(below)
+            .map(|((a, r), b)| a + 2.0 * r + b),
+    );
+    if n == 1 {
+        out[0] = vertical[0] * 0.25;
+        return;
+    }
+    out[0] = (3.0 * vertical[0] + vertical[1]) * 0.0625;
+    for x in 1..n - 1 {
+        out[x] = (vertical[x - 1] + 2.0 * vertical[x] + vertical[x + 1]) * 0.0625;
+    }
+    out[n - 1] = (vertical[n - 2] + 3.0 * vertical[n - 1]) * 0.0625;
+}
+
 #[inline]
 fn smoothstep(e0: f32, e1: f32, x: f32) -> f32 {
     let t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
     t * t * (3.0 - 2.0 * t)
 }
 
-/// The change in stops at a pixel whose log2 luminance is `log_y`, small blur `small`,
-/// and edge-aware surroundings `base` (in log2; only used by Clarity).
+/// The change in stops at a pixel whose log2 luminance is `log_y`, given the small
+/// blur `small`, the edge-aware surroundings `base` (only used by Clarity) and the
+/// sharpening blur `sharp` (only used by Sharpening), all in log2.
 #[inline]
-pub fn gain_stops(p: &DetailParams, log_y: f32, small: f32, base: f32) -> f32 {
+pub fn gain_stops(p: &DetailParams, log_y: f32, small: f32, base: f32, sharp: f32) -> f32 {
     let d = -log_y; // stops below white
-    let texture = p.texture / 100.0 * TEXTURE_STRENGTH * (1.0 - smoothstep(6.0, 10.0, d));
+    let shadow_fade = 1.0 - smoothstep(6.0, 10.0, d);
+    let texture = p.texture / 100.0 * TEXTURE_STRENGTH * shadow_fade;
     let clarity = p.clarity / 100.0
         * CLARITY_STRENGTH
         * smoothstep(0.0, 1.5, d)
         * (1.0 - smoothstep(7.0, 11.0, d));
-    (texture * (log_y - small) + clarity * (small - base)).clamp(-MAX_STOPS, MAX_STOPS)
+    (texture * (log_y - small) + clarity * (small - base) + sharpen_stops(p, log_y, sharp))
+        .clamp(-MAX_STOPS, MAX_STOPS)
+}
+
+/// The sharpening term alone: [`gain_stops`] when Texture and Clarity are zero (the
+/// default recipe), without their work.
+#[inline]
+pub fn sharpen_stops(p: &DetailParams, log_y: f32, sharp: f32) -> f32 {
+    let shadow_fade = 1.0 - smoothstep(6.0, 10.0, -log_y);
+    (p.sharpening / 100.0 * SHARPEN_STRENGTH * shadow_fade * (log_y - sharp))
+        .clamp(-SHARPEN_MAX_STOPS, SHARPEN_MAX_STOPS)
 }
 
 /// Reference implementation over a whole image of linear RGB `f32` (already after the
@@ -204,6 +281,14 @@ pub fn apply_reference(
         radius_for(width, height),
         &mut BlurScratch::default(),
     );
+    let mut sharp = vec![0.0f32; width * height];
+    let mut vertical = Vec::new();
+    for y in 0..height {
+        let row = |r: usize| &log_y[r * width..(r + 1) * width];
+        let (above, below) = (row(y.saturating_sub(1)), row((y + 1).min(height - 1)));
+        let out = &mut sharp[y * width..(y + 1) * width];
+        sharpen_blur_row(above, row(y), below, &mut vertical, out);
+    }
     for y in 0..height {
         for x in 0..width {
             let i = y * width + x;
@@ -213,7 +298,7 @@ pub fn apply_reference(
                 Some(b) => -b.stops_at(x, y, width, height, small[i]),
                 None => small[i],
             };
-            let gain = gain_stops(p, log_y[i], small[i], base_log).exp2();
+            let gain = gain_stops(p, log_y[i], small[i], base_log, sharp[i]).exp2();
             for c in &mut rgb[i * 3..i * 3 + 3] {
                 *c *= gain;
             }
@@ -264,6 +349,7 @@ mod tests {
         let p = DetailParams {
             texture: 100.0,
             clarity: 100.0,
+            sharpening: 0.0,
         };
         for (a, b) in run(&flat, w, h, p).iter().zip(&flat) {
             assert!((a - b).abs() < 1e-4);
@@ -272,6 +358,7 @@ mod tests {
         let zero = DetailParams {
             texture: 0.0,
             clarity: 0.0,
+            sharpening: 0.0,
         };
         assert_eq!(run(&noisy, w, h, zero), noisy);
     }
@@ -289,6 +376,7 @@ mod tests {
             DetailParams {
                 texture: 100.0,
                 clarity: 0.0,
+                sharpening: 0.0,
             },
         );
         let less = run(
@@ -298,6 +386,7 @@ mod tests {
             DetailParams {
                 texture: -100.0,
                 clarity: 0.0,
+                sharpening: 0.0,
             },
         );
         assert!(spread(&more) > 1.6 * spread(&fine), "{}", spread(&more));
@@ -317,6 +406,7 @@ mod tests {
             DetailParams {
                 texture: 100.0,
                 clarity: 0.0,
+                sharpening: 0.0,
             },
         );
         assert!((spread(&out) / spread(&noise) - 1.0).abs() < 0.05);
@@ -334,6 +424,7 @@ mod tests {
             DetailParams {
                 texture: 0.0,
                 clarity: 100.0,
+                sharpening: 0.0,
             },
         );
         let centre = |v: &[f32]| spread(&v[40 * w..120 * w]);
@@ -354,6 +445,7 @@ mod tests {
             DetailParams {
                 texture: 0.0,
                 clarity: 100.0,
+                sharpening: 0.0,
             },
         );
         for x in 0..w {
@@ -379,6 +471,46 @@ mod tests {
                 assert!((a - b).abs() < 1e-4, "({x}, {y}): {a} vs {b}");
             }
         }
+    }
+
+    #[test]
+    fn sharpening_crisps_one_pixel_detail_with_limited_halos() {
+        let (w, h) = (200, 120);
+        let fine = plane_of(w, h, |x, y| {
+            -3.0 + if (x + y) % 2 == 0 { 0.1 } else { -0.1 }
+        });
+        let p = |s| DetailParams {
+            texture: 0.0,
+            clarity: 0.0,
+            sharpening: s,
+        };
+        let sharper = run(&fine, w, h, p(100.0));
+        assert!(
+            spread(&sharper) > 1.5 * spread(&fine),
+            "{}",
+            spread(&sharper)
+        );
+        // A hard 4-stop edge: the overshoot either side stays within half a stop.
+        let step = plane_of(w, h, |x, _| if x < w / 2 { -5.0 } else { -1.0 });
+        let out = run(&step, w, h, p(150.0));
+        for x in 0..w {
+            let (got, want) = (out[60 * w + x], step[60 * w + x]);
+            assert!((got - want).abs() <= 0.5 + 1e-4, "x {x}: {got} vs {want}");
+        }
+        // Far from the edge nothing changes.
+        assert!((out[60 * w + 10] - step[60 * w + 10]).abs() < 1e-4);
+    }
+
+    #[test]
+    fn reach_covers_the_blurs_in_use() {
+        let p = |t, s| DetailParams {
+            texture: t,
+            clarity: 0.0,
+            sharpening: s,
+        };
+        assert_eq!(p(0.0, 40.0).reach(6064, 4040), 1);
+        assert_eq!(p(10.0, 40.0).reach(6064, 4040), 18);
+        assert_eq!(p(0.0, 0.0).reach(6064, 4040), 0);
     }
 
     #[test]

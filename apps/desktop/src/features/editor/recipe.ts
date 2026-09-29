@@ -55,18 +55,24 @@ const ADJUSTMENT_KEYS: readonly AdjustmentKey[] = [
   "saturation",
   "texture",
   "clarity",
+  "sharpening",
 ];
 
 export function isAdjustmentKey(key: string): key is AdjustmentKey {
   return (ADJUSTMENT_KEYS as readonly string[]).includes(key);
 }
 
-/** Whether `r` is the default: every adjustment neutral, on the default look. */
+/** Whether `r` is the default: every adjustment at its default, on the default look. */
 export function isIdentity(r: EditRecipe): boolean {
-  return ADJUSTMENT_KEYS.every((k) => r[k] === 0) && !mixerEdited(r) && r.look === "standard";
+  const defaults = neutralRecipe(r.version);
+  return ADJUSTMENT_KEYS.every((k) => r[k] === defaults[k]) && !mixerEdited(r) && r.look === "standard";
 }
 
-/** Every adjustment at zero on the Standard look: the one place new fields are added. */
+/**
+ * The recipe of an unedited photo: every adjustment at its default (zero, except the
+ * design's default capture sharpening of 40) on the Standard look. The one place new
+ * fields are added; defaults must match the engine's specs (crates/renderer/src/adjustments.rs).
+ */
 export function neutralRecipe(recipeVersion: number): EditRecipe {
   return {
     version: recipeVersion,
@@ -82,6 +88,7 @@ export function neutralRecipe(recipeVersion: number): EditRecipe {
     saturation: 0,
     texture: 0,
     clarity: 0,
+    sharpening: 40,
     look: "standard",
   };
 }

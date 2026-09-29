@@ -63,6 +63,10 @@ texture: number,
  */
 clarity: number, 
 /**
+ * Capture sharpening, 0..150 (default 40).
+ */
+sharpening: number, 
+/**
  * Hue, saturation and luminance per colour band. `None` (and omitted from the
  * JSON) when unused, so recipes without it read and hash as before.
  */

@@ -138,13 +138,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_recipe_is_just_the_standard_look() {
+    fn default_recipe_is_capture_sharpening_and_the_standard_look() {
+        let sharpening = Stage::Detail {
+            params: DetailParams {
+                texture: 0.0,
+                clarity: 0.0,
+                sharpening: 40.0,
+            },
+        };
         assert_eq!(
             RenderPlan::from_recipe(&EditRecipe::default(), None).stages,
-            vec![Stage::BaseCurve]
+            vec![sharpening.clone(), Stage::BaseCurve]
         );
         let flat = EditRecipe {
             look: Look::Flat,
+            sharpening: 0.0,
             ..Default::default()
         };
         assert!(RenderPlan::from_recipe(&flat, None).stages.is_empty());
@@ -194,6 +202,7 @@ mod tests {
     fn white_balance_is_relative_to_the_as_shot_light() {
         let tint_only = EditRecipe {
             tint: 30.0,
+            sharpening: 0.0,
             look: Look::Flat,
             ..Default::default()
         };
@@ -220,6 +229,7 @@ mod tests {
     fn exposure_resolves_to_multiplier() {
         let r = EditRecipe {
             exposure: 1.0,
+            sharpening: 0.0,
             look: Look::Flat,
             ..Default::default()
         };
