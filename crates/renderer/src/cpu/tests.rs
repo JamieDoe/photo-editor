@@ -20,25 +20,43 @@ fn render(recipe: &EditRecipe, img: &LinearImage) -> OutputImage {
         .unwrap()
 }
 
-/// Reference renderer: scalar ops per pixel, no LUTs or fusion.
+/// Reference renderer: scalar ops, whole image stage by stage, no LUTs, fusion or
+/// chunking.
 fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
-    // The tone stage's surroundings map, from the gains before it.
+    // The surroundings map and the detail stage's luminance come from the source
+    // after the gains before them.
     let mut gains = [1.0f32; 3];
     let mut base = None;
+    let mut detail_gains = None;
     for stage in &plan.stages {
         match *stage {
             Stage::WhiteBalance { gains: g } => (0..3).for_each(|c| gains[c] *= g[c]),
             Stage::Exposure { multiplier } => gains.iter_mut().for_each(|g| *g *= multiplier),
             Stage::Tone { .. } => base = Some(ops::tone::ToneBase::build(img, gains)),
+            Stage::Detail { params } => {
+                if params.needs_base() {
+                    base = Some(ops::tone::ToneBase::build(img, gains));
+                }
+                detail_gains = Some(gains);
+            }
             _ => {}
         }
     }
     let (w, h) = (img.width() as usize, img.height() as usize);
-    let mut out = Vec::new();
-    for (k, px) in img.data().as_chunks::<3>().0.iter().enumerate() {
-        let mut rgb = [px[0], px[1], px[2]].map(|v| f32::from(v) / 65535.0);
-        for stage in &plan.stages {
-            rgb = match *stage {
+    let mut image: Vec<f32> = img.data().iter().map(|&v| f32::from(v) / 65535.0).collect();
+    for stage in &plan.stages {
+        if let Stage::Detail { params } = *stage {
+            let mut log_y = vec![0.0f32; w * h];
+            for (y, out) in log_y.chunks_mut(w).enumerate() {
+                ops::detail::log_luminance_row(img.row(y as u32), detail_gains.unwrap(), out);
+            }
+            ops::detail::apply_reference(&mut image, &log_y, w, h, base.as_ref(), &params);
+            continue;
+        }
+        for (k, px) in image.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+            let rgb = *px;
+            *px = match *stage {
+                Stage::Detail { .. } => unreachable!("whole-image stage handled above"),
                 Stage::Tone { params } => {
                     let [wr, wg, wb] = image_core::color::REC709_LUMA;
                     let log_y = (rgb[0] * wr + rgb[1] * wg + rgb[2] * wb).max(1e-6).log2();
@@ -60,9 +78,11 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                 }
             };
         }
-        out.extend(rgb.map(|c| (color::linear_to_srgb(c.clamp(0.0, 1.0)) * 255.0).round() as u8));
     }
-    out
+    image
+        .iter()
+        .map(|&c| (color::linear_to_srgb(c.clamp(0.0, 1.0)) * 255.0).round() as u8)
+        .collect()
 }
 
 #[test]
@@ -77,6 +97,8 @@ fn matches_scalar_reference_for_all_stages() {
         blacks: -30.0,
         temperature: -35.0,
         saturation: 30.0,
+        texture: 60.0,
+        clarity: 45.0,
         ..Default::default()
     };
     let plan = RenderPlan::from_recipe(&recipe, None);
@@ -175,6 +197,42 @@ fn chunking_covers_every_row_for_awkward_widths() {
         )
         .unwrap();
     assert!(out.data().iter().all(|&v| v == 255));
+}
+
+#[test]
+fn detail_matches_the_whole_image_reference_across_chunks() {
+    // Many chunks of a few rows each, and a blur radius (4 at this size) that reaches
+    // well past a chunk: every chunk must read its neighbours' rows.
+    let (w, h) = (2600u32, 180u32);
+    let data: Vec<u16> = (0..h)
+        .flat_map(|y| (0..w).map(move |x| (x, y)))
+        .flat_map(|(x, y)| {
+            let v =
+                (((x * 37 + y * 91) % 211) as u16) * 150 + ((x / 40 + y / 30) % 3) as u16 * 9000;
+            [v, v / 2 + 3000, v / 3 + 1000]
+        })
+        .collect();
+    let img = LinearImage::new(w, h, data).unwrap();
+    let recipe = EditRecipe {
+        exposure: 0.5,
+        texture: -70.0,
+        clarity: 80.0,
+        look: crate::Look::Flat,
+        ..Default::default()
+    };
+    let plan = RenderPlan::from_recipe(&recipe, None);
+    let fast = CpuRenderer
+        .render(&plan, &img, PixelFormat::Rgb8, &NeverCancel)
+        .unwrap();
+    let slow = reference(&plan, &img);
+    let max_diff = fast
+        .data()
+        .iter()
+        .zip(&slow)
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap();
+    assert!(max_diff <= 1, "max diff {max_diff}");
 }
 
 #[test]

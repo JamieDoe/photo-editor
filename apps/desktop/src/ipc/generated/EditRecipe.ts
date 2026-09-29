@@ -55,6 +55,14 @@ vibrance: number,
  */
 saturation: number, 
 /**
+ * Fine detail, -100 (smoother) .. 100 (crisper).
+ */
+texture: number, 
+/**
+ * Medium-scale local contrast, -100 (softer) .. 100 (punchier).
+ */
+clarity: number, 
+/**
  * Hue, saturation and luminance per colour band. `None` (and omitted from the
  * JSON) when unused, so recipes without it read and hash as before.
  */

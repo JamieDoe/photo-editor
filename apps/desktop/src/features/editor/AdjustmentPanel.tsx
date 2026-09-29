@@ -30,6 +30,7 @@ const LOOKS: ReadonlyArray<{ id: Look; label: string; hint: string }> = [
 const GROUP_ICONS: Record<string, ReactNode> = {
   Light: <LightIcon />,
   Colour: <ColourIcon />,
+  Detail: <DetailIcon />,
 };
 
 /**

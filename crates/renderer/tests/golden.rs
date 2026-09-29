@@ -80,6 +80,15 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                 ..r
             },
         ),
+        ("texture_plus80", EditRecipe { texture: 80.0, ..r }),
+        ("clarity_plus80", EditRecipe { clarity: 80.0, ..r }),
+        (
+            "clarity_minus80",
+            EditRecipe {
+                clarity: -80.0,
+                ..r
+            },
+        ),
         (
             // Darker, richer blues; oranges towards yellow; greens muted.
             "colour_mixer",

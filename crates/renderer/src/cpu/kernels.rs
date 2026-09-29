@@ -3,6 +3,7 @@ use image_core::color::REC709_LUMA;
 
 use super::lut::CurveLut;
 use crate::ops::colour_mixer::{self, MixerTable};
+use crate::ops::detail::{self, DetailParams};
 use crate::ops::tone::{self, ToneBase, ToneParams};
 use crate::ops::{contrast, look, vibrance};
 use crate::{RenderPlan, Stage};
@@ -10,10 +11,12 @@ use crate::{RenderPlan, Stage};
 /// Where a chunk of pixels sits in the image (needed by stages that look at
 /// neighbourhoods).
 #[derive(Debug, Clone, Copy)]
-pub(super) struct RowSpan {
+pub(super) struct RowSpan<'a> {
     pub first_row: usize,
     pub width: usize,
     pub height: usize,
+    /// The whole source, for stages that read rows outside the chunk.
+    pub source: &'a LinearImage,
 }
 
 /// A compiled, fused CPU operation over interleaved RGB `f32` samples.
@@ -26,6 +29,8 @@ pub(super) enum Kernel {
     /// Highlights/shadows (with the surroundings map) and whites/blacks, with the
     /// gains as lookup tables over "stops below white".
     Tone(Box<ToneKernel>),
+    /// Texture and clarity: reads source rows around the chunk.
+    Detail(Box<DetailKernel>),
 }
 
 /// The surroundings map with each pixel column's map columns and blend weight.
@@ -100,6 +105,127 @@ fn cached_base(source: &LinearImage, gains: [f32; 3]) -> std::sync::Arc<ToneBase
     base
 }
 
+pub(super) struct DetailKernel {
+    params: DetailParams,
+    /// Gains before the stage: the neighbourhoods are measured on the source after
+    /// them (as the tone stage's map is).
+    gains: [f32; 3],
+    radius: usize,
+    base: Option<BaseWithColumns>,
+    exp2: SignedStopsLut,
+}
+
+/// Per-thread buffers for the detail stage's luminance planes.
+#[derive(Default)]
+struct DetailScratch {
+    log_y: Vec<f32>,
+    small: Vec<f32>,
+    blur: detail::BlurScratch,
+    a_row: Vec<f32>,
+    b_row: Vec<f32>,
+}
+
+thread_local! {
+    static DETAIL_SCRATCH: std::cell::RefCell<DetailScratch> = std::cell::RefCell::default();
+}
+
+/// `2^s` for s in -MAX..MAX stops, every 1/256 stop (the detail gains).
+struct SignedStopsLut {
+    table: Vec<f32>,
+}
+
+impl SignedStopsLut {
+    const STEPS_PER_STOP: f32 = 256.0;
+    const MAX: f32 = detail::MAX_STOPS;
+
+    fn new() -> Self {
+        let n = (2.0 * Self::MAX * Self::STEPS_PER_STOP) as usize;
+        Self {
+            table: (0..=n)
+                .map(|i| (i as f32 / Self::STEPS_PER_STOP - Self::MAX).exp2())
+                .collect(),
+        }
+    }
+
+    #[inline]
+    fn eval(&self, s: f32) -> f32 {
+        let pos = (s.clamp(-Self::MAX, Self::MAX - 1e-4) + Self::MAX) * Self::STEPS_PER_STOP;
+        let i = pos as usize;
+        let t = pos - i as f32;
+        self.table[i] + (self.table[i + 1] - self.table[i]) * t
+    }
+}
+
+impl DetailKernel {
+    /// Rows a chunk should have so the band it measures (the chunk plus the blur's
+    /// reach either side) is mostly the chunk itself.
+    pub(super) fn min_chunk_rows(&self) -> usize {
+        8 * self.radius
+    }
+
+    fn new(source: &LinearImage, gains: [f32; 3], params: DetailParams) -> Self {
+        let base = params.needs_base().then(|| {
+            let base = cached_base(source, gains);
+            let cols = base.columns(source.width() as usize);
+            (base, cols)
+        });
+        Self {
+            params,
+            gains,
+            radius: detail::radius_for(source.width() as usize, source.height() as usize),
+            base,
+            exp2: SignedStopsLut::new(),
+        }
+    }
+
+    fn apply(&self, rgb: &mut [f32], span: RowSpan<'_>) {
+        let w = span.width;
+        let rows = rgb.len() / (w * 3);
+        // The blur reaches 2 * radius rows: measure on a band that far beyond the
+        // chunk, so every chunk sees exactly what a whole-image blur would.
+        let apron = 2 * self.radius;
+        let top = span.first_row.saturating_sub(apron);
+        let bottom = (span.first_row + rows + apron).min(span.height);
+        DETAIL_SCRATCH.with_borrow_mut(|s| {
+            s.log_y.resize((bottom - top) * w, 0.0);
+            for (y, out) in (top..bottom).zip(s.log_y.chunks_mut(w)) {
+                detail::log_luminance_row(span.source.row(y as u32), self.gains, out);
+            }
+            s.small.clear();
+            s.small.extend_from_slice(&s.log_y);
+            detail::blur_plane(&mut s.small, w, bottom - top, self.radius, &mut s.blur);
+
+            for (r, row) in rgb.chunks_mut(w * 3).enumerate() {
+                let y = span.first_row + r;
+                let offset = (y - top) * w;
+                if let Some((base, _)) = &self.base {
+                    base.row(y, span.height, &mut s.a_row, &mut s.b_row);
+                }
+                for (x, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+                    let log_y = s.log_y[offset + x];
+                    let small = s.small[offset + x];
+                    let base_log = match &self.base {
+                        Some((_, cols)) => {
+                            let (x0, x1, t) = cols[x];
+                            let (x0, x1) = (x0 as usize, x1 as usize);
+                            let a = s.a_row[x0] + (s.a_row[x1] - s.a_row[x0]) * t;
+                            let b = s.b_row[x0] + (s.b_row[x1] - s.b_row[x0]) * t;
+                            a * small + b
+                        }
+                        None => small,
+                    };
+                    let gain =
+                        self.exp2
+                            .eval(detail::gain_stops(&self.params, log_y, small, base_log));
+                    px[0] *= gain;
+                    px[1] *= gain;
+                    px[2] *= gain;
+                }
+            }
+        });
+    }
+}
+
 impl ToneKernel {
     fn new(source: &LinearImage, gains: [f32; 3], params: ToneParams) -> Self {
         let base = params.is_local().then(|| {
@@ -114,7 +240,7 @@ impl ToneKernel {
         }
     }
 
-    fn apply(&self, rgb: &mut [f32], span: RowSpan) {
+    fn apply(&self, rgb: &mut [f32], span: RowSpan<'_>) {
         let [wr, wg, wb] = REC709_LUMA;
         let (mut a_row, mut b_row) = (Vec::new(), Vec::new());
         for (r, row) in rgb.chunks_mut(span.width * 3).enumerate() {
@@ -140,7 +266,7 @@ impl ToneKernel {
 }
 
 impl Kernel {
-    pub(super) fn apply(&self, rgb: &mut [f32], span: RowSpan) {
+    pub(super) fn apply(&self, rgb: &mut [f32], span: RowSpan<'_>) {
         match self {
             Self::Gain(g) => {
                 for px in rgb.as_chunks_mut::<3>().0 {
@@ -155,6 +281,7 @@ impl Kernel {
                 }
             }
             Self::Tone(k) => k.apply(rgb, span),
+            Self::Detail(k) => k.apply(rgb, span),
             Self::Saturation(f) => {
                 let [wr, wg, wb] = REC709_LUMA;
                 for px in rgb.as_chunks_mut::<3>().0 {
@@ -176,6 +303,19 @@ impl Kernel {
             }
         }
     }
+}
+
+/// The fewest rows per chunk the kernels want (stages that read neighbouring rows
+/// are cheaper on taller chunks).
+pub(super) fn min_chunk_rows(kernels: &[Kernel]) -> usize {
+    kernels
+        .iter()
+        .map(|k| match k {
+            Kernel::Detail(d) => d.min_chunk_rows(),
+            _ => 1,
+        })
+        .max()
+        .unwrap_or(1)
 }
 
 /// Compiles plan stages into kernels, merging consecutive channel gains. Stages that
@@ -221,6 +361,11 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
             )))),
             Stage::Saturation { factor } => out.push(Kernel::Saturation(factor)),
             Stage::Vibrance { amount } => out.push(Kernel::Vibrance(amount)),
+            Stage::Detail { params } => out.push(Kernel::Detail(Box::new(DetailKernel::new(
+                source,
+                gains_so_far,
+                params,
+            )))),
             Stage::ColourMixer { bands } => {
                 out.push(Kernel::Mixer(Box::new(MixerTable::new(&bands))))
             }

@@ -44,6 +44,7 @@ White balance (temperature,    per-channel gains, relative to the as-shot light
 Exposure                       multiply by 2^EV
 Tone (highlights, shadows,     local gains from an edge-aware surroundings map, and
       whites, blacks)          end-point gains (ADR 0023)
+Detail (texture, clarity)      local contrast at two scales, no halos (ADR 0026)
 Contrast                       S-curve around mid grey (scene-referred)
 Base look (Standard)           camera-like tone curve: lift, toe, shoulder (ADR 0022)
 Colour mixer                   hue/saturation/luminance per colour band (ADR 0025)
@@ -70,6 +71,14 @@ Output transform               clip [0,1], sRGB OETF, 8-bit quantise
     within 3 stops of white.
 - **Whites / Blacks** (`-100..100`): the gain comes from the pixel's own brightness,
   in the top 1.5 stops (1 stop) or from 4 stops below white down (1.5 stops).
+- **Texture / Clarity** (`-100..100`, ADR 0026): gains in stops from log2
+  luminance.
+  - Texture is the pixel minus a small blur (radius 0.15 % of the long edge, two box
+    passes). It fades out in deep shadows.
+  - Clarity is the small blur minus the edge-aware map. It is zero along strong
+    edges, so it has no halos.
+  - ±100 doubles or removes the band (Clarity at 2× strength). Gains are limited to
+    ±1.5 stops.
 - **Contrast** (`-100..100`): per channel, in a gamma-2.2 perceptual domain; curve
   fixes 0, mid grey (0.18) and 1; slope at the pivot is `2^(±0.8)` at the extremes;
   values above 1 pass through, so contrast alone never clips highlights.
@@ -118,10 +127,14 @@ whole image, built once per render before the parallel pass and cached while it
 cannot change. Kernels receive each chunk's row span (`RowSpan`) to look it up, so
 it still runs in the single fused pass.
 
-Sharpening, noise reduction and clarity need full-resolution neighbourhoods. The CPU
-backend will then group point stages into fused *segments*, separated by
-neighbourhood stages that need tiles with apron borders. The recipe/plan/backend
-split does not change.
+The detail stage (ADR 0026) needs full-resolution neighbourhoods.
+- Each chunk reads the source rows around it (`RowSpan::source`), measuring on its
+  rows plus the blur's reach either side.
+- Chunks are made tall enough (≥ 8 × radius rows) that this overlap stays small.
+- The result equals a whole-image blur (tested), so the stage still fuses into the
+  single pass.
+
+Sharpening and noise reduction will follow the same pattern.
 
 ## 5. Resolution levels
 

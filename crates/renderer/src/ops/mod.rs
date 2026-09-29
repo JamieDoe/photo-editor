@@ -5,6 +5,7 @@
 
 pub mod colour_mixer;
 pub mod contrast;
+pub mod detail;
 pub mod look;
 pub mod saturation;
 pub mod tone;

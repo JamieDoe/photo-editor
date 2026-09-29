@@ -13,7 +13,7 @@ use image_core::{Cancellation, LinearImage, OutputImage, PixelFormat};
 use rayon::prelude::*;
 
 use crate::{RenderBackend, RenderError, RenderPlan};
-use kernels::{Kernel, RowSpan, compile};
+use kernels::{Kernel, RowSpan, compile, min_chunk_rows};
 use lut::output_lut;
 
 /// Target pixels per parallel work item: large enough to amortise scheduling, small
@@ -43,7 +43,10 @@ impl CpuRenderer {
         let width = source.width() as usize;
         let height = source.height() as usize;
         let channels = out.format().channels();
-        let rows_per_chunk = (CHUNK_PIXELS / width).max(1);
+        let rows_per_chunk = (CHUNK_PIXELS / width)
+            .max(min_chunk_rows(&kernels))
+            .min(height)
+            .max(1);
         let src = source.data();
 
         out.data_mut()
@@ -59,6 +62,7 @@ impl CpuRenderer {
                     first_row: i * rows_per_chunk,
                     width,
                     height,
+                    source,
                 };
                 process_chunk(&kernels, src_chunk, scratch, out_chunk, channels, span);
                 Ok(())
@@ -91,7 +95,7 @@ fn process_chunk(
     scratch: &mut Vec<f32>,
     out: &mut [u8],
     channels: usize,
-    span: RowSpan,
+    span: RowSpan<'_>,
 ) {
     const INV: f32 = 1.0 / 65535.0;
     scratch.clear();

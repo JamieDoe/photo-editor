@@ -1,6 +1,7 @@
 use crate::EditRecipe;
 use crate::Look;
 use crate::ops::colour_mixer::HslShift;
+use crate::ops::detail::DetailParams;
 use crate::ops::tone::ToneParams;
 use crate::ops::{contrast, saturation, white_balance};
 use image_core::Chromaticity;
@@ -22,6 +23,9 @@ pub enum Stage {
     /// highlights and shadows read an edge-aware map of the surroundings' brightness,
     /// which backends build once per render from the stages before this one.
     Tone { params: ToneParams },
+    /// Texture and clarity (ADR 0026): local contrast measured on the image entering
+    /// the stage's neighbourhood; backends read neighbouring rows of the source.
+    Detail { params: DetailParams },
     /// Tone S-curve around mid grey, applied per channel in a perceptual domain.
     Contrast { gamma: f32 },
     /// The Standard base look's tone curve, per channel (ADR 0022).
@@ -40,6 +44,7 @@ impl Stage {
             Self::WhiteBalance { .. } => "white_balance",
             Self::Exposure { .. } => "exposure",
             Self::Tone { .. } => "tone",
+            Self::Detail { .. } => "detail",
             Self::Contrast { .. } => "contrast",
             Self::BaseCurve => "base_curve",
             Self::ColourMixer { .. } => "colour_mixer",
@@ -76,7 +81,7 @@ impl RenderPlan {
     /// Identity stages are omitted.
     ///
     /// Order: white balance -> exposure -> tone (highlights, shadows, whites, blacks)
-    /// -> contrast -> base look (scene to display tones) -> colour (mixer, vibrance,
+    /// -> detail (texture, clarity) -> contrast -> base look (scene to display tones) -> colour (mixer, vibrance,
     /// saturation) -> output transform, matching the conceptual pipeline in CLAUDE.md.
     /// Exposure and contrast act on scene-referred values, so the base look's shoulder
     /// still rolls off highlights they push up.
@@ -96,6 +101,10 @@ impl RenderPlan {
         let tone = r.tone();
         if !tone.is_identity() {
             stages.push(Stage::Tone { params: tone });
+        }
+        let detail = r.detail();
+        if !detail.is_identity() {
+            stages.push(Stage::Detail { params: detail });
         }
         if r.contrast != 0.0 {
             stages.push(Stage::Contrast {
@@ -147,6 +156,7 @@ mod tests {
             exposure: 1.0,
             contrast: 10.0,
             shadows: 20.0,
+            clarity: 15.0,
             temperature: 10.0,
             vibrance: 10.0,
             saturation: 10.0,
@@ -170,6 +180,7 @@ mod tests {
                 "white_balance",
                 "exposure",
                 "tone",
+                "detail",
                 "contrast",
                 "base_curve",
                 "colour_mixer",
