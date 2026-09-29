@@ -370,3 +370,23 @@ Mixer stage on the 1516×1010 interactive level (Nikon Z 6, three runs):
 - **Low-end hardware:** not yet measured. If it needs it, a branch-free SIMD version is
   the next step.
 
+## 16. Texture and Clarity (ADR 0026)
+
+Nikon Z 6, bench recipe (texture 20, clarity 25), three runs:
+
+| Measure | First version | Taller chunks + gain lookup table |
+|---|---|---|
+| Detail stage, 1516×1010 | +3.18 – 3.21 ms | +3.10 – 3.15 ms |
+| Full-resolution render | 202 – 224 ms | 150 – 158 ms |
+| Export render | 357 – 360 ms | 274 – 275 ms |
+
+- **Without the stage:** full resolution was about 70 ms.
+- **Where the full-resolution cost comes from:** the blur's overlap rows. Chunks of 10
+  rows with 18 rows of reach either side meant computing ~4.6× the rows. Chunks are
+  now at least 8 × radius rows tall.
+- **Release self-test worst case** (exposure and every slider change each frame, so
+  the surroundings map is rebuilt too):
+  - median render 9.7–12.3 ms, 95th percentile 13–19 ms;
+  - 30 fps preview.
+- **Next step if needed:** cache the blurred plane between frames.
+

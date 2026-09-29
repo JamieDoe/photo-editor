@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::Look;
 use crate::adjustments::{
-    BLACKS, CONTRAST, EXPOSURE, HIGHLIGHTS, SATURATION, SHADOWS, TEMPERATURE, TINT, VIBRANCE,
-    WHITES,
+    BLACKS, CLARITY, CONTRAST, EXPOSURE, HIGHLIGHTS, SATURATION, SHADOWS, TEMPERATURE, TEXTURE,
+    TINT, VIBRANCE, WHITES,
 };
 use crate::ops::colour_mixer::ColourMixer;
 
@@ -19,7 +19,8 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 4: adds tint and vibrance (ADR 0024); older recipes read them as 0.
 /// - 5: adds the colour mixer (ADR 0025), written only when used; older recipes have
 ///   none.
-pub const RECIPE_VERSION: u32 = 5;
+/// - 6: adds texture and clarity (ADR 0026); older recipes read them as 0.
+pub const RECIPE_VERSION: u32 = 6;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -52,6 +53,10 @@ pub struct EditRecipe {
     pub vibrance: f32,
     /// Colour saturation, -100 (monochrome) .. 100.
     pub saturation: f32,
+    /// Fine detail, -100 (smoother) .. 100 (crisper).
+    pub texture: f32,
+    /// Medium-scale local contrast, -100 (softer) .. 100 (punchier).
+    pub clarity: f32,
     /// Hue, saturation and luminance per colour band. `None` (and omitted from the
     /// JSON) when unused, so recipes without it read and hash as before.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -75,6 +80,8 @@ impl Default for EditRecipe {
             tint: 0.0,
             vibrance: 0.0,
             saturation: 0.0,
+            texture: 0.0,
+            clarity: 0.0,
             mixer: None,
             look: Look::Standard,
         }
@@ -120,7 +127,7 @@ impl EditRecipe {
             .sanitized()),
             // Later fields are missing from older versions and read as 0, which is
             // exact.
-            2..=5 => Ok(Self {
+            2..=6 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -148,6 +155,8 @@ impl EditRecipe {
             tint: TINT.clamp(self.tint),
             vibrance: VIBRANCE.clamp(self.vibrance),
             saturation: SATURATION.clamp(self.saturation),
+            texture: TEXTURE.clamp(self.texture),
+            clarity: CLARITY.clamp(self.clarity),
             mixer: self.mixer.map(sanitize_mixer).filter(|m| !m.is_identity()),
             look: self.look,
         }
@@ -160,6 +169,14 @@ impl EditRecipe {
             shadows: self.shadows,
             whites: self.whites,
             blacks: self.blacks,
+        }
+    }
+
+    /// The detail controls (texture, clarity).
+    pub fn detail(&self) -> crate::ops::detail::DetailParams {
+        crate::ops::detail::DetailParams {
+            texture: self.texture,
+            clarity: self.clarity,
         }
     }
 
@@ -179,6 +196,7 @@ impl EditRecipe {
             && s.tint == 0.0
             && s.vibrance == 0.0
             && s.saturation == 0.0
+            && s.detail().is_identity()
             && s.mixer.is_none()
             && s.look == Look::default()
     }
@@ -223,7 +241,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":5,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"look":"standard"}"#
+            r#"{"version":6,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"look":"standard"}"#
         );
     }
 
@@ -326,7 +344,7 @@ mod tests {
             Err(RecipeError::UnsupportedVersion(99))
         );
         assert!(matches!(
-            EditRecipe::from_json(r#"{"clarity":5}"#),
+            EditRecipe::from_json(r#"{"dehaze":5}"#),
             Err(RecipeError::Invalid(_))
         ));
     }

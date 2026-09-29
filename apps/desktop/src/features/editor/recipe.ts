@@ -53,6 +53,8 @@ const ADJUSTMENT_KEYS: readonly AdjustmentKey[] = [
   "tint",
   "vibrance",
   "saturation",
+  "texture",
+  "clarity",
 ];
 
 export function isAdjustmentKey(key: string): key is AdjustmentKey {
@@ -78,6 +80,8 @@ export function neutralRecipe(recipeVersion: number): EditRecipe {
     tint: 0,
     vibrance: 0,
     saturation: 0,
+    texture: 0,
+    clarity: 0,
     look: "standard",
   };
 }

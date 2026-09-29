@@ -146,6 +146,23 @@ pub const SATURATION: AdjustmentSpec = AdjustmentSpec {
     unit: "",
 };
 
+pub const TEXTURE: AdjustmentSpec = AdjustmentSpec {
+    key: "texture",
+    label: "Texture",
+    group: "Detail",
+    min: -100.0,
+    max: 100.0,
+    step: 1.0,
+    default: 0.0,
+    more: false,
+    unit: "",
+};
+pub const CLARITY: AdjustmentSpec = AdjustmentSpec {
+    key: "clarity",
+    label: "Clarity",
+    ..TEXTURE
+};
+
 /// The colour mixer's controls, per band (ADR 0025). Keys are `HslShift` fields.
 pub const MIXER_HUE: AdjustmentSpec = AdjustmentSpec {
     key: "hue",
@@ -206,7 +223,7 @@ pub fn mixer_spec() -> MixerSpec {
 
 /// In display order: the design's Light section (Exposure, Contrast, Highlights,
 /// Shadows; Whites and Blacks behind "More controls"), then Colour (Temperature, Tint,
-/// Vibrance, Saturation).
+/// Vibrance, Saturation), then Detail (Texture, Clarity).
 pub fn specs() -> Vec<AdjustmentSpec> {
     vec![
         EXPOSURE,
@@ -219,6 +236,8 @@ pub fn specs() -> Vec<AdjustmentSpec> {
         TINT,
         VIBRANCE,
         SATURATION,
+        TEXTURE,
+        CLARITY,
     ]
 }
 
