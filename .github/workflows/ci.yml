@@ -1,0 +1,116 @@
+# Continuous integration. The full product (LibRaw, libjpeg-turbo, Tauri) is checked on
+# macOS, where it is developed. The portable core (no native libraries: catalogue, jobs,
+# cache, renderer, JPEG-only engine) is also checked on Linux and Windows. See
+# docs/ADR/0017-continuous-integration.md.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+
+jobs:
+  macos:
+    name: macOS (full product)
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Native libraries
+        run: brew install libraw jpeg-turbo
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - name: Frontend build (typecheck + bundle; Tauri embeds dist/)
+        working-directory: apps/desktop
+        run: |
+          npm ci
+          npm run build
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy (default features, whole workspace)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Clippy (without native libraries)
+        run: |
+          cargo clippy -p raw --no-default-features --all-targets -- -D warnings
+          cargo clippy -p export --no-default-features --all-targets -- -D warnings
+          cargo clippy -p app-core --no-default-features --all-targets -- -D warnings
+          cargo clippy -p app-core --no-default-features --features turbojpeg --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test
+      - name: Tests (JPEG-only engine)
+        run: cargo test -p app-core --no-default-features
+      - name: Generated TypeScript bindings are current
+        working-directory: apps/desktop
+        run: |
+          npm run bindings
+          git diff --exit-code -- src/ipc/generated
+
+  portable:
+    name: Core on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - name: Clippy (portable crates)
+        run: >
+          cargo clippy --no-default-features --all-targets
+          -p image-core -p raw -p renderer -p cache -p jobs -p export -p platform
+          -p folders -p catalogue -p settings -p app-core
+          -- -D warnings
+      - name: Tests (portable crates)
+        run: >
+          cargo test --no-default-features
+          -p image-core -p raw -p renderer -p cache -p jobs -p export -p platform
+          -p folders -p catalogue -p settings -p app-core
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/desktop/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  dependencies:
+    name: Licences and advisories
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check

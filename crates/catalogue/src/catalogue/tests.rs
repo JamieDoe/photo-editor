@@ -397,16 +397,13 @@ fn unreadable_details_are_not_retried_and_missing_files_are_skipped() {
 #[test]
 fn many_identical_copies_stay_fast() {
     // 2,000 identical copies in one scan: each must be recorded as a new photo without
-    // checking all earlier copies on disk (that was quadratic).
+    // checking all earlier copies on disk (that was quadratic). Real small copies, not
+    // hard links: NTFS allows at most 1,023 links per file.
     let l = library("cat-copies");
-    let original = write(&l.root.join("orig.nef"), &photo_bytes(60));
+    let content = &photo_bytes(60)[..8 * 1024];
+    write(&l.root.join("orig.nef"), content);
     let ids: Vec<SourceIdentity> = (0..2_000)
-        .map(|i| {
-            let p = l.root.join(format!("copies/c{i}.nef"));
-            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
-            std::fs::hard_link(&original.canonical_path, &p).unwrap();
-            SourceIdentity::from_path(&p).unwrap()
-        })
+        .map(|i| write(&l.root.join(format!("copies/c{i}.nef")), content))
         .collect();
     let t = std::time::Instant::now();
     let out = l.cat.record_files(l.folder, &ids, ScanId(1)).unwrap();

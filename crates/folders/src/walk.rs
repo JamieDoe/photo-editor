@@ -96,7 +96,13 @@ mod tests {
         }
         let mut found = Vec::new();
         let stats = walk_photos(root, &["nef", "jpg", "dng"], |p| {
-            found.push(p.strip_prefix(root).unwrap().to_string_lossy().into_owned());
+            // Joined with "/" on every platform (Windows paths use "\\").
+            let rel = p.strip_prefix(root).unwrap();
+            let parts: Vec<_> = rel
+                .iter()
+                .map(|c| c.to_string_lossy().into_owned())
+                .collect();
+            found.push(parts.join("/"));
             ControlFlow::Continue(())
         })
         .unwrap();
