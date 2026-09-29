@@ -460,3 +460,18 @@ Getting there:
 Preview scheduler: one interactive render in flight. Before, a drag whose renders
 took longer than a frame showed no frames at all.
 
+## 20. Vignette and Grain (ADR 0031)
+
+Nikon Z 6, 1516×1010, default recipe, median of 60 renders, three runs (load average
+about 10):
+
+| Recipe | ms |
+|---|---|
+| Default | 3.2 |
+| + Vignette −40 | 4.2 |
+| + Grain 40 | 6.6 – 6.8 |
+
+- **Grain as a precomputed 4 MB noise tile:** measured slower (+6 ms, cache traffic),
+  so it stays procedural.
+- **Grain's per-pixel `exp2`:** replaced by the stop-gain lookup table.
+

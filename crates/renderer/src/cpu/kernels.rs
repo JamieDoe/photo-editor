@@ -41,8 +41,8 @@ pub(super) enum Kernel {
     /// Gain in stops by position: squared offsets per column, the amount, and the
     /// gain table.
     Vignette(Box<VignetteKernel>),
-    /// Grain amount and lattice cells per pixel.
-    Grain(f32, f32),
+    /// Grain amount, lattice cells per pixel, and the gain table.
+    Grain(f32, f32, Box<SignedStopsLut>),
 }
 
 pub(super) struct VignetteKernel {
@@ -336,7 +336,7 @@ pub(super) struct KernelScratch {
 }
 
 /// `2^s` for s in -MAX..MAX stops, every 1/256 stop (the detail gains).
-struct SignedStopsLut {
+pub(super) struct SignedStopsLut {
     table: Vec<f32>,
 }
 
@@ -592,11 +592,17 @@ impl Kernel {
                     }
                 }
             }
-            Self::Grain(amount, scale) => {
+            Self::Grain(amount, scale, exp2) => {
+                let [wr, wg, wb] = REC709_LUMA;
                 for (r, row) in rgb.chunks_mut(span.width * 3).enumerate() {
-                    let y = span.first_row + r;
+                    let gy = ((span.first_row + r) as f32 + 0.5) * scale;
                     for (x, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
-                        *px = finishing::apply_grain(*px, *amount, x, y, *scale);
+                        let n = finishing::grain_noise((x as f32 + 0.5) * scale, gy);
+                        let luma = px[0] * wr + px[1] * wg + px[2] * wb;
+                        let g = exp2.eval(finishing::grain_stops(*amount, n, luma));
+                        px[0] *= g;
+                        px[1] *= g;
+                        px[2] *= g;
                     }
                 }
             }
@@ -702,6 +708,7 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
             Stage::Grain { amount } => out.push(Kernel::Grain(
                 amount,
                 finishing::grain_scale(source.width() as usize, source.height() as usize),
+                Box::new(SignedStopsLut::new()),
             )),
             Stage::Detail { params } => out.push(Kernel::Detail(Box::new(DetailKernel::new(
                 source,
