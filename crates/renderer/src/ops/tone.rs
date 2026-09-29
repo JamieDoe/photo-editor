@@ -15,7 +15,9 @@
 
 use image_core::LinearImage;
 use image_core::color::REC709_LUMA;
-use rayon::prelude::*;
+
+use super::dehaze::DehazeModel;
+use super::scene::{GuidedMap, MAP_LONG_EDGE, SceneMap};
 
 /// Maximum lift of Shadows +100 in the darkest areas, in stops.
 pub const SHADOWS_STOPS: f32 = 2.0;
@@ -87,7 +89,7 @@ pub fn apply(rgb: [f32; 3], base_d: f32, p: &ToneParams) -> [f32; 3] {
 
 /// Long edge of the base map. Fixed (not a fraction of the render size), so a preview
 /// and the full-resolution export see the same surroundings and look the same.
-pub const BASE_LONG_EDGE: u32 = 256;
+pub const BASE_LONG_EDGE: u32 = MAP_LONG_EDGE;
 /// Guided filter window radius on the base map: about a tenth of the picture.
 const RADIUS: usize = 13;
 /// Guided filter regularisation, in stops²: brightness steps well above about half a
@@ -95,175 +97,59 @@ const RADIUS: usize = 13;
 const EPSILON: f32 = 0.25;
 
 /// The surroundings' brightness of every point of an image: a fast guided filter
-/// (He & Sun) of log luminance, self-guided, computed on a small map. For a pixel with
-/// log luminance `i`, the smoothed value is `a·i + b`, with `a` and `b` interpolated
-/// from the map; flat areas get their average, strong edges are kept.
+/// (He & Sun) of log luminance, self-guided, computed on the scene map. For a pixel
+/// with log luminance `i`, the smoothed value is `a·i + b`, with `a` and `b`
+/// interpolated from the map; flat areas get their average, strong edges are kept.
 #[derive(Debug, Clone)]
-pub struct ToneBase {
-    width: usize,
-    height: usize,
-    a: Vec<f32>,
-    b: Vec<f32>,
-}
+pub struct ToneBase(GuidedMap);
 
 impl ToneBase {
     /// Builds the map for `source` after per-channel `gains` (the white balance and
     /// exposure applied before the tone stage).
     pub fn build(source: &LinearImage, gains: [f32; 3]) -> Self {
-        let (sw, sh) = (source.width() as usize, source.height() as usize);
-        let long = sw.max(sh).max(1);
-        let scale = f64::from(BASE_LONG_EDGE).min(long as f64) / long as f64;
-        let w = ((sw as f64 * scale).round() as usize).max(1);
-        let h = ((sh as f64 * scale).round() as usize).max(1);
-        let [wr, wg, wb] = REC709_LUMA;
-        let (gr, gg, gb) = (gains[0] * wr, gains[1] * wg, gains[2] * wb);
+        Self::from_scene(&SceneMap::build(source, gains), None)
+    }
 
-        // Area-average linear luminance into the map, one map row per task.
-        let cell_of: Vec<u32> = (0..sw).map(|x| (x * w / sw) as u32).collect();
-        let luminance: Vec<f32> = (0..h)
-            .into_par_iter()
-            .flat_map_iter(|my| {
-                let (y0, y1) = (my * sh / h, ((my + 1) * sh / h).max(my * sh / h + 1));
-                // f32 partial sums per source row (at most ~50 pixels per cell per row),
-                // accumulated across rows in f64.
-                let mut sums = vec![0.0f64; w];
-                let mut counts = vec![0u32; w];
-                let mut row_sums = vec![0.0f32; w];
-                for y in y0..y1.min(sh) {
-                    row_sums.iter_mut().for_each(|s| *s = 0.0);
-                    let row = source.row(y as u32);
-                    for (px, &cell) in row.as_chunks::<3>().0.iter().zip(&cell_of) {
-                        row_sums[cell as usize] +=
-                            f32::from(px[0]) * gr + f32::from(px[1]) * gg + f32::from(px[2]) * gb;
-                        counts[cell as usize] += 1;
-                    }
-                    for (s, r) in sums.iter_mut().zip(&row_sums) {
-                        *s += f64::from(*r);
-                    }
-                }
-                sums.into_iter().zip(counts).map(|(s, c)| {
-                    if c == 0 {
-                        0.0
-                    } else {
-                        (s / f64::from(c) / 65535.0) as f32
-                    }
-                })
-            })
-            .collect();
+    /// Builds the map from the scene map, after dehaze if it runs before the tone
+    /// stage (ADR 0028).
+    pub fn from_scene(scene: &SceneMap, dehaze: Option<&DehazeModel>) -> Self {
+        let mut luminance = scene.luminance();
+        if let Some(d) = dehaze {
+            d.apply_to_map_luminance(&mut luminance);
+        }
         let i: Vec<f32> = luminance.iter().map(|&l| l.max(FLOOR).log2()).collect();
-        Self::from_log_luminance(w, h, &i)
+        Self::from_log_luminance(scene.width, scene.height, &i)
     }
 
     /// The guided filter on a `w` x `h` map of log2 luminance.
     pub fn from_log_luminance(w: usize, h: usize, i: &[f32]) -> Self {
-        let ii: Vec<f32> = i.iter().map(|v| v * v).collect();
-        let mean_i = box_blur(i, w, h, RADIUS);
-        let mean_ii = box_blur(&ii, w, h, RADIUS);
-        let (a, b): (Vec<f32>, Vec<f32>) = mean_i
-            .iter()
-            .zip(&mean_ii)
-            .map(|(&m, &mm)| {
-                let var = (mm - m * m).max(0.0);
-                let a = var / (var + EPSILON);
-                (a, m - a * m)
-            })
-            .unzip();
-        Self {
-            width: w,
-            height: h,
-            a: box_blur(&a, w, h, RADIUS),
-            b: box_blur(&b, w, h, RADIUS),
-        }
+        Self(GuidedMap::new(i, i, w, h, RADIUS, EPSILON))
     }
 
     /// Surroundings' brightness, in stops below white, at pixel (`x`, `y`) of an image
     /// `image_w` x `image_h` whose own log2 luminance there is `log_y`.
     pub fn stops_at(&self, x: usize, y: usize, image_w: usize, image_h: usize, log_y: f32) -> f32 {
-        let gx = ((x as f32 + 0.5) * self.width as f32 / image_w as f32 - 0.5)
-            .clamp(0.0, (self.width - 1) as f32);
-        let gy = ((y as f32 + 0.5) * self.height as f32 / image_h as f32 - 0.5)
-            .clamp(0.0, (self.height - 1) as f32);
-        let (x0, y0) = (gx as usize, gy as usize);
-        let (x1, y1) = ((x0 + 1).min(self.width - 1), (y0 + 1).min(self.height - 1));
-        let (tx, ty) = (gx - x0 as f32, gy - y0 as f32);
-        let lerp2 = |m: &[f32]| {
-            let top = m[y0 * self.width + x0] * (1.0 - tx) + m[y0 * self.width + x1] * tx;
-            let bottom = m[y1 * self.width + x0] * (1.0 - tx) + m[y1 * self.width + x1] * tx;
-            top * (1.0 - ty) + bottom * ty
-        };
-        -(lerp2(&self.a) * log_y + lerp2(&self.b))
+        -self.0.value_at(x, y, image_w, image_h, log_y)
     }
 
     pub fn size(&self) -> (usize, usize) {
-        (self.width, self.height)
+        self.0.size()
     }
 
-    /// Map columns and weights for each of `image_w` pixel columns: pixel `x` blends
-    /// map columns `x0` and `x1` by `t` (precomputed once per render by fast backends).
+    /// The underlying model map (`a·log_y + b` is the surroundings' log2 luminance).
+    pub fn map(&self) -> &GuidedMap {
+        &self.0
+    }
+
+    /// See [`GuidedMap::columns`].
     pub fn columns(&self, image_w: usize) -> Vec<(u32, u32, f32)> {
-        (0..image_w)
-            .map(|x| {
-                let gx = ((x as f32 + 0.5) * self.width as f32 / image_w as f32 - 0.5)
-                    .clamp(0.0, (self.width - 1) as f32);
-                let x0 = gx as usize;
-                (
-                    (x0) as u32,
-                    ((x0 + 1).min(self.width - 1)) as u32,
-                    gx - x0 as f32,
-                )
-            })
-            .collect()
+        self.0.columns(image_w)
     }
 
-    /// The map's `a` and `b` for pixel row `y` of an `image_h`-tall image, at every map
-    /// column (vertical interpolation done), into `a_row` and `b_row`.
+    /// See [`GuidedMap::row`].
     pub fn row(&self, y: usize, image_h: usize, a_row: &mut Vec<f32>, b_row: &mut Vec<f32>) {
-        let gy = ((y as f32 + 0.5) * self.height as f32 / image_h as f32 - 0.5)
-            .clamp(0.0, (self.height - 1) as f32);
-        let y0 = gy as usize;
-        let y1 = (y0 + 1).min(self.height - 1);
-        let ty = gy - y0 as f32;
-        let w = self.width;
-        a_row.clear();
-        b_row.clear();
-        for x in 0..w {
-            let (a0, a1) = (self.a[y0 * w + x], self.a[y1 * w + x]);
-            let (b0, b1) = (self.b[y0 * w + x], self.b[y1 * w + x]);
-            a_row.push(a0 + (a1 - a0) * ty);
-            b_row.push(b0 + (b1 - b0) * ty);
-        }
+        self.0.row(y, image_h, a_row, b_row);
     }
-}
-
-/// Mean over a (2r+1)² window, clamped at the borders (divides by the pixels inside).
-fn box_blur(data: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
-    let pass = |src: &[f32], len: usize, stride: usize, lines: usize, line_stride: usize| {
-        let mut out = vec![0.0f32; src.len()];
-        for line in 0..lines {
-            let base = line * line_stride;
-            let at = |k: usize| src[base + k * stride];
-            let mut sum = 0.0f64;
-            let mut count = 0u32;
-            for k in 0..=r.min(len - 1) {
-                sum += f64::from(at(k));
-                count += 1;
-            }
-            for k in 0..len {
-                out[base + k * stride] = (sum / f64::from(count)) as f32;
-                if k + r + 1 < len {
-                    sum += f64::from(at(k + r + 1));
-                    count += 1;
-                }
-                if k >= r {
-                    sum -= f64::from(at(k - r));
-                    count -= 1;
-                }
-            }
-        }
-        out
-    };
-    let horizontal = pass(data, w, 1, h, w);
-    pass(&horizontal, h, w, w, 1)
 }
 
 #[cfg(test)]
@@ -378,12 +264,5 @@ mod tests {
             };
             assert!((at(&small, 600, 400) - at(&large, 2400, 1600)).abs() < 0.05);
         }
-    }
-
-    #[test]
-    fn box_blur_averages_and_handles_borders() {
-        let data = vec![0.0, 0.0, 3.0, 0.0, 0.0];
-        let out = box_blur(&data, 5, 1, 1);
-        assert_eq!(out, vec![0.0, 1.0, 1.0, 1.0, 0.0]);
     }
 }

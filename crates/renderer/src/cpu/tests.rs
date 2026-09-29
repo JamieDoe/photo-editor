@@ -28,14 +28,21 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
     let mut gains = [1.0f32; 3];
     let mut base = None;
     let mut detail_gains = None;
+    let mut dehaze: Option<ops::dehaze::DehazeModel> = None;
     for stage in &plan.stages {
+        let scene = || ops::scene::SceneMap::build(img, gains);
         match *stage {
             Stage::WhiteBalance { gains: g } => (0..3).for_each(|c| gains[c] *= g[c]),
             Stage::Exposure { multiplier } => gains.iter_mut().for_each(|g| *g *= multiplier),
-            Stage::Tone { .. } => base = Some(ops::tone::ToneBase::build(img, gains)),
+            Stage::Dehaze { amount } => {
+                dehaze = Some(ops::dehaze::DehazeModel::build(&scene(), amount));
+            }
+            Stage::Tone { .. } => {
+                base = Some(ops::tone::ToneBase::from_scene(&scene(), dehaze.as_ref()));
+            }
             Stage::Detail { params } => {
                 if params.needs_base() {
-                    base = Some(ops::tone::ToneBase::build(img, gains));
+                    base = Some(ops::tone::ToneBase::from_scene(&scene(), dehaze.as_ref()));
                 }
                 detail_gains = Some(gains);
             }
@@ -46,9 +53,21 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
     let mut image: Vec<f32> = img.data().iter().map(|&v| f32::from(v) / 65535.0).collect();
     for stage in &plan.stages {
         if let Stage::Detail { params } = *stage {
+            let g = detail_gains.unwrap();
             let mut log_y = vec![0.0f32; w * h];
-            for (y, out) in log_y.chunks_mut(w).enumerate() {
-                ops::detail::log_luminance_row(img.row(y as u32), detail_gains.unwrap(), out);
+            for (k, (px, out)) in img
+                .data()
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .zip(&mut log_y)
+                .enumerate()
+            {
+                let mut y = ops::scene::luma([0, 1, 2].map(|c| f32::from(px[c]) / 65535.0 * g[c]));
+                if let Some(d) = &dehaze {
+                    y = d.apply_luminance(y, d.transmission_at(k % w, k / w, w, h, y));
+                }
+                *out = ops::detail::fast_log2(y);
             }
             ops::detail::apply_reference(&mut image, &log_y, w, h, base.as_ref(), &params);
             continue;
@@ -57,6 +76,11 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
             let rgb = *px;
             *px = match *stage {
                 Stage::Detail { .. } => unreachable!("whole-image stage handled above"),
+                Stage::Dehaze { .. } => {
+                    let d = dehaze.as_ref().unwrap();
+                    let t = d.transmission_at(k % w, k / w, w, h, ops::scene::luma(rgb));
+                    d.apply(rgb, t)
+                }
                 Stage::Tone { params } => {
                     let [wr, wg, wb] = image_core::color::REC709_LUMA;
                     let log_y = (rgb[0] * wr + rgb[1] * wg + rgb[2] * wb).max(1e-6).log2();
@@ -99,6 +123,7 @@ fn matches_scalar_reference_for_all_stages() {
         saturation: 30.0,
         texture: 60.0,
         clarity: 45.0,
+        dehaze: 50.0,
         ..Default::default()
     };
     let plan = RenderPlan::from_recipe(&recipe, None);
@@ -217,6 +242,7 @@ fn detail_matches_the_whole_image_reference_across_chunks() {
         exposure: 0.5,
         texture: -70.0,
         clarity: 80.0,
+        dehaze: -40.0,
         look: crate::Look::Flat,
         ..Default::default()
     };

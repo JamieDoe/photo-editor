@@ -42,6 +42,7 @@ RAW decode (LibRaw)            camera WB (as shot), demosaic, camera matrix -> l
 White balance (temperature,    per-channel gains, relative to the as-shot light
                tint)           (ADR 0024)
 Exposure                       multiply by 2^EV
+Dehaze                         dark-channel haze removal on the scene map (ADR 0028)
 Tone (highlights, shadows,     local gains from an edge-aware surroundings map, and
       whites, blacks)          end-point gains (ADR 0023)
 Detail (texture, clarity,      local contrast at two scales, no halos (ADR 0026), and
@@ -56,6 +57,12 @@ Output transform               clip [0,1], sRGB OETF, 8-bit quantise
 
 ### Stage definitions (reference implementations in `renderer::ops`)
 
+- **Dehaze** (`-100..100`, ADR 0028): the airlight and transmission are estimated
+  on the 256-px scene map by the dark-channel prior. The transmission is refined by a
+  luminance-guided filter and evaluated per pixel.
+  - `+s` removes `s` of the estimated haze (transmission at least 0.2).
+  - `−s` blends in airlight, more where the scene is already hazy.
+  - Later stages (tone, detail) measure the dehazed scene.
 - **Temperature / Tint** (`-100..100`, ADR 0024): relative to the photo's as-shot
   light, which the decoder reports (D65 for JPEGs).
   - Temperature moves the assumed light `1.2 mired` per unit along the Planckian

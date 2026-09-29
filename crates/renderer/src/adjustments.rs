@@ -101,6 +101,13 @@ pub const BLACKS: AdjustmentSpec = AdjustmentSpec {
     more: true,
     unit: "",
 };
+/// Behind the Light section's "More controls", after Whites and Blacks, as in the
+/// design (ADR 0028).
+pub const DEHAZE: AdjustmentSpec = AdjustmentSpec {
+    key: "dehaze",
+    label: "Dehaze",
+    ..BLACKS
+};
 pub const TEMPERATURE: AdjustmentSpec = AdjustmentSpec {
     key: "temperature",
     label: "Temperature",
@@ -231,7 +238,7 @@ pub fn mixer_spec() -> MixerSpec {
 }
 
 /// In display order: the design's Light section (Exposure, Contrast, Highlights,
-/// Shadows; Whites and Blacks behind "More controls"), then Colour (Temperature, Tint,
+/// Shadows; Whites, Blacks and Dehaze behind "More controls"), then Colour (Temperature, Tint,
 /// Vibrance, Saturation), then Detail (Texture, Clarity, Sharpening).
 pub fn specs() -> Vec<AdjustmentSpec> {
     vec![
@@ -241,6 +248,7 @@ pub fn specs() -> Vec<AdjustmentSpec> {
         SHADOWS,
         WHITES,
         BLACKS,
+        DEHAZE,
         TEMPERATURE,
         TINT,
         VIBRANCE,

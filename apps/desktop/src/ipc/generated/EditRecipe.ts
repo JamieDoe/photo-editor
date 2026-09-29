@@ -39,6 +39,10 @@ whites: number,
  */
 blacks: number, 
 /**
+ * Dehaze, -100 (adds haze) .. 100 (removes it).
+ */
+dehaze: number, 
+/**
  * Warm/cool shift relative to the as-shot white balance, -100..100 (±120 mired).
  */
 temperature: number, 

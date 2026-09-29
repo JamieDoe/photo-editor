@@ -410,3 +410,27 @@ Release self-test, all controls dragged together:
 - median render 10.3–12.3 ms, 95th percentile 12.5–14.4 ms;
 - 30 fps.
 
+## 18. Dehaze and the shared scene map (ADR 0028)
+
+Nikon Z 6, 1516×1010 interactive, bench recipe (every Light, Colour and Detail control
+set, Dehaze 20), three runs:
+
+| Measure | ms |
+|---|---|
+| Dehaze stage | +0.7 – 1.2 |
+| Detail stage (with dehazed luminance) | +5.6 – 6.4 (was 3.4 – 3.9) |
+| Whole render, maps cached | 13.3 – 14.4 (was 10.4) |
+| Full-resolution render | 215 – 220 |
+| Export render | 366 – 371 |
+
+Self-test worst case (exposure and everything change every frame):
+
+| Version | Median | 95th percentile |
+|---|---|---|
+| First | 18.5 – 21.2 ms | 25 – 26 ms |
+| Gain-free map cached, rescaled per exposure/WB | 16.1 – 18.3 ms | 24 – 26 ms |
+
+- **Preview:** 28–30 fps throughout.
+- **Why caching helps:** averaging is linear, so a white-balance or exposure change
+  only rescales the 256-px map instead of re-reading the image.
+

@@ -22,6 +22,8 @@
 
 use image_core::color::REC709_LUMA;
 
+use super::dehaze::DehazeModel;
+use super::scene::RowModel;
 use super::tone::ToneBase;
 
 /// Texture at ±100 doubles (or removes) fine detail.
@@ -117,6 +119,35 @@ pub fn log_luminance_row(src: &[u16], gains: [f32; 3], out: &mut [f32]) {
     );
     for (px, o) in src.as_chunks::<3>().0.iter().zip(out.iter_mut()) {
         *o = fast_log2(f32::from(px[0]) * gr + f32::from(px[1]) * gg + f32::from(px[2]) * gb);
+    }
+}
+
+/// [`log_luminance_row`] after a dehaze stage (ADR 0028): the luminance each pixel has
+/// once dehazed. `row` holds the dehaze model for this row, `columns` its columns.
+pub fn dehazed_log_luminance_row(
+    src: &[u16],
+    gains: [f32; 3],
+    dehaze: &DehazeModel,
+    row: &RowModel,
+    columns: &[(u32, u32, f32)],
+    out: &mut [f32],
+) {
+    let s = 1.0 / 65535.0;
+    let (gr, gg, gb) = (
+        gains[0] * REC709_LUMA[0] * s,
+        gains[1] * REC709_LUMA[1] * s,
+        gains[2] * REC709_LUMA[2] * s,
+    );
+    for ((px, o), &col) in src
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .zip(out.iter_mut())
+        .zip(columns)
+    {
+        let y = f32::from(px[0]) * gr + f32::from(px[1]) * gg + f32::from(px[2]) * gb;
+        let t = row.eval(col, dehaze.guide(y));
+        *o = fast_log2(dehaze.apply_luminance(y, t));
     }
 }
 

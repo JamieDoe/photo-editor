@@ -5,9 +5,11 @@
 
 pub mod colour_mixer;
 pub mod contrast;
+pub mod dehaze;
 pub mod detail;
 pub mod look;
 pub mod saturation;
+pub mod scene;
 pub mod tone;
 pub mod vibrance;
 pub mod white_balance;

@@ -19,6 +19,10 @@ pub enum Stage {
     WhiteBalance { gains: [f32; 3] },
     /// Scene-linear multiplier (2^EV).
     Exposure { multiplier: f32 },
+    /// Removes or adds haze (ADR 0028), -100..100. Estimated on the scene map from
+    /// the source after the gains before it; stages after it measure the dehazed
+    /// scene.
+    Dehaze { amount: f32 },
     /// Highlights, shadows, whites and blacks (ADR 0023). Not a pure point operation:
     /// highlights and shadows read an edge-aware map of the surroundings' brightness,
     /// which backends build once per render from the stages before this one.
@@ -43,6 +47,7 @@ impl Stage {
         match self {
             Self::WhiteBalance { .. } => "white_balance",
             Self::Exposure { .. } => "exposure",
+            Self::Dehaze { .. } => "dehaze",
             Self::Tone { .. } => "tone",
             Self::Detail { .. } => "detail",
             Self::Contrast { .. } => "contrast",
@@ -80,7 +85,8 @@ impl RenderPlan {
     /// (from the decoder; `None` for display-referred sources, whose white is D65).
     /// Identity stages are omitted.
     ///
-    /// Order: white balance -> exposure -> tone (highlights, shadows, whites, blacks)
+    /// Order: white balance -> exposure -> dehaze -> tone (highlights, shadows, whites,
+    /// blacks)
     /// -> detail (texture, clarity) -> contrast -> base look (scene to display tones) -> colour (mixer, vibrance,
     /// saturation) -> output transform, matching the conceptual pipeline in CLAUDE.md.
     /// Exposure and contrast act on scene-referred values, so the base look's shoulder
@@ -97,6 +103,9 @@ impl RenderPlan {
             stages.push(Stage::Exposure {
                 multiplier: r.exposure.exp2(),
             });
+        }
+        if r.dehaze != 0.0 {
+            stages.push(Stage::Dehaze { amount: r.dehaze });
         }
         let tone = r.tone();
         if !tone.is_identity() {
@@ -164,6 +173,7 @@ mod tests {
             exposure: 1.0,
             contrast: 10.0,
             shadows: 20.0,
+            dehaze: 30.0,
             clarity: 15.0,
             temperature: 10.0,
             vibrance: 10.0,
@@ -187,6 +197,7 @@ mod tests {
             [
                 "white_balance",
                 "exposure",
+                "dehaze",
                 "tone",
                 "detail",
                 "contrast",
