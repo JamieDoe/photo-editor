@@ -20,10 +20,14 @@ pub const EXPORT_EVENT: &str = "export://event";
 /// | 8      | u32  | pyramid level                 |
 /// | 12     | u32  | flags (see `FRAME_FLAG_*`)    |
 /// | 16     | f32  | render / extract time in ms   |
-/// | 20     | u8[] | RGBA8 pixels, width*height*4  |
+/// | 20     | u32  | full-resolution output width  |
+/// | 24     | u32  | full-resolution output height |
+/// | 28     | u8[] | RGBA8 pixels, width*height*4  |
 ///
+/// The full-resolution size is the recipe's output (after crop) at the photo's full
+/// size: the exact shape of the picture, which preview levels only approximate.
 /// Mirrored in `src/ipc/frame.ts`.
-pub const FRAME_HEADER_BYTES: usize = 20;
+pub const FRAME_HEADER_BYTES: usize = 28;
 /// The frame was served from the preview cache.
 pub const FRAME_FLAG_CACHE_HIT: u32 = 1;
 
@@ -43,6 +47,8 @@ pub struct EngineInfoDto {
     pub adjustments: Vec<AdjustmentSpec>,
     /// The colour mixer's bands and per-band controls (ADR 0025).
     pub mixer: MixerSpec,
+    /// The Geometry section's Straighten slider (ADR 0032).
+    pub straighten: AdjustmentSpec,
 }
 
 impl From<EngineInfo> for EngineInfoDto {
@@ -59,6 +65,7 @@ impl From<EngineInfo> for EngineInfoDto {
             cpu_threads: std::thread::available_parallelism().map_or(1, |n| n.get() as u32),
             adjustments: i.adjustments,
             mixer: i.mixer,
+            straighten: i.straighten,
         }
     }
 }

@@ -131,11 +131,22 @@ export function useEditor() {
     return () => void unlisten.then((u) => u());
   }, []);
 
+  /** How the recipe is rendered: normally as it is; the crop tool renders the whole
+   *  straightened view instead, to draw the crop over it. */
+  const viewTransformRef = useRef<((r: EditRecipe) => EditRecipe) | null>(null);
+  const toRender = (r: EditRecipe) => (viewTransformRef.current ? viewTransformRef.current(r) : r);
+
   /** Shows `r` without saving it (opening a photo). */
   const applyRecipe = useCallback((r: EditRecipe) => {
     recipeRef.current = r;
     setRecipeState(r);
-    schedulerRef.current?.request(r);
+    schedulerRef.current?.request(toRender(r));
+  }, []);
+
+  /** Renders recipes through `transform` (or as they are, with null). */
+  const setViewTransform = useCallback((transform: ((r: EditRecipe) => EditRecipe) | null) => {
+    viewTransformRef.current = transform;
+    if (imageRef.current && recipeRef.current) schedulerRef.current?.request(toRender(recipeRef.current));
   }, []);
 
   /** The photographer changed the edit: show it, and save it if the photo is in the library. */
@@ -215,7 +226,7 @@ export function useEditor() {
       targetEdgeRef.current = rounded;
       // Read the recipe from a ref so this callback stays stable across edits (the
       // viewer's ResizeObserver subscribes to it).
-      if (imageRef.current && recipeRef.current) schedulerRef.current?.request(recipeRef.current);
+      if (imageRef.current && recipeRef.current) schedulerRef.current?.request(toRender(recipeRef.current));
     },
     [],
   );
@@ -242,6 +253,7 @@ export function useEditor() {
     openPath,
     exportImage,
     setTargetLongEdge,
+    setViewTransform,
     subscribeFrames,
     schedulerStats: (): SchedulerStats =>
       schedulerRef.current?.stats() ?? { requested: 0, shown: 0, superseded: 0, stale: 0, errors: 0 },

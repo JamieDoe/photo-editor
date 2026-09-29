@@ -63,6 +63,9 @@ pub struct PreviewFrame {
     pub level: usize,
     pub cache_hit: bool,
     pub render_ms: f64,
+    /// The size this recipe's output has at full resolution (after crop), so the
+    /// viewer keeps one exact shape for all of its renders.
+    pub full_size: (u32, u32),
 }
 
 #[derive(Debug, Clone)]
@@ -115,4 +118,5 @@ pub struct EngineInfo {
     pub embedded_jpeg_decoder: &'static str,
     pub adjustments: Vec<AdjustmentSpec>,
     pub mixer: MixerSpec,
+    pub straighten: AdjustmentSpec,
 }

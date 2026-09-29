@@ -113,6 +113,22 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
         ),
         ("grain_80", EditRecipe { grain: 80.0, ..r }),
         (
+            "crop_straighten",
+            EditRecipe {
+                geometry: Some(renderer::Geometry {
+                    straighten: 6.0,
+                    crop: renderer::geometry::fit_crop(
+                        renderer::AspectRatio::Square,
+                        6.0,
+                        480.0,
+                        320.0,
+                    ),
+                    aspect: renderer::AspectRatio::Square,
+                }),
+                ..r
+            },
+        ),
+        (
             "noise_reduction_80",
             EditRecipe {
                 noise_reduction: 80.0,

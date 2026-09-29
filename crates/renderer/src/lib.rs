@@ -10,6 +10,7 @@
 pub mod adjustments;
 mod backend;
 pub mod cpu;
+pub mod geometry;
 pub mod ops;
 mod plan;
 mod quality;
@@ -18,6 +19,7 @@ mod tone_curve;
 
 pub use backend::{RenderBackend, RenderError};
 pub use cpu::CpuRenderer;
+pub use geometry::{AspectRatio, CropRect, Geometry};
 pub use ops::colour_mixer::{ColourMixer, HslShift};
 pub use ops::look::Look;
 pub use ops::white_balance::TemperatureScale;

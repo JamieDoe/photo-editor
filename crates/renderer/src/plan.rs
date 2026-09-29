@@ -1,5 +1,6 @@
 use crate::EditRecipe;
 use crate::Look;
+use crate::geometry::Geometry;
 use crate::ops::colour_mixer::HslShift;
 use crate::ops::detail::DetailParams;
 use crate::ops::tone::ToneParams;
@@ -75,6 +76,9 @@ pub enum OutputTransform {
 /// Backend-agnostic description of a render.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderPlan {
+    /// Crop and straighten (ADR 0032), applied first: the source is resampled into the
+    /// output frame, and the stages run on that. `None` renders the whole source.
+    pub geometry: Option<Geometry>,
     pub stages: Vec<Stage>,
     pub output: OutputTransform,
 }
@@ -82,8 +86,17 @@ pub struct RenderPlan {
 impl RenderPlan {
     pub fn new(stages: Vec<Stage>) -> Self {
         Self {
+            geometry: None,
             stages,
             output: OutputTransform::Srgb8,
+        }
+    }
+
+    /// The rendered size for a source of `width` x `height`.
+    pub fn output_size(&self, width: u32, height: u32) -> (u32, u32) {
+        match &self.geometry {
+            Some(g) => g.output_size(width, height),
+            None => (width, height),
         }
     }
 
@@ -150,7 +163,10 @@ impl RenderPlan {
         if r.grain != 0.0 {
             stages.push(Stage::Grain { amount: r.grain });
         }
-        Self::new(stages)
+        Self {
+            geometry: r.geometry.filter(|g| !g.is_identity()),
+            ..Self::new(stages)
+        }
     }
 }
 

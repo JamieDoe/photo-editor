@@ -15,6 +15,8 @@ pub(crate) struct OpenedImage {
     pub pyramid: Pyramid,
     /// The as-shot light, which white balance adjustments are relative to.
     pub as_shot_white: Option<image_core::Chromaticity>,
+    /// The photo's full size (after orientation), which crops are measured against.
+    pub full_size: (u32, u32),
 }
 
 /// Bounded most-recently-used set of open images.

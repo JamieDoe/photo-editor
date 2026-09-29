@@ -293,7 +293,13 @@ impl Shared {
         recipe: &EditRecipe,
         token: &CancelToken,
     ) -> Result<OutputImage, EngineError> {
-        let options = DecodeOptions::new(DecodeScale::AtLeast(THUMBNAIL_LONG_EDGE))
+        // A crop keeps part of the decode: ask for enough that what it keeps still
+        // fills the thumbnail.
+        let kept = recipe
+            .geometry
+            .map_or(1.0, |g| g.sanitized().crop.w.min(g.sanitized().crop.h));
+        let min_edge = (THUMBNAIL_LONG_EDGE as f32 / kept.max(0.05)).ceil() as u32;
+        let options = DecodeOptions::new(DecodeScale::AtLeast(min_edge))
             .with_max_threads(rayon::current_num_threads());
         let decoded = self.decoders.decode(path, options, token)?;
         let plan = RenderPlan::from_recipe(recipe, decoded.info.as_shot_white);

@@ -475,3 +475,16 @@ about 10):
   so it stays procedural.
 - **Grain's per-pixel `exp2`:** replaced by the stop-gain lookup table.
 
+## 21. Crop and straighten (ADR 0032)
+
+Nikon Z 6, 1516×1010, median of 40, three runs:
+
+| Case | ms |
+|---|---|
+| Default recipe | 3.2 |
+| Straightened + cropped, another control dragged (framed image cached) | 3.2 |
+| Straighten dragged (bilinear resample every frame) | 8.3 |
+
+Crops choose a larger pyramid level so the kept part stays sharp. Those renders cost
+in proportion to the pixels kept.
+

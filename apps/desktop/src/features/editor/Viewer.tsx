@@ -1,16 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { DisplayedFrame } from "./useEditor";
 import { fitSize, nextBoxShape, type BoxShape } from "./viewerLayout";
 
 interface Props {
   displayed: DisplayedFrame | null;
-  /** The open image: its full size gives renders their exact shape. */
-  image: { id: number; fullWidth: number; fullHeight: number } | null;
   /** Another photo is opening: the current one stays, dimmed, until it arrives. */
   loading: boolean;
   /** Reports the viewport's long edge in device pixels. */
   onResize: (longEdgeDevicePx: number) => void;
   placeholder: string;
+  /** Drawn over the photo, in its box (the crop tool). */
+  overlay?: ReactNode;
 }
 
 /**
@@ -18,19 +18,18 @@ interface Props {
  * canvas is sized to fit the viewer (not to the frame's pixel count), so a quick
  * low-resolution frame and the later sharp one appear at the same size.
  */
-export function Viewer({ displayed, image, loading, onResize, placeholder }: Props) {
+export function Viewer({ displayed, loading, onResize, placeholder, overlay }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [space, setSpace] = useState({ width: 0, height: 0 });
   // The box shape is fixed per opening (see nextBoxShape), so frames never resize it.
   const [shape, setShape] = useState<BoxShape | null>(null);
-  const imageRef = useRef(image);
-  imageRef.current = image;
   useEffect(() => {
     if (!displayed) return;
-    const img = imageRef.current;
-    const full = img && img.id === displayed.imageId ? { width: img.fullWidth, height: img.fullHeight } : null;
-    setShape((prev) => nextBoxShape(prev, displayed.imageId, displayed.frame, full));
+    const { frame } = displayed;
+    // The frame's full-resolution output size (after crop) is its exact shape.
+    const full = frame.fullWidth > 0 ? { width: frame.fullWidth, height: frame.fullHeight } : null;
+    setShape((prev) => nextBoxShape(prev, displayed.imageId, frame, full));
   }, [displayed]);
 
   useEffect(() => {
@@ -61,11 +60,18 @@ export function Viewer({ displayed, image, loading, onResize, placeholder }: Pro
   return (
     <div className="viewer" ref={containerRef}>
       {displayed ? (
-        <canvas
-          ref={canvasRef}
-          className={loading ? "viewer-canvas loading" : "viewer-canvas"}
-          style={canvasStyle(space, shape ?? displayed.frame)}
-        />
+        overlay ? (
+          <div className="viewer-frame" style={canvasStyle(space, shape ?? displayed.frame)}>
+            <canvas ref={canvasRef} className="viewer-canvas fill" />
+            {overlay}
+          </div>
+        ) : (
+          <canvas
+            ref={canvasRef}
+            className={loading ? "viewer-canvas loading" : "viewer-canvas"}
+            style={canvasStyle(space, shape ?? displayed.frame)}
+          />
+        )
       ) : (
         !loading && <p className="viewer-empty">{placeholder}</p>
       )}

@@ -25,7 +25,9 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 8: adds dehaze (ADR 0028); older recipes read it as 0.
 /// - 9: adds noise reduction (ADR 0030); older recipes read it as 0.
 /// - 10: adds vignette and grain (ADR 0031); older recipes read them as 0.
-pub const RECIPE_VERSION: u32 = 10;
+/// - 11: adds crop and straighten (ADR 0032), written only when used; older recipes
+///   have none.
+pub const RECIPE_VERSION: u32 = 11;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -77,6 +79,10 @@ pub struct EditRecipe {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub mixer: Option<ColourMixer>,
+    /// Crop and straighten. `None` (and omitted from the JSON) when unused.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub geometry: Option<crate::geometry::Geometry>,
     /// The base look the adjustments start from.
     pub look: Look,
 }
@@ -103,6 +109,7 @@ impl Default for EditRecipe {
             vignette: 0.0,
             grain: 0.0,
             mixer: None,
+            geometry: None,
             look: Look::Standard,
         }
     }
@@ -155,7 +162,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=10 => Ok(Self {
+            7..=11 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -191,6 +198,10 @@ impl EditRecipe {
             vignette: VIGNETTE.clamp(self.vignette),
             grain: GRAIN.clamp(self.grain),
             mixer: self.mixer.map(sanitize_mixer).filter(|m| !m.is_identity()),
+            geometry: self
+                .geometry
+                .map(|g| g.sanitized())
+                .filter(|g| !g.is_identity()),
             look: self.look,
         }
     }
@@ -239,6 +250,7 @@ impl EditRecipe {
             && s.vignette == 0.0
             && s.grain == 0.0
             && s.mixer.is_none()
+            && s.geometry.is_none()
             && s.look == Look::default()
     }
 }
@@ -282,7 +294,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":10,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":11,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -352,6 +364,42 @@ mod tests {
             // Without sharpening it differs from the default, so it stays an edit.
             assert!(!r.is_identity());
         }
+    }
+
+    #[test]
+    fn geometry_is_written_only_when_used() {
+        use crate::geometry::{AspectRatio, CropRect, Geometry};
+        let unused = EditRecipe {
+            geometry: Some(Geometry {
+                aspect: AspectRatio::Square,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        // No rotation and the whole frame: no edit, and the JSON is unchanged.
+        assert!(unused.is_identity());
+        assert!(!unused.to_json().contains("geometry"));
+        let used = EditRecipe {
+            geometry: Some(Geometry {
+                straighten: 2.5,
+                crop: CropRect {
+                    x: 0.1,
+                    y: 0.1,
+                    w: 0.8,
+                    h: 0.8,
+                },
+                aspect: AspectRatio::Free,
+            }),
+            ..Default::default()
+        };
+        let back = EditRecipe::from_json(&used.to_json()).unwrap();
+        assert_eq!(back.geometry, used.geometry);
+        assert!(!back.is_identity());
+        // Version 10 recipes have none.
+        assert_eq!(
+            EditRecipe::from_json(r#"{"version":10}"#).unwrap().geometry,
+            None
+        );
     }
 
     #[test]

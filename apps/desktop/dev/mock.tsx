@@ -80,13 +80,15 @@ function mockListing(path: string) {
 }
 
 function placeholderFrame(w: number, h: number): ArrayBuffer {
-  const buf = new ArrayBuffer(20 + w * h * 4);
+  const buf = new ArrayBuffer(28 + w * h * 4);
   const v = new DataView(buf);
   v.setUint32(0, w, true);
   v.setUint32(4, h, true);
   v.setUint32(8, 1, true);
   v.setFloat32(16, 2.1, true);
-  const px = new Uint8Array(buf, 20);
+  v.setUint32(20, w * 4, true);
+  v.setUint32(24, h * 4, true);
+  const px = new Uint8Array(buf, 28);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = (y * w + x) * 4;
     px[i] = (x * 255) / w; px[i + 1] = (y * 255) / h; px[i + 2] = 128; px[i + 3] = 255;
@@ -122,7 +124,7 @@ function counts() {
 mockIPC((cmd, payload) => {
   switch (cmd) {
     case "engine_info":
-      return { rendererVersion: 3, recipeVersion: 10, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs, mixer: mixerSpec };
+      return { rendererVersion: 3, recipeVersion: 11, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs, mixer: mixerSpec, straighten: { key: "straighten", label: "Straighten", group: "Geometry", min: -15, max: 15, step: 0.1, default: 0, more: false, unit: "°" } };
     case "open_image_dialog":
     case "open_image_path":
       openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";

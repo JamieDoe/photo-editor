@@ -289,6 +289,46 @@ fn detail_matches_the_whole_image_reference_across_chunks() {
 }
 
 #[test]
+fn cropped_and_straightened_renders_frame_the_source_first() {
+    use crate::geometry::{self, AspectRatio, CropRect, Geometry};
+    let img = chart();
+    let geometry = Geometry {
+        straighten: 4.0,
+        crop: CropRect {
+            x: 0.1,
+            y: 0.2,
+            w: 0.6,
+            h: 0.5,
+        },
+        aspect: AspectRatio::Free,
+    };
+    let recipe = EditRecipe {
+        exposure: 0.5,
+        vignette: -40.0,
+        geometry: Some(geometry),
+        ..Default::default()
+    };
+    let plan = RenderPlan::from_recipe(&recipe, None);
+    let out = CpuRenderer
+        .render(&plan, &img, PixelFormat::Rgb8, &NeverCancel)
+        .unwrap();
+    assert_eq!(
+        (out.width(), out.height()),
+        geometry.output_size(img.width(), img.height())
+    );
+    // The same as rendering the framed source without geometry.
+    let framed = geometry::resample(&img, &geometry);
+    let plain = RenderPlan {
+        geometry: None,
+        ..plan.clone()
+    };
+    let expected = CpuRenderer
+        .render(&plain, &framed, PixelFormat::Rgb8, &NeverCancel)
+        .unwrap();
+    assert_eq!(out.data(), expected.data());
+}
+
+#[test]
 fn consecutive_gains_are_fused() {
     let plan = RenderPlan::new(vec![
         Stage::WhiteBalance {

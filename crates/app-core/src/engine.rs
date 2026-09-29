@@ -86,6 +86,7 @@ impl Engine {
             embedded_jpeg_decoder: raw::embedded_jpeg_decoder(),
             adjustments: renderer::adjustments::specs(),
             mixer: renderer::adjustments::mixer_spec(),
+            straighten: renderer::adjustments::STRAIGHTEN,
         }
     }
 
@@ -144,10 +145,15 @@ impl Engine {
             PreviewQuality::Interactive => target * INTERACTIVE_UNDERSAMPLE_PERCENT / 100,
             PreviewQuality::Thumbnail | PreviewQuality::Detail => target,
         };
+        // A crop shows part of each level: pick the level by what the crop keeps.
+        let recipe = req.recipe.sanitized();
+        let (fw, fh) = image.full_size;
+        let full_output = recipe.geometry.map_or((fw, fh), |g| g.output_size(fw, fh));
+        let kept = full_output.0.max(full_output.1) as f64 / fw.max(fh).max(1) as f64;
+        let min_edge = (f64::from(min_edge) / kept.max(1e-3)).ceil() as u32;
         let level_index = image.pyramid.select_index(min_edge);
         let level = Arc::clone(&image.pyramid.levels()[level_index]);
         let as_shot_white = image.as_shot_white;
-        let recipe = req.recipe.sanitized();
         let key = RenderKey::new(
             image.source_id,
             &recipe.canonical_bytes(),
@@ -181,6 +187,7 @@ impl Engine {
                 level: level_index,
                 cache_hit: true,
                 render_ms: 0.0,
+                full_size: full_output,
             };
             return JobHandle::ready(self.jobs.next_id(), Ok(frame));
         }
@@ -206,6 +213,7 @@ impl Engine {
                 level: level_index,
                 cache_hit: false,
                 render_ms,
+                full_size: full_output,
             })
         })
     }
@@ -369,6 +377,7 @@ impl Shared {
             source_id: identity.source_id(),
             pyramid,
             as_shot_white: info.as_shot_white,
+            full_size: (info.full_width, info.full_height),
         });
         let evicted = self.images.lock().expect("images lock").insert(opened);
         if !evicted.is_empty() {

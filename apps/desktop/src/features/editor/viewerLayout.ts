@@ -24,9 +24,10 @@ export interface BoxShape {
 }
 
 /**
- * The box shape after a render of `imageId` is shown. Each photo gets one box, from its
- * full size (exact shape), kept for all its renders: preview levels round their sizes,
- * so fitting each frame by its own shape would move the photo by a pixel or two.
+ * The box shape after a render of `imageId` is shown. Each photo gets one box per
+ * framing, from its full-resolution output size (exact shape), kept for all its
+ * renders: preview levels round their sizes, so fitting each frame by its own shape
+ * would move the photo by a pixel or two. A new crop is a new shape.
  */
 export function nextBoxShape(
   previous: BoxShape | null,
@@ -34,6 +35,9 @@ export function nextBoxShape(
   frame: { width: number; height: number },
   fullSize: { width: number; height: number } | null,
 ): BoxShape {
-  if (previous?.owner === imageId) return previous;
-  return { owner: imageId, ...(fullSize ?? frame) };
+  const size = fullSize ?? frame;
+  if (previous?.owner === imageId && previous.width === size.width && previous.height === size.height) {
+    return previous;
+  }
+  return { owner: imageId, width: size.width, height: size.height };
 }

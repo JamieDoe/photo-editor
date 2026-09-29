@@ -13,13 +13,21 @@ use crate::ipc::{
 };
 
 /// Encodes a frame in the binary layout documented on [`FRAME_HEADER_BYTES`].
-fn frame_bytes(img: &OutputImage, level: u32, flags: u32, ms: f64) -> Vec<u8> {
+fn frame_bytes(
+    img: &OutputImage,
+    level: u32,
+    flags: u32,
+    ms: f64,
+    full_size: (u32, u32),
+) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(FRAME_HEADER_BYTES + img.byte_size());
     bytes.extend_from_slice(&img.width().to_le_bytes());
     bytes.extend_from_slice(&img.height().to_le_bytes());
     bytes.extend_from_slice(&level.to_le_bytes());
     bytes.extend_from_slice(&flags.to_le_bytes());
     bytes.extend_from_slice(&(ms as f32).to_le_bytes());
+    bytes.extend_from_slice(&full_size.0.to_le_bytes());
+    bytes.extend_from_slice(&full_size.1.to_le_bytes());
     bytes.extend_from_slice(img.data());
     bytes
 }
@@ -116,5 +124,6 @@ pub async fn render_preview(
         frame.level as u32,
         flags,
         frame.render_ms,
+        frame.full_size,
     )))
 }

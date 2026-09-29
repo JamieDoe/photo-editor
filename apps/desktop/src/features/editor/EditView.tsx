@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { DiagnosticsIcon, OpenIcon } from "../../components/icons";
+import { useEffect, useMemo } from "react";
+import { CropIcon, DiagnosticsIcon, OpenIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../../ipc/generated/MarksDto";
@@ -10,6 +10,7 @@ import type { EditSavingDto } from "../../ipc/generated/EditSavingDto";
 import type { SaveState } from "./autosave";
 import { isIdentity } from "./recipe";
 import { AdjustmentPanel } from "./AdjustmentPanel";
+import { CropOverlay, CropToolbar, GeometryControls, geometryEdited, useCropTool } from "./CropTool";
 import { PanelSection } from "./PanelSection";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
@@ -32,6 +33,16 @@ interface Props {
 export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }: Props) {
   const { info, image, recipe, busy } = editor;
   const toneCurve = useToneCurve(recipe);
+  const fullSize = useMemo(
+    () => (image ? { width: image.fullWidth, height: image.fullHeight } : null),
+    [image?.fullWidth, image?.fullHeight],
+  );
+  const crop = useCropTool({
+    recipe,
+    size: fullSize,
+    onChange: editor.setRecipe,
+    setViewTransform: editor.setViewTransform,
+  });
 
   // Keyboard: 0–5 / P / X / U mark the photo, ← → move through the Library's photos.
   // Ignored while a control (such as a slider) has focus, so its own keys still work.
@@ -99,18 +110,31 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
         </div>
         <Viewer
           displayed={editor.displayed}
-          image={image}
           loading={busy}
           onResize={editor.setTargetLongEdge}
           placeholder="Open a photo from the Library, or use “Open photo…”."
+          overlay={crop.open ? <CropOverlay tool={crop} /> : undefined}
         />
-        {/* The design's floating toolbar under the photo. Zoom, crop, masks and
-            compare join it as they are built; for now it holds rating and flags. */}
+        {/* The design's floating toolbar under the photo (zoom, masks and compare join
+            it as they are built); while cropping, the crop toolbar takes its place. */}
         <div className="photo-toolbar-strip">
-          {marks && (
-            <div className="photo-toolbar" role="toolbar" aria-label="Photo tools">
-              <MarkControls marks={marks} onChange={onMark} />
-            </div>
+          {crop.open && info ? (
+            <CropToolbar tool={crop} straighten={info.straighten} />
+          ) : (
+            image && (
+              <div className="photo-toolbar" role="toolbar" aria-label="Photo tools">
+                <button className="tool-button" title="Crop & straighten" onClick={crop.enter}>
+                  <CropIcon size={15} />
+                  Crop
+                </button>
+                {marks && (
+                  <>
+                    <span className="toolbar-divider" />
+                    <MarkControls marks={marks} onChange={onMark} />
+                  </>
+                )}
+              </div>
+            )
           )}
         </div>
       </div>
@@ -129,6 +153,11 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
               disabled={!image}
               temperatureScale={image?.temperatureScale ?? null}
             />
+          )}
+          {info && recipe && (
+            <PanelSection title="Geometry" icon={<CropIcon />} edited={geometryEdited(recipe)} defaultOpen={false}>
+              <GeometryControls tool={crop} straighten={info.straighten} disabled={!image} />
+            </PanelSection>
           )}
           <PanelSection title="Diagnostics" icon={<DiagnosticsIcon />} defaultOpen={false}>
             <StatsPanel editor={editor} />
