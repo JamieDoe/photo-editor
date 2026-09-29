@@ -68,6 +68,8 @@ impl From<EngineInfo> for EngineInfoDto {
 pub struct ImageSummaryDto {
     #[ts(type = "number")]
     pub id: u64,
+    /// Canonical path of the opened file.
+    pub path: String,
     pub file_name: String,
     pub decoder: String,
     pub camera_raw: bool,
@@ -85,12 +87,40 @@ pub struct ImageSummaryDto {
     pub decode_ms: f64,
     pub pyramid_ms: f64,
     pub embedded_preview_ms: Option<f64>,
+    /// The photo's saved edit, applied from the first render. Null if unedited.
+    pub saved_recipe: Option<EditRecipe>,
+    /// Whether edits to this photo are saved.
+    pub edit_saving: EditSavingDto,
+}
+
+/// Whether edits to an open photo are saved (ADR 0019).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum EditSavingDto {
+    /// In a library folder: edits are saved automatically.
+    Library,
+    /// Opened from outside the library: edits last until another photo is opened.
+    #[default]
+    NotInLibrary,
+    /// Edited in a newer version of the app: shown unedited, and not overwritten.
+    NewerVersion,
+}
+
+/// Result of saving an edit.
+#[derive(Debug, Clone, Copy, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct EditSavedDto {
+    /// The photo now differs from the original (false after a reset).
+    pub edited: bool,
 }
 
 impl From<ImageSummary> for ImageSummaryDto {
     fn from(s: ImageSummary) -> Self {
         Self {
             id: s.id.0,
+            path: s.path.display().to_string(),
             file_name: s.file_name,
             decoder: s.decoder.to_owned(),
             camera_raw: s.kind == app_core::SourceKind::CameraRaw,
@@ -107,6 +137,8 @@ impl From<ImageSummary> for ImageSummaryDto {
             decode_ms: s.decode_ms,
             pyramid_ms: s.pyramid_ms,
             embedded_preview_ms: s.embedded_preview_ms,
+            saved_recipe: None,
+            edit_saving: EditSavingDto::NotInLibrary,
         }
     }
 }
@@ -371,6 +403,8 @@ pub struct PhotoEntryDto {
     pub details: Option<PhotoDetailsDto>,
     /// Rating and flag (defaults until set).
     pub marks: MarksDto,
+    /// The photo has a saved edit.
+    pub edited: bool,
 }
 
 /// Pick/reject flag.

@@ -319,6 +319,7 @@ impl Shared {
         let info = decoded.info;
         let summary = ImageSummary {
             id,
+            path: identity.canonical_path.clone(),
             file_name: path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())

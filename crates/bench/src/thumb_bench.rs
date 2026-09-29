@@ -43,7 +43,7 @@ fn file(path: &Path) -> Value {
     let mut last = None;
     for _ in 0..5 {
         let t = Instant::now();
-        let thumb = engine.thumbnail(path.clone()).wait();
+        let thumb = engine.thumbnail(path.clone(), None).wait();
         cold.push(ms(t));
         last = Some(thumb);
     }
@@ -58,17 +58,30 @@ fn file(path: &Path) -> Value {
         thumbnail_cache_dir: Some(dir.path().join("thumbs")),
         ..EngineConfig::default()
     });
-    engine.thumbnail(path.clone()).wait().expect("first");
+    engine.thumbnail(path.clone(), None).wait().expect("first");
     let mut hits = Vec::new();
     for _ in 0..20 {
         let t = Instant::now();
-        let hit = engine.thumbnail(path.clone()).wait().expect("hit");
+        let hit = engine.thumbnail(path.clone(), None).wait().expect("hit");
         hits.push(ms(t));
         assert_eq!(hit.source, ThumbnailSource::Cache);
+    }
+    // Edited: the embedded preview can't show the edit, so it is decoded and rendered.
+    let edited = app_core::EditRecipe {
+        exposure: 0.7,
+        ..app_core::EditRecipe::default()
+    };
+    let mut edited_ms = Vec::new();
+    for _ in 0..3 {
+        let engine = Engine::new(EngineConfig::default());
+        let t = Instant::now();
+        let _ = engine.thumbnail(path.clone(), Some(edited)).wait();
+        edited_ms.push(ms(t));
     }
     json!({
         "file": name,
         "source": format!("{:?}", thumb.source),
+        "edited_cold_ms_median": median(&mut edited_ms),
         "cold_ms_median": median(&mut cold),
         "cached_ms_median": median(&mut hits),
         "jpeg_kb": thumb.jpeg.len() as f64 / 1024.0,
@@ -99,7 +112,10 @@ fn screen(camera_files: &[PathBuf], workers: Option<usize>, while_indexing: bool
     });
 
     let t = Instant::now();
-    let handles: Vec<_> = links.into_iter().map(|p| engine.thumbnail(p)).collect();
+    let handles: Vec<_> = links
+        .into_iter()
+        .map(|p| engine.thumbnail(p, None))
+        .collect();
     let mut first_ms = None;
     for h in handles {
         h.wait().expect("thumbnail");
@@ -151,10 +167,14 @@ fn pregeneration(camera_files: &[PathBuf]) -> Value {
         ..EngineConfig::default()
     });
     let t = Instant::now();
-    let batch = engine.pregenerate_thumbnails("bench", links);
+    let batch =
+        engine.pregenerate_thumbnails("bench", links.into_iter().map(|p| (p, None)).collect());
     std::thread::sleep(std::time::Duration::from_millis(500));
     let tv = Instant::now();
-    let shown = engine.thumbnail(visible).wait().expect("visible thumbnail");
+    let shown = engine
+        .thumbnail(visible, None)
+        .wait()
+        .expect("visible thumbnail");
     let visible_ms = ms(tv);
     let summary = batch.wait();
     let total_ms = ms(t);

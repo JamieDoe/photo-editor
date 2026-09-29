@@ -6,6 +6,7 @@ import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { EngineInfoDto } from "../../ipc/generated/EngineInfoDto";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { ImageSummaryDto } from "../../ipc/generated/ImageSummaryDto";
+import { Autosaver, type SaveState } from "./autosave";
 import { PreviewScheduler, type FrameInfo, type SchedulerStats } from "./previewScheduler";
 import { defaultRecipe } from "./recipe";
 
@@ -43,6 +44,11 @@ export function useEditor() {
   const fail = useCallback((e: unknown) => void toAppError(e).then(setError), []);
   const [busy, setBusy] = useState(false);
   const [exportState, setExportState] = useState<ExportState | null>(null);
+  /** Save state of the open photo's edit; null when its edits are not saved. */
+  const [saveState, setSaveState] = useState<SaveState | null>(null);
+  /** The latest completed save, so the Library can mark the photo edited or not. */
+  const [lastSaved, setLastSaved] = useState<{ path: string; edited: boolean } | null>(null);
+  const autosaverRef = useRef<Autosaver | null>(null);
 
   const imageRef = useRef<ImageSummaryDto | null>(null);
   const recipeRef = useRef<EditRecipe | null>(null);
@@ -88,6 +94,24 @@ export function useEditor() {
     };
   }, []);
 
+  useEffect(() => {
+    const saver = new Autosaver({
+      save: (path, r) => ipc.saveEdit(path, r),
+      setTimer: (cb, ms) => window.setTimeout(cb, ms),
+      clearTimer: (h) => window.clearTimeout(h),
+      onState: (path, state, edited, e) => {
+        if (imageRef.current?.path === path) setSaveState(state);
+        if (state === "saved" && edited !== null) setLastSaved({ path, edited });
+        if (state === "failed") fail(e);
+      },
+    });
+    autosaverRef.current = saver;
+    return () => {
+      void saver.flush(); // don't lose the last change when the editor goes away
+      if (autosaverRef.current === saver) autosaverRef.current = null;
+    };
+  }, []);
+
   function show(d: DisplayedFrame) {
     setDisplayed(d);
     listenersRef.current.forEach((l) => l(d));
@@ -108,13 +132,21 @@ export function useEditor() {
     return () => void unlisten.then((u) => u());
   }, []);
 
+  /** Shows `r` without saving it (opening a photo). */
+  const applyRecipe = useCallback((r: EditRecipe) => {
+    recipeRef.current = r;
+    setRecipeState(r);
+    schedulerRef.current?.request(r);
+  }, []);
+
+  /** The photographer changed the edit: show it, and save it if the photo is in the library. */
   const setRecipe = useCallback(
     (r: EditRecipe) => {
-      recipeRef.current = r;
-      setRecipeState(r);
-      schedulerRef.current?.request(r);
+      applyRecipe(r);
+      const img = imageRef.current;
+      if (img?.editSaving === "library") autosaverRef.current?.schedule(img.path, r);
     },
-    [],
+    [applyRecipe],
   );
 
   const adopt = useCallback(
@@ -124,15 +156,18 @@ export function useEditor() {
       imageRef.current = summary;
       setImage(summary);
       setError(null);
-      const r = defaultRecipe(info.recipeVersion, info.adjustments);
-      setRecipe(r);
+      // The saved edit (if any) is the starting point, so the first render shows it.
+      applyRecipe(summary.savedRecipe ?? defaultRecipe(info.recipeVersion, info.adjustments));
+      setSaveState(summary.editSaving === "library" ? "saved" : null);
       return summary;
     },
-    [info, setRecipe],
+    [info, applyRecipe],
   );
 
   const runOpen = useCallback(
     async (open: (onPreview: ipc.PreviewHandler) => Promise<ImageSummaryDto | null>) => {
+      // The previous photo's last change is saved before another photo takes over.
+      void autosaverRef.current?.flush();
       const gen = ++openGenRef.current;
       const started = performance.now();
       const onPreview: ipc.PreviewHandler = (frame) => {
@@ -220,6 +255,9 @@ export function useEditor() {
     busy,
     exportState,
     setRecipe,
+    resetRecipe: () => info && setRecipe(defaultRecipe(info.recipeVersion, info.adjustments)),
+    saveState,
+    lastSaved,
     openDialog,
     openPath,
     exportImage,

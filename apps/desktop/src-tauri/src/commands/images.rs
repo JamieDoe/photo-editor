@@ -39,7 +39,14 @@ async fn open_streaming(
             // The UI may have navigated away; a closed channel is not an error.
             let _ = on_preview.send(Response::new(bytes));
         });
-    Ok(wait(handle).await?.into())
+    let summary = wait(handle).await?;
+    // The saved edit comes with the image, so the first render already shows it.
+    let (saved_recipe, edit_saving) = super::edits::saved_edit(state, &summary.path).await;
+    Ok(ImageSummaryDto {
+        saved_recipe,
+        edit_saving,
+        ..summary.into()
+    })
 }
 
 #[tauri::command]

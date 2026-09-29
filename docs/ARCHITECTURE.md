@@ -1,7 +1,7 @@
 # Architecture
 
 Status: **Phase 2 in progress** (catalogue, background indexing, photo details,
-thumbnails, ratings and flags) on top of the Phase 1 desktop shell. This document describes the system as it exists
+thumbnails, ratings and flags, saved edits) on top of the Phase 1 desktop shell. This document describes the system as it exists
 today. Product intent lives in `PRODUCT.md`;
 rendering detail in `RENDERING.md`; measurements in `PERFORMANCE.md`; decisions in
 `ADR/`.
@@ -246,12 +246,12 @@ See `PERFORMANCE.md` for measured consequences.
   ICC profile or metadata.
 - Windows: LibRaw is opened with a narrow-character path (non-ASCII paths will fail);
   the LibRaw DLL is not bundled.
-- The recipe is not persisted and there is no undo history yet.
+- Edits are saved per photo (ADR 0019), but there is no undo history yet (Phase 7).
 - Library: folders are listed from the filesystem, one level at a time, joined with
   details and marks from the catalogue. The library-wide Picks / Rated / Rejected
   collections come from the catalogue. There is no sort, search or multi-select yet.
-- Ratings and flags cannot be rebuilt from the files. A catalogue reset loses them
-  (the old file is kept), and backups or XMP sidecars are still to come (ADR 0018).
+- Ratings, flags and edits cannot be rebuilt from the files. A catalogue reset loses
+  them (the old file is kept), and backups are the next milestone (ADR 0018, 0019).
 - A granted folder that is later moved is not followed; the user chooses it again.
 - Recent folders cannot be removed from the list yet.
 - Background intensity changes need a restart (thread pools are created at start-up).

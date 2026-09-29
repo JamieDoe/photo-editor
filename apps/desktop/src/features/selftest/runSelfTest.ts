@@ -268,6 +268,44 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       marks.counts.picks >= 1 &&
       marks.cleared.picks === marks.counts.picks - 1;
 
+    // Saved edits through the real commands, catalogue and editor: save a recipe,
+    // see it in the listing and the thumbnail, reopen the photo with it, then reset.
+    const edits = await (async () => {
+      if (!indexing || !thumbnails) return null;
+      const target = config.imagePath;
+      const before = await ipc.libraryThumbnail(target);
+      // Known values: earlier steps left other adjustments changed.
+      const original = { version: info.recipeVersion, exposure: 0, contrast: 0, temperature: 0, saturation: 0 };
+      const recipe = { ...original, exposure: 1, saturation: -40 };
+      const saved = await ipc.saveEdit(target, recipe);
+      const listed = (await ipc.listFolder(indexing.folder)).photos.find((p) => p.path === target)?.edited ?? null;
+      const after = await ipc.libraryThumbnail(target);
+      const reopened = await driver.editor().openPath(target);
+      // State updates land on the next render.
+      const restored = await waitFor(
+        () => (reopened && driver.editor().image?.id === reopened.id ? driver.editor().recipe : null),
+        5_000,
+        "reopened recipe",
+      );
+      const reset = await ipc.saveEdit(target, original);
+      return {
+        edited: saved.edited,
+        listed,
+        thumbnailChanged: before.byteLength !== after.byteLength || new Uint8Array(before).some((b, i) => b !== new Uint8Array(after)[i]),
+        editSaving: reopened?.editSaving ?? null,
+        restoredExposure: restored?.exposure ?? null,
+        resetEdited: reset.edited,
+      };
+    })();
+    const editsOk =
+      edits !== null &&
+      edits.edited &&
+      edits.listed === true &&
+      edits.thumbnailChanged &&
+      edits.editSaving === "library" &&
+      edits.restoredExposure === 1 &&
+      !edits.resetEdited;
+
     // Quit guard: closing the window while an export runs must be held for
     // confirmation. The final shutdown (self_test_report) then cancels the export.
     let quitRequested: { exportsRunning: number } | null = null;
@@ -290,6 +328,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       libraryIndexed: indexOk,
       libraryThumbnails: thumbnailsOk,
       ratingsAndFlags: marksOk,
+      savedEdits: editsOk,
     };
     // Named so that a failing run explains itself.
     const failed = Object.entries(checks)
@@ -315,6 +354,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       indexing,
       thumbnails,
       marks,
+      edits,
       detailFrame: { size: `${detail.frame.width}x${detail.frame.height}`, rustRenderMs: detail.frame.renderMs, roundTripMs: detail.info.roundTripMs },
       baselineUiFrameGapMs: summarise(baselineGaps),
       idleDrag,

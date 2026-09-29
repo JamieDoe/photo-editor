@@ -295,6 +295,9 @@ cache, warm OS cache.
   links) at idle priority on the single background worker take 6.2 s (48/s), so about
   3.5 min per 10,000 photos. An on-screen thumbnail requested mid-batch still takes
   11.5 ms, because it runs on its own lane.
+- **Edited photos** (ADR 0019): their thumbnails come from a reduced decode plus
+  render, 175–470 ms each (once, then cached), against 5–40 ms from the embedded
+  preview.
 - **Worth investigating:** the Fuji and Ricoh cases are 3–8x slower than Nikon. That
   is likely LibRaw's container parsing or a larger embedded JPEG. Not yet profiled.
 - **Not yet measured:**

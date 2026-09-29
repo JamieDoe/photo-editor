@@ -9,6 +9,7 @@
 
 mod catalogue;
 mod details;
+mod edits;
 mod error;
 mod identity;
 mod marks;
@@ -16,6 +17,7 @@ mod schema;
 
 pub use catalogue::{Catalogue, FileRecord, FileStatus, LibraryFolder, RecordOutcome, ScanId};
 pub use details::{METADATA_VERSION, PhotoDetails, camera_name};
+pub use edits::StoredEdit;
 pub use error::CatalogueError;
 pub use identity::SourceIdentity;
 pub use marks::{Collection, CollectionCounts, CollectionEntry, Flag, MarkChange, Marks, Rating};

@@ -57,6 +57,7 @@ export function PhotoGrid({ photos, scrollRef, selected, onSelect, onOpen, onCol
             </span>
             <span className="card-caption">
               <span className="card-name">{p.name}</span>
+              {p.edited && <span className="card-edited" title="Edited" aria-label="Edited" />}
               {p.marks.rating > 0 ? (
                 <span className="card-stars" aria-label={`${p.marks.rating} stars`}>
                   {starsText(p.marks.rating)}

@@ -15,6 +15,8 @@ pub struct ImageId(pub u64);
 #[derive(Debug, Clone)]
 pub struct ImageSummary {
     pub id: ImageId,
+    /// Canonical path of the opened file.
+    pub path: std::path::PathBuf,
     pub file_name: String,
     pub decoder: &'static str,
     pub kind: SourceKind,

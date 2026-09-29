@@ -6,6 +6,9 @@ import type { MarksDto } from "../../ipc/generated/MarksDto";
 import { formatAperture, formatFocal, formatShutter } from "../../lib/format";
 import { hasCommandModifier, isTextEntry } from "../../lib/keyboard";
 import { markChangeForKey } from "../library/marks";
+import type { EditSavingDto } from "../../ipc/generated/EditSavingDto";
+import type { SaveState } from "./autosave";
+import { isIdentity } from "./recipe";
 import { AdjustmentPanel } from "./AdjustmentPanel";
 import { PanelSection } from "./PanelSection";
 import { StatsPanel } from "./StatsPanel";
@@ -71,6 +74,14 @@ export function EditView({ editor, marks, onMark, onStep, onOpenFile }: Props) {
             )}
           </div>
           <div className="meta-actions">
+            {image && recipe && (
+              <EditStatus
+                saving={image.editSaving}
+                state={editor.saveState}
+                edited={!isIdentity(recipe)}
+                onReset={editor.resetRecipe}
+              />
+            )}
             {marks && <MarkControls marks={marks} onChange={onMark} />}
             <button className="ghost" onClick={onOpenFile} disabled={busy || !info}>
               <OpenIcon />
@@ -98,5 +109,48 @@ export function EditView({ editor, marks, onMark, onStep, onOpenFile }: Props) {
         </div>
       </aside>
     </div>
+  );
+}
+
+/**
+ * The design's "● Edited" marker, with the save state and a way back to the original.
+ * Photos outside the library, or edited in a newer version, say that edits aren't saved.
+ */
+function EditStatus({
+  saving,
+  state,
+  edited,
+  onReset,
+}: {
+  saving: EditSavingDto;
+  state: SaveState | null;
+  edited: boolean;
+  onReset: () => void;
+}) {
+  const note =
+    saving === "notInLibrary"
+      ? "Not saved: this photo isn’t in your library"
+      : saving === "newerVersion"
+        ? "Edited in a newer version; changes here aren’t saved"
+        : state === "saving"
+          ? "Saving…"
+          : state === "failed"
+            ? "Couldn’t save"
+            : null;
+  return (
+    <span className="edit-status" aria-live="polite">
+      {edited && (
+        <span className="edited-label">
+          <span className="edited-dot" />
+          Edited
+        </span>
+      )}
+      {note && <span className={state === "failed" ? "edit-note failed" : "edit-note"}>{note}</span>}
+      {edited && (
+        <button className="ghost small" onClick={onReset} title="Back to the original look (the file itself was never changed)">
+          Reset
+        </button>
+      )}
+    </span>
   );
 }

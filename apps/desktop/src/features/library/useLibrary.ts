@@ -158,6 +158,13 @@ export function useLibrary() {
     [load],
   );
 
+  /** A photo's edit was saved (or reset): update its "edited" state in the view. */
+  const markEdited = useCallback((path: string, edited: boolean) => {
+    const update = (ps: PhotoEntryDto[]) => ps.map((p) => (p.path === path && p.edited !== edited ? { ...p, edited } : p));
+    setListing((l) => (l ? { ...l, photos: update(l.photos) } : l));
+    setCollection((c) => (c ? { ...c, photos: update(c.photos) } : c));
+  }, []);
+
   const findPhoto = useCallback((path: string | null) => (path ? (photosRef.current.find((p) => p.path === path) ?? null) : null), []);
 
   /** Re-lists the open folder and re-indexes its library root (fast when unchanged). */
@@ -188,6 +195,7 @@ export function useLibrary() {
     visible,
     neighbour,
     setMarks,
+    markEdited,
     findPhoto,
     chooseFolder,
     openFolder,

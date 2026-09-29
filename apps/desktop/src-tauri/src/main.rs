@@ -17,15 +17,20 @@ fn main() {
     logging::install_panic_hook();
     let self_test = std::env::var_os("PE_SELF_TEST").map(PathBuf::from);
 
-    let result = tauri::Builder::default()
-        // Must be first: a second launch hands over to the running app and exits.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+    let mut builder = tauri::Builder::default();
+    // Must be first: a second launch hands over to the running app and exits. Self-test
+    // runs are isolated (in-memory catalogue, temporary cache), so they may run beside
+    // the user's app instead of handing over to it.
+    if self_test.is_none() {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             log::info!("second launch; focusing the existing window");
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.unminimize();
                 let _ = window.set_focus();
             }
-        }))
+        }));
+    }
+    let result = builder
         // Registered early so that everything after it can log.
         .plugin(logging::plugin())
         .plugin(tauri_plugin_window_state::Builder::new().build())
@@ -76,6 +81,7 @@ fn main() {
             commands::library::cancel_thumbnail,
             commands::marks::set_photo_marks,
             commands::marks::library_collection,
+            commands::edits::save_edit,
             commands::images::open_image_dialog,
             commands::images::open_image_path,
             commands::images::render_preview,

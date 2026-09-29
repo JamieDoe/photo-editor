@@ -358,7 +358,7 @@ pub(crate) fn text(path: &Path) -> Result<&str> {
 }
 
 /// `dir` itself and the prefix every descendant directory starts with.
-fn dir_prefix(dir: &Path) -> Result<(String, String)> {
+pub(crate) fn dir_prefix(dir: &Path) -> Result<(String, String)> {
     let exact = text(dir)?
         .trim_end_matches(std::path::MAIN_SEPARATOR)
         .to_owned();
@@ -366,7 +366,7 @@ fn dir_prefix(dir: &Path) -> Result<(String, String)> {
     Ok((exact, prefix))
 }
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |d| d.as_millis() as i64)

@@ -10,6 +10,8 @@ import type { CollectionCountsDto } from "./generated/CollectionCountsDto";
 import type { CollectionKindDto } from "./generated/CollectionKindDto";
 import type { CollectionListingDto } from "./generated/CollectionListingDto";
 import type { DiagnosticsDto } from "./generated/DiagnosticsDto";
+import type { EditRecipe } from "./generated/EditRecipe";
+import type { EditSavedDto } from "./generated/EditSavedDto";
 import type { ExportEvent } from "./generated/ExportEvent";
 import type { ExportRequestDto } from "./generated/ExportRequestDto";
 import type { ExportStartedDto } from "./generated/ExportStartedDto";
@@ -95,6 +97,9 @@ export const libraryStatus = () => invoke<LibraryStatusDto>("library_status");
 /** Rates or flags photos; resolves to the new library-wide collection counts. */
 export const setPhotoMarks = (paths: string[], change: MarkChangeDto) =>
   invoke<CollectionCountsDto>("set_photo_marks", { paths, change });
+
+/** Saves a library photo's edit (a default recipe removes it). */
+export const saveEdit = (path: string, recipe: EditRecipe) => invoke<EditSavedDto>("save_edit", { path, recipe });
 
 export const libraryCollection = (kind: CollectionKindDto) =>
   invoke<CollectionListingDto>("library_collection", { kind });

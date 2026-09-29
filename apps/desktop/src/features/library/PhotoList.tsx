@@ -70,6 +70,7 @@ export function PhotoList({ photos, scrollRef, selected, onSelect, onOpen }: Pro
                 <span className="card-stars">{starsText(p.marks.rating)}</span>
                 {p.marks.flag === "pick" && <PickIcon size={12} filled />}
                 {p.marks.flag === "reject" && <RejectIcon size={12} />}
+                {p.edited && <span className="card-edited" title="Edited" aria-label="Edited" />}
               </span>
               <span role="cell" className="type">
                 {p.raw ? "RAW" : "JPEG"}

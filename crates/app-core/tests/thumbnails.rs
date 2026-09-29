@@ -3,8 +3,14 @@
 use std::path::{Path, PathBuf};
 
 use app_core::{
-    Engine, EngineConfig, ErrorKind, JobError, THUMBNAIL_LONG_EDGE, Thumbnail, ThumbnailSource,
+    EditRecipe, Engine, EngineConfig, ErrorKind, JobError, THUMBNAIL_LONG_EDGE, Thumbnail,
+    ThumbnailSource,
 };
+
+/// Unedited photos for a pre-generation batch.
+fn plain(paths: &[PathBuf]) -> Vec<(PathBuf, Option<EditRecipe>)> {
+    paths.iter().map(|p| (p.clone(), None)).collect()
+}
 
 struct Setup {
     dir: fixtures::TempDir,
@@ -32,7 +38,7 @@ impl Setup {
 
     fn thumb(&self, path: &Path) -> Thumbnail {
         self.engine
-            .thumbnail(path.to_path_buf())
+            .thumbnail(path.to_path_buf(), None)
             .wait()
             .unwrap_or_else(|e| panic!("{}: {e:?}", path.display()))
     }
@@ -123,7 +129,7 @@ fn missing_files_report_not_found() {
     let s = setup("thumb-missing", true);
     let err = s
         .engine
-        .thumbnail(s.dir.path().join("gone.jpg"))
+        .thumbnail(s.dir.path().join("gone.jpg"), None)
         .wait()
         .unwrap_err();
     match err {
@@ -192,7 +198,7 @@ fn pregeneration_fills_the_cache_and_skips_what_is_there() {
 
     let summary = s
         .engine
-        .pregenerate_thumbnails("root", paths.clone())
+        .pregenerate_thumbnails("root", plain(&paths))
         .wait();
     assert_eq!(
         summary,
@@ -206,7 +212,10 @@ fn pregeneration_fills_the_cache_and_skips_what_is_there() {
     for p in &paths {
         assert_eq!(s.thumb(p).source, ThumbnailSource::Cache);
     }
-    let again = s.engine.pregenerate_thumbnails("root", paths).wait();
+    let again = s
+        .engine
+        .pregenerate_thumbnails("root", plain(&paths))
+        .wait();
     assert_eq!(again.already_cached, 6);
 }
 
@@ -221,8 +230,8 @@ fn a_new_batch_for_the_same_key_cancels_the_old_one() {
             )
         })
         .collect();
-    let first = s.engine.pregenerate_thumbnails("root", paths.clone());
-    let second = s.engine.pregenerate_thumbnails("root", paths[..2].to_vec());
+    let first = s.engine.pregenerate_thumbnails("root", plain(&paths));
+    let second = s.engine.pregenerate_thumbnails("root", plain(&paths[..2]));
     let first = first.wait();
     assert!(first.cancelled > 0, "{first:?}");
     assert_eq!(first.made + first.already_cached + first.cancelled, 40);
@@ -238,7 +247,7 @@ fn unreadable_files_count_as_failed_not_fatal() {
     let bad = s.file("bad.jpg", b"not a jpeg");
     let summary = s
         .engine
-        .pregenerate_thumbnails("root", vec![bad, good.clone()])
+        .pregenerate_thumbnails("root", plain(&[bad, good.clone()]))
         .wait();
     assert_eq!((summary.made, summary.failed), (1, 1));
     assert_eq!(s.thumb(&good).source, ThumbnailSource::Cache);
@@ -248,6 +257,51 @@ fn unreadable_files_count_as_failed_not_fatal() {
 fn without_a_cache_pregeneration_does_nothing() {
     let s = setup("thumb-pregen-nocache", false);
     let p = s.file("a.jpg", &fixtures::chart_jpeg(800, 600, 90));
-    let batch = s.engine.pregenerate_thumbnails("root", vec![p]);
+    let batch = s.engine.pregenerate_thumbnails("root", plain(&[p]));
     assert!(batch.is_empty());
+}
+
+#[test]
+fn edited_photos_get_their_own_rendered_thumbnail() {
+    let s = setup("thumb-edited", true);
+    let path = s.file("photo.jpg", &fixtures::chart_jpeg(1200, 800, 90));
+    let original = s.thumb(&path);
+    assert_eq!(original.source, ThumbnailSource::Embedded);
+
+    let brighter = EditRecipe {
+        exposure: 1.5,
+        ..EditRecipe::default()
+    };
+    let edited = s
+        .engine
+        .thumbnail(path.clone(), Some(brighter))
+        .wait()
+        .unwrap();
+    assert_eq!(
+        edited.source,
+        ThumbnailSource::Rendered,
+        "the camera preview can't show edits"
+    );
+    assert_ne!(edited.jpeg, original.jpeg);
+    assert_eq!(jpeg_size(&edited.jpeg), (512, 341));
+    // Both are cached, under different keys.
+    assert_eq!(
+        s.engine
+            .thumbnail(path.clone(), Some(brighter))
+            .wait()
+            .unwrap()
+            .source,
+        ThumbnailSource::Cache
+    );
+    assert_eq!(s.engine.thumbnail_cache_stats().unwrap().entries, 2);
+    // An identity recipe is the original.
+    let identity = s
+        .engine
+        .thumbnail(path.clone(), Some(EditRecipe::default()))
+        .wait()
+        .unwrap();
+    assert_eq!(
+        (identity.source, identity.jpeg),
+        (ThumbnailSource::Cache, original.jpeg)
+    );
 }
