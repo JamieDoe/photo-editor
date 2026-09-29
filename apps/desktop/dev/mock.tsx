@@ -28,6 +28,8 @@ let mockSettings: Record<string, unknown> = {
 };
 
 /** Marks by photo path; seeded with a few, updated by set_photo_marks. */
+const mockEdits = new Map<string, Record<string, number>>();
+let openedPath = "/mock.nef";
 const mockMarks = new Map<string, { rating: number; flag: "none" | "pick" | "reject" }>();
 const marksOf = (path: string, i: number) =>
   mockMarks.get(path) ?? { rating: i % 9 === 0 ? 4 : i % 13 === 0 ? 2 : 0, flag: i % 7 === 0 ? ("pick" as const) : i % 17 === 0 ? ("reject" as const) : ("none" as const) };
@@ -44,6 +46,7 @@ function mockListing(path: string) {
     modifiedMs: Date.UTC(2026, 7, 14, 9, i % 60),
     raw: i % 5 !== 4,
     marks: marksOf(`${path}/DSC_${i}.NEF`, i),
+    edited: mockEdits.has(`${path}/DSC_${i}.NEF`) || i % 10 === 3,
     details: i % 3 === 2 ? null : { camera: "Nikon Z 6", lens: "NIKKOR Z 24-70mm f/4 S", capturedAt: `2026-09-${24 + (i % 3)}T06:${String(10 + (i % 50)).padStart(2, "0")}:12`, iso: 100, aperture: 8, shutterSeconds: 1 / 125, focalLengthMm: 35, width: 6048, height: 4024 },
   }));
   return {
@@ -102,7 +105,11 @@ mockIPC((cmd, payload) => {
       return { rendererVersion: 1, recipeVersion: 1, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs };
     case "open_image_dialog":
     case "open_image_path":
-      return { id: 1, fileName: "mock.nef", decoder: "libraw", cameraRaw: true, camera: "Mock Camera", iso: 100, aperture: 6.7, shutterSeconds: 1, focalLengthMm: 52, fullWidth: 6000, fullHeight: 4000, levels: [[3000, 2000], [1500, 1000], [750, 500], [375, 250]], pyramidBytes: 0, identityMs: 0.5, decodeMs: 380, pyramidMs: 2, embeddedPreviewMs: 12 };
+      openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";
+      return {
+        path: openedPath,
+        savedRecipe: mockEdits.get(openedPath) ?? null,
+        editSaving: cmd === "open_image_path" ? "library" : "notInLibrary", id: 1, fileName: "mock.nef", decoder: "libraw", cameraRaw: true, camera: "Mock Camera", iso: 100, aperture: 6.7, shutterSeconds: 1, focalLengthMm: 52, fullWidth: 6000, fullHeight: 4000, levels: [[3000, 2000], [1500, 1000], [750, 500], [375, 250]], pyramidBytes: 0, identityMs: 0.5, decodeMs: 380, pyramidMs: 2, embeddedPreviewMs: 12 };
     case "render_preview":
       return placeholderFrame(600, 400);
     case "self_test_config":
@@ -137,6 +144,13 @@ mockIPC((cmd, payload) => {
         mockMarks.set(p, m);
       }
       return counts();
+    }
+    case "save_edit": {
+      const { path, recipe } = payload as { path: string; recipe: Record<string, number> };
+      const edited = ["exposure", "contrast", "temperature", "saturation"].some((k) => recipe[k] !== 0);
+      if (edited) mockEdits.set(path, recipe);
+      else mockEdits.delete(path);
+      return new Promise((r) => setTimeout(() => r({ edited }), 150));
     }
     case "library_collection": {
       const kind = (payload as { kind: "picks" | "rated" | "rejected" }).kind;

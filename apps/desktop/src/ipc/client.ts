@@ -2,7 +2,7 @@
  * Typed wrappers around Tauri commands. All payload types are generated from Rust
  * (see ./generated), so this file only names commands and adapts binary responses.
  */
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { EngineInfoDto } from "./generated/EngineInfoDto";
 import type { ClientErrorReport } from "./generated/ClientErrorReport";
@@ -10,6 +10,8 @@ import type { CollectionCountsDto } from "./generated/CollectionCountsDto";
 import type { CollectionKindDto } from "./generated/CollectionKindDto";
 import type { CollectionListingDto } from "./generated/CollectionListingDto";
 import type { DiagnosticsDto } from "./generated/DiagnosticsDto";
+import type { EditRecipe } from "./generated/EditRecipe";
+import type { EditSavedDto } from "./generated/EditSavedDto";
 import type { ExportEvent } from "./generated/ExportEvent";
 import type { ExportRequestDto } from "./generated/ExportRequestDto";
 import type { ExportStartedDto } from "./generated/ExportStartedDto";
@@ -40,26 +42,10 @@ function toArrayBuffer(raw: ArrayBuffer | number[]): ArrayBuffer {
   return raw instanceof ArrayBuffer ? raw : new Uint8Array(raw).buffer;
 }
 
-export type PreviewHandler = (frame: PreviewFrame) => void;
+/** Shows the native file dialog and opens the chosen photo (null if cancelled). */
+export const openImageDialog = () => invoke<ImageSummaryDto | null>("open_image_dialog");
 
-/** Channel on which Rust streams the file's embedded preview while it decodes. */
-function previewChannel(onPreview: PreviewHandler): Channel<ArrayBuffer | number[]> {
-  const channel = new Channel<ArrayBuffer | number[]>();
-  channel.onmessage = (raw) => {
-    try {
-      onPreview(decodeFrame(toArrayBuffer(raw)));
-    } catch (e) {
-      console.error("bad embedded preview frame", e);
-    }
-  };
-  return channel;
-}
-
-export const openImageDialog = (onPreview: PreviewHandler) =>
-  invoke<ImageSummaryDto | null>("open_image_dialog", { onPreview: previewChannel(onPreview) });
-
-export const openImagePath = (path: string, onPreview: PreviewHandler) =>
-  invoke<ImageSummaryDto>("open_image_path", { path, onPreview: previewChannel(onPreview) });
+export const openImagePath = (path: string) => invoke<ImageSummaryDto>("open_image_path", { path });
 
 export async function renderPreview(request: PreviewRequestDto): Promise<PreviewFrame> {
   return decodeFrame(toArrayBuffer(await invoke<ArrayBuffer | number[]>("render_preview", { request })));
@@ -95,6 +81,9 @@ export const libraryStatus = () => invoke<LibraryStatusDto>("library_status");
 /** Rates or flags photos; resolves to the new library-wide collection counts. */
 export const setPhotoMarks = (paths: string[], change: MarkChangeDto) =>
   invoke<CollectionCountsDto>("set_photo_marks", { paths, change });
+
+/** Saves a library photo's edit (a default recipe removes it). */
+export const saveEdit = (path: string, recipe: EditRecipe) => invoke<EditSavedDto>("save_edit", { path, recipe });
 
 export const libraryCollection = (kind: CollectionKindDto) =>
   invoke<CollectionListingDto>("library_collection", { kind });

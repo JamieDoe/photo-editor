@@ -85,7 +85,7 @@ async fn list(state: &AppState, dir: PathBuf) -> IpcResult<FolderListingDto> {
     let root = state.folders.root_of(&dir).unwrap_or_else(|| dir.clone());
     let target = dir.clone();
     let catalogue = std::sync::Arc::clone(&state.catalogue);
-    let (listing, details, marks) = tauri::async_runtime::spawn_blocking(move || {
+    let (listing, details, (marks, edited)) = tauri::async_runtime::spawn_blocking(move || {
         let listing = folders::list_folder(&target, &extensions);
         // Details exist once the folder has been indexed; a catalogue problem must not
         // stop browsing, so it only costs the extra columns and marks.
@@ -100,7 +100,14 @@ async fn list(state: &AppState, dir: PathBuf) -> IpcResult<FolderListingDto> {
             log::warn!("catalogue marks unavailable for {}: {e}", target.display());
             Vec::new()
         });
-        (listing, details, marks)
+        let edited: std::collections::HashSet<PathBuf> = catalogue
+            .edits_in(&target, false)
+            .map(|v| v.into_iter().map(|(p, _)| p).collect())
+            .unwrap_or_else(|e| {
+                log::warn!("catalogue edits unavailable for {}: {e}", target.display());
+                Default::default()
+            });
+        (listing, details, (marks, edited))
     })
     .await
     .map_err(IpcError::internal)?;
@@ -108,7 +115,14 @@ async fn list(state: &AppState, dir: PathBuf) -> IpcResult<FolderListingDto> {
     let details: std::collections::HashMap<PathBuf, app_core::PhotoDetails> =
         details.into_iter().collect();
     let marks: std::collections::HashMap<PathBuf, app_core::Marks> = marks.into_iter().collect();
-    Ok(to_dto(listing, &root, &raw_extensions, &details, &marks))
+    Ok(to_dto(
+        listing,
+        &root,
+        &raw_extensions,
+        &details,
+        &marks,
+        &edited,
+    ))
 }
 
 /// Extensions of camera RAW formats (everything the registry accepts except JPEG).
@@ -125,6 +139,7 @@ fn to_dto(
     raw_extensions: &[&str],
     details: &std::collections::HashMap<PathBuf, app_core::PhotoDetails>,
     marks: &std::collections::HashMap<PathBuf, app_core::Marks>,
+    edited: &std::collections::HashSet<PathBuf>,
 ) -> FolderListingDto {
     let crumb = |p: &Path| FolderCrumbDto {
         name: p.file_name().map_or_else(
@@ -153,6 +168,7 @@ fn to_dto(
                 raw: raw_extensions.contains(&p.extension.as_str()),
                 details: details.get(&p.path).map(PhotoDetailsDto::from),
                 marks: marks.get(&p.path).copied().unwrap_or_default().into(),
+                edited: edited.contains(&p.path),
                 name: p.name,
                 path: p.path.display().to_string(),
                 size_bytes: p.size_bytes,
@@ -180,6 +196,7 @@ mod tests {
             listing,
             &root.canonicalize().unwrap(),
             &["nef"],
+            &Default::default(),
             &Default::default(),
             &Default::default(),
         );
@@ -290,7 +307,14 @@ pub async fn library_thumbnail(
         .ok_or_else(|| folder_unavailable(&path))?;
     // A cache hit is a small file read; keep it off the async runtime's threads too.
     let handle = tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().engine.thumbnail(file)
+        let state = app.state::<AppState>();
+        // An edited photo's thumbnail shows the edit.
+        let stored = state.catalogue.edit_at(&file).unwrap_or_else(|e| {
+            log::warn!("edit lookup failed for {}: {e}", file.display());
+            None
+        });
+        let recipe = app_core::SavedEdit::from_stored(stored.as_ref()).recipe();
+        state.engine.thumbnail(file, recipe)
     })
     .await
     .map_err(IpcError::internal)?;
@@ -317,10 +341,25 @@ fn pregenerate_thumbnails(app: &AppHandle, root: PathBuf, key: String) {
         };
         match state.catalogue.files_in(&root, true) {
             Ok(files) => {
-                let paths: Vec<PathBuf> = files
+                // Edited photos' thumbnails show their edits.
+                let mut recipes: std::collections::HashMap<PathBuf, app_core::EditRecipe> = state
+                    .catalogue
+                    .edits_in(&root, true)
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|(p, e)| {
+                        app_core::SavedEdit::from_stored(Some(&e))
+                            .recipe()
+                            .map(|r| (p, r))
+                    })
+                    .collect();
+                let paths: Vec<(PathBuf, Option<app_core::EditRecipe>)> = files
                     .into_iter()
                     .filter(|f| f.status == app_core::FileStatus::Present)
-                    .map(|f| f.path)
+                    .map(|f| {
+                        let recipe = recipes.remove(&f.path);
+                        (f.path, recipe)
+                    })
                     .collect();
                 let batch = state.engine.pregenerate_thumbnails(&key, paths);
                 log::info!("queued {} thumbnails for {key}", batch.len());
@@ -328,6 +367,22 @@ fn pregenerate_thumbnails(app: &AppHandle, root: PathBuf, key: String) {
             Err(e) => log::warn!("thumbnail pre-generation skipped for {key}: {e}"),
         }
     });
+}
+
+/// The catalogue photo of `file` (inside library root `root`). A photo its folder's
+/// index has not reached yet is recorded now; the next full pass sees it as unchanged.
+pub(super) fn library_photo(
+    catalogue: &app_core::Catalogue,
+    file: &Path,
+    root: &Path,
+) -> Result<app_core::PhotoId, app_core::CatalogueError> {
+    if let Some(photo) = catalogue.photo_at(file)? {
+        return Ok(photo);
+    }
+    let folder = catalogue.add_folder(root)?;
+    let identity = app_core::SourceIdentity::from_path(file)?;
+    let scan = catalogue.begin_scan()?;
+    Ok(catalogue.record_file(folder, &identity, scan)?.0)
 }
 
 /// Library totals and any catalogue notice.

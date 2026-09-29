@@ -55,6 +55,13 @@ export function App() {
   );
   const editEntry = library.findPhoto(editPath);
 
+  // Saved edits show up in the Library (edited dot, new thumbnail when it next loads).
+  const { lastSaved } = editor;
+  const { markEdited } = library;
+  useEffect(() => {
+    if (lastSaved) markEdited(lastSaved.path, lastSaved.edited);
+  }, [lastSaved, markEdited]);
+
   const exporting =
     editor.exportState !== null && (editor.exportState.last === null || editor.exportState.last.type === "progress");
   const context =

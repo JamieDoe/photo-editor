@@ -1,6 +1,8 @@
 # ADR 0007: Show the embedded camera preview while the RAW decodes
 
-- Status: Accepted
+- Status: Superseded for the editor by ADR 0020 (the switch from the camera's look to
+  ours was jarring). The engine capability remains; Library thumbnails still use
+  embedded previews (ADR 0015).
 - Date: 2026-09-28
 
 ## Context

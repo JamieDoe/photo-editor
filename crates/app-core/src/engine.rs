@@ -88,9 +88,16 @@ impl Engine {
     }
 
     /// Decodes a preview-resolution copy of `path` and builds its pyramid.
-    /// Supersedes any open still in progress.
+    /// Supersedes any open still in progress. The desktop editor uses this: it shows
+    /// only renders of the RAW data, never the camera's embedded JPEG (ADR 0020).
     pub fn open(&self, path: impl Into<PathBuf>) -> JobHandle<ImageSummary, EngineError> {
-        self.open_with_preview(path, |_| {})
+        let shared = Arc::clone(&self.shared);
+        let path = path.into();
+        let spec =
+            JobSpec::new(Lane::Interactive, Priority::Interactive, "open").superseding(OPEN_KEY);
+        self.jobs.submit(spec, move |token| {
+            shared.open(&path, token, None::<fn(EmbeddedFrame)>)
+        })
     }
 
     /// Like [`Engine::open`], but first extracts the file's embedded preview (if any)
@@ -106,8 +113,9 @@ impl Engine {
         let path = path.into();
         let spec =
             JobSpec::new(Lane::Interactive, Priority::Interactive, "open").superseding(OPEN_KEY);
-        self.jobs
-            .submit(spec, move |token| shared.open(&path, token, on_preview))
+        self.jobs.submit(spec, move |token| {
+            shared.open(&path, token, Some(on_preview))
+        })
     }
 
     /// Renders a preview. Cache hits complete immediately; otherwise the render runs on
@@ -268,20 +276,27 @@ impl Shared {
         &self,
         path: &Path,
         token: &CancelToken,
-        on_preview: impl FnOnce(EmbeddedFrame),
+        on_preview: Option<impl FnOnce(EmbeddedFrame)>,
     ) -> Result<ImageSummary, EngineError> {
         let t0 = Instant::now();
         let identity = SourceIdentity::from_path(path).map_err(raw::DecodeError::from)?;
         let identity_ms = ms(t0);
 
         let t_embedded = Instant::now();
-        let embedded = self.decoders.embedded_preview(
-            &identity.canonical_path,
-            self.config.embedded_preview_min_edge,
-            token,
-        );
+        // Only extracted when someone will show it (not the editor; ADR 0020).
+        let embedded = match on_preview {
+            Some(callback) => self
+                .decoders
+                .embedded_preview(
+                    &identity.canonical_path,
+                    self.config.embedded_preview_min_edge,
+                    token,
+                )
+                .map(|p| p.map(|p| (p, callback))),
+            None => Ok(None),
+        };
         let embedded_preview_ms = match embedded {
-            Ok(Some(preview)) => {
+            Ok(Some((preview, on_preview))) => {
                 let extract_ms = ms(t_embedded);
                 on_preview(EmbeddedFrame {
                     image: Arc::new(preview.image),
@@ -319,6 +334,7 @@ impl Shared {
         let info = decoded.info;
         let summary = ImageSummary {
             id,
+            path: identity.canonical_path.clone(),
             file_name: path
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned())

@@ -6,14 +6,17 @@ import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { EngineInfoDto } from "../../ipc/generated/EngineInfoDto";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { ImageSummaryDto } from "../../ipc/generated/ImageSummaryDto";
+import { Autosaver, type SaveState } from "./autosave";
 import { PreviewScheduler, type FrameInfo, type SchedulerStats } from "./previewScheduler";
 import { defaultRecipe } from "./recipe";
 
-/** What the viewer shows: a render of the recipe, or the embedded camera preview
- * shown while the file decodes. */
-export type DisplayedFrame =
-  | { source: "render"; frame: PreviewFrame; imageId: number; info: FrameInfo }
-  | { source: "embedded"; frame: PreviewFrame; sinceOpenMs: number };
+/** What the viewer shows: a render of the open image's recipe. The camera's embedded
+ * JPEG is never shown in the editor (ADR 0020). */
+export interface DisplayedFrame {
+  frame: PreviewFrame;
+  imageId: number;
+  info: FrameInfo;
+}
 
 interface RenderedPreview {
   frame: PreviewFrame;
@@ -43,6 +46,11 @@ export function useEditor() {
   const fail = useCallback((e: unknown) => void toAppError(e).then(setError), []);
   const [busy, setBusy] = useState(false);
   const [exportState, setExportState] = useState<ExportState | null>(null);
+  /** Save state of the open photo's edit; null when its edits are not saved. */
+  const [saveState, setSaveState] = useState<SaveState | null>(null);
+  /** The latest completed save, so the Library can mark the photo edited or not. */
+  const [lastSaved, setLastSaved] = useState<{ path: string; edited: boolean } | null>(null);
+  const autosaverRef = useRef<Autosaver | null>(null);
 
   const imageRef = useRef<ImageSummaryDto | null>(null);
   const recipeRef = useRef<EditRecipe | null>(null);
@@ -50,11 +58,8 @@ export function useEditor() {
   const listenersRef = useRef(new Set<FrameListener>());
   // Latest event per export job. Events can arrive before export_image resolves.
   const exportEventsRef = useRef(new Map<number, ExportEvent>());
-  // Increments per open. While an open is pending, frames of the previous image are
-  // obsolete and must not replace the new file's embedded preview.
+  // Increments per open, so a slower, older open never replaces a newer one.
   const openGenRef = useRef(0);
-  const pendingOpenRef = useRef<number | null>(null);
-  const adoptedGenRef = useRef(0);
 
   // The scheduler lives exactly as long as the mounted component. Created in an
   // effect (not useMemo) so React StrictMode's mount -> unmount -> mount cycle in
@@ -67,12 +72,12 @@ export function useEditor() {
         const img = imageRef.current;
         if (!img) throw ipc.staleError();
         const frame = await ipc.renderPreview({ imageId: img.id, recipe: r, quality, targetLongEdge: targetEdgeRef.current });
-        // A different image was opened (or is opening) while this rendered.
-        if (imageRef.current?.id !== img.id || pendingOpenRef.current !== null) throw ipc.staleError();
+        // A different image was opened while this rendered.
+        if (imageRef.current?.id !== img.id) throw ipc.staleError();
         return { frame, imageId: img.id };
       },
       isCancellation: ipc.isCancellation,
-      onFrame: (r, frameInfo) => show({ source: "render", frame: r.frame, imageId: r.imageId, info: frameInfo }),
+      onFrame: (r, frameInfo) => show({ frame: r.frame, imageId: r.imageId, info: frameInfo }),
       onError: fail,
       requestFrame: (cb) => requestAnimationFrame(cb),
       setTimer: (cb, ms) => window.setTimeout(cb, ms),
@@ -85,6 +90,24 @@ export function useEditor() {
       window.clearInterval(timer);
       scheduler.dispose();
       if (schedulerRef.current === scheduler) schedulerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const saver = new Autosaver({
+      save: (path, r) => ipc.saveEdit(path, r),
+      setTimer: (cb, ms) => window.setTimeout(cb, ms),
+      clearTimer: (h) => window.clearTimeout(h),
+      onState: (path, state, edited, e) => {
+        if (imageRef.current?.path === path) setSaveState(state);
+        if (state === "saved" && edited !== null) setLastSaved({ path, edited });
+        if (state === "failed") fail(e);
+      },
+    });
+    autosaverRef.current = saver;
+    return () => {
+      void saver.flush(); // don't lose the last change when the editor goes away
+      if (autosaverRef.current === saver) autosaverRef.current = null;
     };
   }, []);
 
@@ -108,52 +131,52 @@ export function useEditor() {
     return () => void unlisten.then((u) => u());
   }, []);
 
+  /** Shows `r` without saving it (opening a photo). */
+  const applyRecipe = useCallback((r: EditRecipe) => {
+    recipeRef.current = r;
+    setRecipeState(r);
+    schedulerRef.current?.request(r);
+  }, []);
+
+  /** The photographer changed the edit: show it, and save it if the photo is in the library. */
   const setRecipe = useCallback(
     (r: EditRecipe) => {
-      recipeRef.current = r;
-      setRecipeState(r);
-      schedulerRef.current?.request(r);
+      applyRecipe(r);
+      const img = imageRef.current;
+      if (img?.editSaving === "library") autosaverRef.current?.schedule(img.path, r);
     },
-    [],
+    [applyRecipe],
   );
 
   const adopt = useCallback(
     (summary: ImageSummaryDto | null) => {
       if (!summary || !info) return summary;
-      pendingOpenRef.current = null;
       imageRef.current = summary;
       setImage(summary);
       setError(null);
-      const r = defaultRecipe(info.recipeVersion, info.adjustments);
-      setRecipe(r);
+      // The saved edit (if any) is the starting point, so the first render shows it.
+      applyRecipe(summary.savedRecipe ?? defaultRecipe(info.recipeVersion, info.adjustments));
+      setSaveState(summary.editSaving === "library" ? "saved" : null);
       return summary;
     },
-    [info, setRecipe],
+    [info, applyRecipe],
   );
 
+  /**
+   * Opens a photo. The current photo stays on screen (the viewer dims it) until the
+   * new one's first render arrives; a newer open supersedes this one.
+   */
   const runOpen = useCallback(
-    async (open: (onPreview: ipc.PreviewHandler) => Promise<ImageSummaryDto | null>) => {
+    async (open: () => Promise<ImageSummaryDto | null>) => {
+      // The previous photo's last change is saved before another photo takes over.
+      void autosaverRef.current?.flush();
       const gen = ++openGenRef.current;
-      const started = performance.now();
-      const onPreview: ipc.PreviewHandler = (frame) => {
-        // Only for the latest open, and only before it is adopted: the channel message
-        // can arrive after the open's response, and must never replace a real render.
-        if (gen !== openGenRef.current || adoptedGenRef.current === gen) return;
-        pendingOpenRef.current = gen;
-        show({ source: "embedded", frame, sinceOpenMs: performance.now() - started });
-      };
       setBusy(true);
       try {
-        const summary = await open(onPreview);
+        const summary = await open();
         if (gen !== openGenRef.current) return null; // superseded by a newer open
-        if (!summary) {
-          restoreAfterFailedOpen(gen);
-          return null;
-        }
-        adoptedGenRef.current = gen;
         return adopt(summary);
       } catch (e) {
-        if (gen === openGenRef.current) restoreAfterFailedOpen(gen);
         if (!ipc.isCancellation(e)) fail(e);
         return null;
       } finally {
@@ -163,16 +186,8 @@ export function useEditor() {
     [adopt],
   );
 
-  /** If an open showed an embedded preview but then failed, show the previous image again. */
-  function restoreAfterFailedOpen(gen: number) {
-    if (pendingOpenRef.current !== gen) return;
-    pendingOpenRef.current = null;
-    if (imageRef.current && recipeRef.current) schedulerRef.current?.request(recipeRef.current);
-    else setDisplayed(null);
-  }
-
   const openDialog = useCallback(() => runOpen(ipc.openImageDialog), [runOpen]);
-  const openPath = useCallback((path: string) => runOpen((onPreview) => ipc.openImagePath(path, onPreview)), [runOpen]);
+  const openPath = useCallback((path: string) => runOpen(() => ipc.openImagePath(path)), [runOpen]);
 
   const exportImage = useCallback(
     async (destination: string | null = null) => {
@@ -220,6 +235,9 @@ export function useEditor() {
     busy,
     exportState,
     setRecipe,
+    resetRecipe: () => info && setRecipe(defaultRecipe(info.recipeVersion, info.adjustments)),
+    saveState,
+    lastSaved,
     openDialog,
     openPath,
     exportImage,

@@ -14,4 +14,8 @@ details: PhotoDetailsDto | null,
 /**
  * Rating and flag (defaults until set).
  */
-marks: MarksDto, };
+marks: MarksDto, 
+/**
+ * The photo has a saved edit.
+ */
+edited: boolean, };

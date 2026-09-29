@@ -112,6 +112,8 @@ pub struct CollectionEntry {
     pub marks: Marks,
     /// `None` until indexing has read the file's details.
     pub details: Option<PhotoDetails>,
+    /// The photo has an edit recipe.
+    pub edited: bool,
 }
 
 fn marks_from(rating: i64, flag: i64) -> Marks {
@@ -190,7 +192,8 @@ impl Catalogue {
     pub fn collection(&self, collection: Collection) -> Result<Vec<CollectionEntry>> {
         let conn = self.conn();
         let sql = format!(
-            "SELECT p.id, f.path, f.size, f.modified_ns, p.rating, p.flag, p.metadata_version, {}
+            "SELECT p.id, f.path, f.size, f.modified_ns, p.rating, p.flag, p.metadata_version,
+                    EXISTS(SELECT 1 FROM edits e WHERE e.photo_id = p.id), {}
              FROM photos p JOIN files f ON f.photo_id = p.id
              WHERE f.missing = 0 AND {}
              ORDER BY p.captured_at IS NULL, p.captured_at, f.path",
@@ -207,10 +210,11 @@ impl Catalogue {
                 modified_ns: r.get(3)?,
                 marks: marks_from(r.get(4)?, r.get(5)?),
                 details: if indexed > 0 {
-                    Some(crate::details::from_row(r, 7)?)
+                    Some(crate::details::from_row(r, 8)?)
                 } else {
                     None
                 },
+                edited: r.get(7)?,
             })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)

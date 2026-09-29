@@ -5,6 +5,7 @@
 //! job system, never on the caller's thread.
 
 mod config;
+mod edits;
 mod engine;
 mod error;
 mod library;
@@ -15,9 +16,10 @@ mod types;
 
 pub use catalogue::{
     Catalogue, CatalogueError, Collection, CollectionCounts, CollectionEntry, FileStatus, Flag,
-    MarkChange, Marks, PhotoDetails, PhotoId, Rating, SourceIdentity,
+    MarkChange, Marks, PhotoDetails, PhotoId, Rating, SourceIdentity, StoredEdit,
 };
 pub use config::EngineConfig;
+pub use edits::{SavedEdit, load_edit, save_edit};
 pub use engine::Engine;
 pub use error::{EngineError, ErrorKind};
 pub use library::{IndexProgress, IndexStage, IndexSummary};
@@ -34,4 +36,4 @@ pub use cache::DiskCacheStats;
 pub use export::ExportFormat;
 pub use jobs::{CancelToken, JobError, JobHandle};
 pub use raw::SourceKind;
-pub use renderer::{EditRecipe, PreviewQuality};
+pub use renderer::{EditRecipe, PreviewQuality, RECIPE_VERSION};

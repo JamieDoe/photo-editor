@@ -190,7 +190,7 @@ Same plan and pixels (max difference 1 code). ms, median of 10 runs after warm-u
 | Interactive preview round trip p95 | 4–5 ms | ≤ 16 ms |
 | Frames shown during drag | 119/120 | ≥ 95% at display rate |
 | Interactive p95 while exporting | 10–22 ms | ≤ 2× idle |
-| Time to first visible image after open | 230–370 ms → **25–74 ms** with embedded preview (§9) | ≤ 150 ms (embedded preview), ≤ 600 ms rendered |
+| Time to first visible image after open | 230–370 ms → 25–74 ms with embedded preview (§9); since ADR 0020 the editor shows only renders: **116–345 ms** | ≤ 600 ms rendered |
 | 24 MP export | 0.65–1.2 s | ≤ 3 s |
 | Editing memory, 24 MP open | ~170 MB | ≤ 300 MB |
 | Export peak memory, 24 MP | ~645 MB | ≤ 400 MB |
@@ -295,6 +295,9 @@ cache, warm OS cache.
   links) at idle priority on the single background worker take 6.2 s (48/s), so about
   3.5 min per 10,000 photos. An on-screen thumbnail requested mid-batch still takes
   11.5 ms, because it runs on its own lane.
+- **Edited photos** (ADR 0019): their thumbnails come from a reduced decode plus
+  render, 175–470 ms each (once, then cached), against 5–40 ms from the embedded
+  preview.
 - **Worth investigating:** the Fuji and Ricoh cases are 3–8x slower than Nikon. That
   is likely LibRaw's container parsing or a larger embedded JPEG. Not yet profiled.
 - **Not yet measured:**

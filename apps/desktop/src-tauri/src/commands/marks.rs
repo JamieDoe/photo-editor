@@ -4,11 +4,11 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use app_core::{Catalogue, CatalogueError, MarkChange, PhotoDetails, Rating, SourceIdentity};
+use app_core::{MarkChange, PhotoDetails, Rating};
 use tauri::State;
 
 use super::IpcResult;
-use super::library::{folder_unavailable, raw_extensions};
+use super::library::{folder_unavailable, library_photo, raw_extensions};
 use crate::AppState;
 use crate::ipc::{
     CollectionCountsDto, CollectionKindDto, CollectionListingDto, IpcError, MarkChangeDto,
@@ -44,11 +44,7 @@ pub async fn set_photo_marks(
     let counts = tauri::async_runtime::spawn_blocking(move || {
         let mut photos = Vec::with_capacity(files.len());
         for (file, root) in &files {
-            let photo = match catalogue.photo_at(file)? {
-                Some(photo) => photo,
-                None => record_now(&catalogue, file, root)?,
-            };
-            photos.push(photo);
+            photos.push(library_photo(&catalogue, file, root)?);
         }
         catalogue.set_marks(&photos, change)?;
         catalogue.collection_counts()
@@ -57,19 +53,6 @@ pub async fn set_photo_marks(
     .map_err(IpcError::internal)?
     .map_err(IpcError::internal)?;
     Ok(counts.into())
-}
-
-/// A photo marked before its folder's index reached it: record just this file now. The
-/// next full index pass sees it as unchanged.
-fn record_now(
-    catalogue: &Catalogue,
-    file: &Path,
-    root: &Path,
-) -> Result<app_core::PhotoId, CatalogueError> {
-    let folder = catalogue.add_folder(root)?;
-    let identity = SourceIdentity::from_path(file)?;
-    let scan = catalogue.begin_scan()?;
-    Ok(catalogue.record_file(folder, &identity, scan)?.0)
 }
 
 /// The present photos of a library-wide collection that are inside granted folders.
@@ -95,6 +78,7 @@ pub async fn library_collection(
                 &raw,
                 e.details.as_ref(),
                 e.marks,
+                e.edited,
             )
         })
         .collect();
@@ -108,6 +92,7 @@ fn entry_dto(
     raw_extensions: &[&str],
     details: Option<&PhotoDetails>,
     marks: app_core::Marks,
+    edited: bool,
 ) -> PhotoEntryDto {
     let extension = path
         .extension()
@@ -124,5 +109,6 @@ fn entry_dto(
         raw: raw_extensions.contains(&extension.as_str()),
         details: details.map(PhotoDetailsDto::from),
         marks: marks.into(),
+        edited,
     }
 }

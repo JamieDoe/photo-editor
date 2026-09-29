@@ -1,16 +1,15 @@
 use std::path::PathBuf;
 
-use app_core::{EmbeddedFrame, ImageId, PreviewRequest};
+use app_core::{ImageId, PreviewRequest};
 use image_core::OutputImage;
-use tauri::ipc::{Channel, Response};
+use tauri::ipc::Response;
 use tauri::{AppHandle, State};
 use tauri_plugin_dialog::DialogExt;
 
 use super::{IpcResult, wait};
 use crate::AppState;
 use crate::ipc::{
-    FRAME_FLAG_CACHE_HIT, FRAME_FLAG_EMBEDDED, FRAME_HEADER_BYTES, ImageSummaryDto, IpcError,
-    PreviewRequestDto,
+    FRAME_FLAG_CACHE_HIT, FRAME_HEADER_BYTES, ImageSummaryDto, IpcError, PreviewRequestDto,
 };
 
 /// Encodes a frame in the binary layout documented on [`FRAME_HEADER_BYTES`].
@@ -25,28 +24,23 @@ fn frame_bytes(img: &OutputImage, level: u32, flags: u32, ms: f64) -> Vec<u8> {
     bytes
 }
 
-/// Opens `path`, streaming the embedded preview (if any) over `on_preview` as soon
-/// as it is extracted, before the decode finishes.
-async fn open_streaming(
-    state: &AppState,
-    path: PathBuf,
-    on_preview: Channel<Response>,
-) -> IpcResult<ImageSummaryDto> {
-    let handle = state
-        .engine
-        .open_with_preview(path, move |frame: EmbeddedFrame| {
-            let bytes = frame_bytes(&frame.image, 0, FRAME_FLAG_EMBEDDED, frame.extract_ms);
-            // The UI may have navigated away; a closed channel is not an error.
-            let _ = on_preview.send(Response::new(bytes));
-        });
-    Ok(wait(handle).await?.into())
+/// Opens `path` and returns its summary with the photo's saved edit, so the first
+/// render already shows it. Only renders are shown in the editor, never the camera's
+/// embedded JPEG (ADR 0020).
+async fn open(state: &AppState, path: PathBuf) -> IpcResult<ImageSummaryDto> {
+    let summary = wait(state.engine.open(path)).await?;
+    let (saved_recipe, edit_saving) = super::edits::saved_edit(state, &summary.path).await;
+    Ok(ImageSummaryDto {
+        saved_recipe,
+        edit_saving,
+        ..summary.into()
+    })
 }
 
 #[tauri::command]
 pub async fn open_image_dialog(
     app: AppHandle,
     state: State<'_, AppState>,
-    on_preview: Channel<Response>,
 ) -> IpcResult<Option<ImageSummaryDto>> {
     let extensions: Vec<String> = state
         .engine
@@ -67,7 +61,7 @@ pub async fn open_image_dialog(
     let Some(path) = picked.and_then(|p| p.into_path().ok()) else {
         return Ok(None);
     };
-    Ok(Some(open_streaming(&state, path, on_preview).await?))
+    Ok(Some(open(&state, path).await?))
 }
 
 /// Opens an image by path (from the Library, and the self-test). Read-only: the
@@ -76,7 +70,6 @@ pub async fn open_image_dialog(
 pub async fn open_image_path(
     state: State<'_, AppState>,
     path: String,
-    on_preview: Channel<Response>,
 ) -> IpcResult<ImageSummaryDto> {
     let requested = PathBuf::from(&path);
     // Only photos inside granted folders (or the self-test file) may be opened.
@@ -98,7 +91,7 @@ pub async fn open_image_path(
             reference: Some(reference),
         });
     };
-    open_streaming(&state, file, on_preview).await
+    open(&state, file).await
 }
 
 #[tauri::command]

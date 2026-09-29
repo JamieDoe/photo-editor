@@ -48,12 +48,18 @@ pub struct Thumbnail {
 }
 
 impl Engine {
-    /// The thumbnail of `path` (a canonical path). A disk-cache hit completes
-    /// immediately, after a small blocking read, so call this off the UI thread.
-    /// Otherwise it is generated on the browse lane. Requesting the same path again
-    /// supersedes the earlier request, and [`Engine::cancel_thumbnail`] cancels it.
-    pub fn thumbnail(&self, path: PathBuf) -> JobHandle<Thumbnail, EngineError> {
-        let key = match thumbnail_key(&path) {
+    /// The thumbnail of `path` (a canonical path), showing `recipe` if the photo is
+    /// edited. A disk-cache hit completes immediately, after a small blocking read, so
+    /// call this off the UI thread. Otherwise it is generated on the browse lane.
+    /// Requesting the same path again supersedes the earlier request, and
+    /// [`Engine::cancel_thumbnail`] cancels it.
+    pub fn thumbnail(
+        &self,
+        path: PathBuf,
+        recipe: Option<EditRecipe>,
+    ) -> JobHandle<Thumbnail, EngineError> {
+        let recipe = recipe.filter(|r| !r.is_identity());
+        let key = match thumbnail_key(&path, recipe.as_ref()) {
             Ok(key) => key,
             Err(e) => return JobHandle::ready(self.jobs.next_id(), Err(JobError::Failed(e))),
         };
@@ -63,8 +69,9 @@ impl Engine {
         let shared = Arc::clone(&self.shared);
         let spec = JobSpec::new(Lane::Browse, Priority::VisibleThumbnail, "thumbnail")
             .superseding(supersede_key(&path));
-        self.jobs
-            .submit(spec, move |token| shared.make_thumbnail(&path, key, token))
+        self.jobs.submit(spec, move |token| {
+            shared.make_thumbnail(&path, key, recipe.as_ref(), token)
+        })
     }
 
     /// Cancels a pending thumbnail request for `path` (it scrolled out of view).
@@ -77,7 +84,11 @@ impl Engine {
     /// lane at idle priority: exports, indexing and on-screen thumbnails (their own
     /// lane) always go first, and cancelling costs at most one thumbnail. A new batch
     /// with the same `key` cancels the previous one. Without a cache this does nothing.
-    pub fn pregenerate_thumbnails(&self, key: &str, mut paths: Vec<PathBuf>) -> ThumbnailBatch {
+    pub fn pregenerate_thumbnails(
+        &self,
+        key: &str,
+        mut paths: Vec<(PathBuf, Option<EditRecipe>)>,
+    ) -> ThumbnailBatch {
         let token = CancelToken::new();
         if let Some(previous) = self
             .shared
@@ -104,12 +115,14 @@ impl Engine {
         }
         let handles = paths
             .into_iter()
-            .map(|path| {
+            .map(|(path, recipe)| {
                 let shared = Arc::clone(&self.shared);
                 let batch = token.clone();
+                let recipe = recipe.filter(|r| !r.is_identity());
                 let spec = JobSpec::new(Lane::Background, Priority::Idle, "thumbnail-pregen");
-                self.jobs
-                    .submit(spec, move |_| shared.pregenerate_one(&path, &batch))
+                self.jobs.submit(spec, move |_| {
+                    shared.pregenerate_one(&path, recipe.as_ref(), &batch)
+                })
             })
             .collect();
         ThumbnailBatch { token, handles }
@@ -177,16 +190,17 @@ impl Shared {
     fn pregenerate_one(
         &self,
         path: &Path,
+        recipe: Option<&EditRecipe>,
         batch: &CancelToken,
     ) -> Result<Pregenerated, EngineError> {
         if batch.is_cancelled() {
             return Err(EngineError::cancelled());
         }
-        let key = thumbnail_key(path)?;
+        let key = thumbnail_key(path, recipe)?;
         if self.thumbnails.as_ref().is_some_and(|c| c.contains(key)) {
             return Ok(Pregenerated::AlreadyCached);
         }
-        self.make_thumbnail(path, key, batch)?;
+        self.make_thumbnail(path, key, recipe, batch)?;
         Ok(Pregenerated::Made)
     }
 
@@ -209,6 +223,7 @@ impl Shared {
         &self,
         path: &Path,
         key: u64,
+        recipe: Option<&EditRecipe>,
         token: &CancelToken,
     ) -> Result<Thumbnail, EngineError> {
         // An earlier request may have produced it while this one was queued.
@@ -216,10 +231,14 @@ impl Shared {
             return Ok(hit);
         }
         let start = Instant::now();
-        let (image, source) = match self
-            .decoders
-            .display_preview(path, THUMBNAIL_LONG_EDGE, token)
-        {
+        let preview = match recipe {
+            // Edited: the camera's preview doesn't show the edit, so render it.
+            Some(_) => Ok(None),
+            None => self
+                .decoders
+                .display_preview(path, THUMBNAIL_LONG_EDGE, token),
+        };
+        let (image, source) = match preview {
             Ok(Some(p)) if p.image.width().max(p.image.height()) >= THUMBNAIL_LONG_EDGE => {
                 (p.image, ThumbnailSource::Embedded)
             }
@@ -229,8 +248,9 @@ impl Shared {
                 if let Err(e) = other {
                     log::debug!("no display preview for {}: {e}", path.display());
                 }
+                let recipe = recipe.copied().unwrap_or_default();
                 (
-                    self.render_thumbnail(path, token)?,
+                    self.render_thumbnail(path, &recipe, token)?,
                     ThumbnailSource::Rendered,
                 )
             }
@@ -265,28 +285,27 @@ impl Shared {
         })
     }
 
-    /// Fallback for files without a usable embedded preview: a reduced-resolution
-    /// decode rendered with default settings.
+    /// A reduced-resolution decode rendered with `recipe`: for edited photos, and for
+    /// files without a usable embedded preview (with the default recipe).
     fn render_thumbnail(
         &self,
         path: &Path,
+        recipe: &EditRecipe,
         token: &CancelToken,
     ) -> Result<OutputImage, EngineError> {
         let options = DecodeOptions::new(DecodeScale::AtLeast(THUMBNAIL_LONG_EDGE))
             .with_max_threads(rayon::current_num_threads());
         let decoded = self.decoders.decode(path, options, token)?;
-        let plan = RenderPlan::from_recipe(&EditRecipe::default());
+        let plan = RenderPlan::from_recipe(recipe);
         Ok(self
             .renderer
             .render(&plan, &decoded.image, PixelFormat::Rgb8, token)?)
     }
 }
 
-/// Cache key: the source's identity (path, size, modification time), the thumbnail
-/// size and the versions of everything that shapes the output. No edit recipe yet:
-/// thumbnails show the original until recipes are saved (a later milestone adds the
-/// recipe hash here).
-fn thumbnail_key(path: &Path) -> Result<u64, EngineError> {
+/// Cache key: the source's identity (path, size, modification time), the edit recipe
+/// (if any), the thumbnail size and the versions of everything that shapes the output.
+fn thumbnail_key(path: &Path, recipe: Option<&EditRecipe>) -> Result<u64, EngineError> {
     let meta = std::fs::metadata(path).map_err(DecodeError::from)?;
     let modified = meta
         .modified()
@@ -300,6 +319,9 @@ fn thumbnail_key(path: &Path) -> Result<u64, EngineError> {
         .write_u64(u64::from(THUMBNAIL_LONG_EDGE))
         .write_u64(THUMBNAIL_VERSION)
         .write_u64(u64::from(RENDERER_VERSION));
+    if let Some(recipe) = recipe {
+        h.write(&recipe.canonical_bytes());
+    }
     Ok(h.finish())
 }
 
@@ -323,12 +345,12 @@ mod tests {
         let b = dir.path().join("b.jpg");
         std::fs::write(&a, b"one").unwrap();
         std::fs::write(&b, b"one").unwrap();
-        let ka = thumbnail_key(&a).unwrap();
-        assert_eq!(ka, thumbnail_key(&a).unwrap());
-        assert_ne!(ka, thumbnail_key(&b).unwrap());
+        let ka = thumbnail_key(&a, None).unwrap();
+        assert_eq!(ka, thumbnail_key(&a, None).unwrap());
+        assert_ne!(ka, thumbnail_key(&b, None).unwrap());
         std::fs::write(&a, b"longer").unwrap();
-        assert_ne!(ka, thumbnail_key(&a).unwrap());
-        assert!(thumbnail_key(&dir.path().join("missing.jpg")).is_err());
+        assert_ne!(ka, thumbnail_key(&a, None).unwrap());
+        assert!(thumbnail_key(&dir.path().join("missing.jpg"), None).is_err());
     }
 
     /// Occupies the browse lane's only worker until the returned sender is dropped.
@@ -361,10 +383,10 @@ mod tests {
         let engine = one_browse_worker();
         let (release, blocker) = block_browse_lane(&engine);
 
-        let scrolled_away = engine.thumbnail(path.clone());
+        let scrolled_away = engine.thumbnail(path.clone(), None);
         engine.cancel_thumbnail(&path);
-        let superseded = engine.thumbnail(path.clone());
-        let current = engine.thumbnail(path.clone());
+        let superseded = engine.thumbnail(path.clone(), None);
+        let current = engine.thumbnail(path.clone(), None);
         drop(release);
         blocker.wait().unwrap();
 

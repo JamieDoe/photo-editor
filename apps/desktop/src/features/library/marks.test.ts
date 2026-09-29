@@ -37,6 +37,7 @@ const photo = (name: string, rating: number, flag: "none" | "pick" | "reject"): 
   raw: true,
   details: null,
   marks: { rating, flag },
+  edited: false,
 });
 
 describe("visiblePhotos", () => {

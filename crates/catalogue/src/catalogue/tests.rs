@@ -577,3 +577,73 @@ fn collections_include_details_once_indexed() {
         Some(details)
     );
 }
+
+#[test]
+fn edits_are_stored_per_photo_follow_moves_and_can_be_cleared() {
+    let l = library("cat-edits");
+    let old = l.root.join("a.nef");
+    let (photo, _) = l
+        .cat
+        .record_file(l.folder, &write(&old, &photo_bytes(21)), ScanId(1))
+        .unwrap();
+    let plain = l.root.join("b.nef");
+    l.cat
+        .record_file(l.folder, &write(&plain, &photo_bytes(22)), ScanId(1))
+        .unwrap();
+    assert_eq!(l.cat.edit_of(photo).unwrap(), None);
+
+    l.cat
+        .set_edit(photo, Some((1, r#"{"exposure":0.5}"#)))
+        .unwrap();
+    l.cat
+        .set_edit(photo, Some((1, r#"{"exposure":1.0}"#)))
+        .unwrap(); // replaces
+    let stored = l.cat.edit_of(photo).unwrap().unwrap();
+    assert_eq!(
+        (stored.recipe_version, stored.json.as_str()),
+        (1, r#"{"exposure":1.0}"#)
+    );
+    let here = l.cat.edits_in(&l.root, false).unwrap();
+    assert_eq!(here.len(), 1, "only the edited photo is listed");
+    assert_eq!(here[0].0, old.canonicalize().unwrap());
+
+    // Moved into a subfolder: the edit goes with it.
+    let new = l.root.join("sub/a.nef");
+    std::fs::create_dir_all(new.parent().unwrap()).unwrap();
+    std::fs::rename(&old, &new).unwrap();
+    l.cat
+        .record_file(
+            l.folder,
+            &SourceIdentity::from_path(&new).unwrap(),
+            ScanId(2),
+        )
+        .unwrap();
+    assert!(l.cat.edits_in(&l.root, false).unwrap().is_empty());
+    assert_eq!(l.cat.edits_in(&l.root, true).unwrap().len(), 1);
+    let at_new = l.cat.edit_at(&new.canonicalize().unwrap()).unwrap();
+    assert_eq!(
+        at_new.map(|e| e.json),
+        Some(r#"{"exposure":1.0}"#.to_owned())
+    );
+    assert_eq!(l.cat.edit_at(&old).unwrap(), None);
+
+    l.cat.set_edit(photo, None).unwrap();
+    assert_eq!(l.cat.edit_of(photo).unwrap(), None);
+}
+
+#[test]
+fn collections_say_which_photos_are_edited() {
+    let l = library("cat-edits-collection");
+    let (photo, _) = l
+        .cat
+        .record_file(
+            l.folder,
+            &write(&l.root.join("x.nef"), &photo_bytes(23)),
+            ScanId(1),
+        )
+        .unwrap();
+    l.cat.set_marks(&[photo], rate(3)).unwrap();
+    assert!(!l.cat.collection(Collection::Rated).unwrap()[0].edited);
+    l.cat.set_edit(photo, Some((1, "{}"))).unwrap();
+    assert!(l.cat.collection(Collection::Rated).unwrap()[0].edited);
+}

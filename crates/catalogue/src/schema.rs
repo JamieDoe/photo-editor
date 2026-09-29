@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::CatalogueError;
 
 /// Schema version this build creates and understands.
-pub const SCHEMA_VERSION: i64 = 4;
+pub const SCHEMA_VERSION: i64 = 5;
 
 const MIGRATIONS: &[&str] = &[
     // 1: library folders, photos, files.
@@ -76,6 +76,15 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE photos ADD COLUMN flag INTEGER NOT NULL DEFAULT 0 CHECK (flag IN (-1, 0, 1));
     CREATE INDEX photos_by_rating ON photos(rating) WHERE rating > 0;
     CREATE INDEX photos_by_flag ON photos(flag) WHERE flag <> 0;
+    "#,
+    // 5: edit recipes (ADR 0019). One per photo; opaque JSON owned by the renderer.
+    r#"
+    CREATE TABLE edits (
+        photo_id       INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
+        recipe_version INTEGER NOT NULL,
+        recipe         TEXT NOT NULL,
+        updated_at_ms  INTEGER NOT NULL
+    );
     "#,
 ];
 
