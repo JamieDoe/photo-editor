@@ -189,6 +189,22 @@ pub const NOISE_REDUCTION: AdjustmentSpec = AdjustmentSpec {
     ..TEXTURE
 };
 
+/// Behind the Detail section's "More controls", under "Finishing", as in the design
+/// (ADR 0031).
+pub const VIGNETTE: AdjustmentSpec = AdjustmentSpec {
+    key: "vignette",
+    label: "Vignette",
+    more: true,
+    ..TEXTURE
+};
+pub const GRAIN: AdjustmentSpec = AdjustmentSpec {
+    key: "grain",
+    label: "Grain",
+    min: 0.0,
+    more: true,
+    ..TEXTURE
+};
+
 /// The colour mixer's controls, per band (ADR 0025). Keys are `HslShift` fields.
 pub const MIXER_HUE: AdjustmentSpec = AdjustmentSpec {
     key: "hue",
@@ -249,7 +265,8 @@ pub fn mixer_spec() -> MixerSpec {
 
 /// In display order: the design's Light section (Exposure, Contrast, Highlights,
 /// Shadows; Whites, Blacks and Dehaze behind "More controls"), then Colour (Temperature, Tint,
-/// Vibrance, Saturation), then Detail (Texture, Clarity, Sharpening, Noise reduction).
+/// Vibrance, Saturation), then Detail (Texture, Clarity, Sharpening, Noise reduction;
+/// Vignette and Grain behind "More controls").
 pub fn specs() -> Vec<AdjustmentSpec> {
     vec![
         EXPOSURE,
@@ -267,6 +284,8 @@ pub fn specs() -> Vec<AdjustmentSpec> {
         CLARITY,
         SHARPENING,
         NOISE_REDUCTION,
+        VIGNETTE,
+        GRAIN,
     ]
 }
 

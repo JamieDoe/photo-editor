@@ -75,6 +75,14 @@ sharpening: number,
  */
 noiseReduction: number, 
 /**
+ * Vignette, -100 (darker corners) .. 100 (lighter corners).
+ */
+vignette: number, 
+/**
+ * Film grain, 0..100.
+ */
+grain: number, 
+/**
  * Hue, saturation and luminance per colour band. `None` (and omitted from the
  * JSON) when unused, so recipes without it read and hash as before.
  */

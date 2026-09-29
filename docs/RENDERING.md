@@ -47,10 +47,12 @@ Tone (highlights, shadows,     local gains from an edge-aware surroundings map, 
       whites, blacks)          end-point gains (ADR 0023)
 Detail (texture, clarity,      local contrast at two scales, no halos (ADR 0026), and
         sharpening)            capture sharpening, default 40 (ADR 0027)
+Vignette                       gain towards the corners, by frame position (ADR 0031)
 Contrast                       S-curve around mid grey (scene-referred)
 Base look (Standard)           camera-like tone curve: lift, toe, shoulder (ADR 0022)
 Colour mixer                   hue/saturation/luminance per colour band (ADR 0025)
 Colour (vibrance, saturation)  chroma scale around Rec.709 luminance
+Grain                          film grain in frame coordinates, midtones (ADR 0031)
     ▼
 Output transform               clip [0,1], sRGB OETF, 8-bit quantise
 ```
@@ -97,6 +99,12 @@ rendering.
     denoised luminance.
   - Colour: R/Y and B/Y smoothed on a 512-cell whole-image map, guided by luminance.
     Applied only where the change is noise-sized, so colour edges don't bleed.
+- **Vignette** (`-100..100`, ADR 0031): a gain on an ellipse fitted to the frame,
+  from a third of the way out to the corners (−1.5 / +1 stop at ∓100). Scene-referred,
+  before contrast.
+- **Grain** (`0..100`, ADR 0031): two layers of value noise (the second rotated) at
+  1500 cells across the long edge, as a brightness gain of up to 0.35 stop in the
+  midtones. It is the last stage.
 - **Sharpening** (`0..150`, default 40, ADR 0027): unsharp mask on log2 luminance
   with a 3×3 binomial blur at the rendered size. 100 multiplies one-pixel detail by
   2.5. Each pixel's change is limited to ±0.5 stop; it fades out in deep shadows.

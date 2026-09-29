@@ -27,6 +27,8 @@ fn bench_recipe(i: usize) -> EditRecipe {
         texture: 20.0,
         clarity: 25.0,
         noise_reduction: 30.0,
+        vignette: -20.0,
+        grain: 15.0,
         temperature: 15.0,
         tint: 5.0,
         vibrance: 25.0,

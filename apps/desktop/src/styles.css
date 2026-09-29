@@ -328,6 +328,7 @@ button.slider-value:hover .reset, button.slider-value:focus-visible .reset { dis
 button.slider-value:hover .value, button.slider-value:focus-visible .value { display: none; }
 button.slider-value:hover:not(:disabled) { background: none; }
 .slider-track { position: relative; height: 14px; display: flex; align-items: center; }
+.more-title { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
 .tone-curve-title { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
 .tone-curve { position: relative; height: 120px; border-radius: 8px; background: var(--canvas); border: 1px solid var(--hairline); overflow: hidden; }
 .tone-curve svg { position: absolute; inset: 0; width: 100%; height: 100%; }

@@ -80,6 +80,11 @@ export function AdjustmentPanel({ specs, mixerSpec, toneCurve, recipe, onChange,
           group === "Light"
             ? { edited: false, before: true, content: <ToneCurve points={toneCurve} /> }
             : undefined;
+        // As in the design, the Detail section's "More controls" are headed "Finishing".
+        const finishing =
+          group === "Detail"
+            ? { edited: false, before: true, content: <div className="more-title">Finishing</div> }
+            : undefined;
         const mixer =
           group === "Colour"
             ? {
@@ -102,7 +107,7 @@ export function AdjustmentPanel({ specs, mixerSpec, toneCurve, recipe, onChange,
               specs={groupSpecs}
               valueOf={valueOf}
               format={format}
-              extra={mixer ?? curve}
+              extra={mixer ?? curve ?? finishing}
               disabled={disabled}
               onChange={(key, v) => {
                 if (isAdjustmentKey(key)) onChange({ ...recipe, [key]: v });

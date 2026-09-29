@@ -74,7 +74,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Panel: exposure strip, collapsible sections, sliders with reset-on-hover | as designed |
 | Light section: Exposure (in EV), Contrast, Highlights, Shadows; "More controls" with the tone curve graph, then Whites, Blacks and Dehaze | as designed (the curve is the renderer's real response, ADR 0029) |
 | Colour section: Temperature in kelvin on a blue–amber track, Tint on a green–magenta track, Vibrance, Saturation | as designed |
-| Detail section: Texture, Clarity, Sharpening (default 40), Noise reduction | as designed (Vignette / Grain behind "More controls" to follow) |
+| Detail section: Texture, Clarity, Sharpening (default 40), Noise reduction; "More controls" headed "Finishing" with Vignette and Grain | as designed |
 | Colour mixer behind "More controls": label and range name, eight dots (Blues first), Hue / Saturation / Luminance | as designed |
 
 ### Deliberate deviations
