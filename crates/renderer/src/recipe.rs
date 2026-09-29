@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::Look;
 use crate::adjustments::{
-    BLACKS, CONTRAST, EXPOSURE, HIGHLIGHTS, SATURATION, SHADOWS, TEMPERATURE, WHITES,
+    BLACKS, CONTRAST, EXPOSURE, HIGHLIGHTS, SATURATION, SHADOWS, TEMPERATURE, TINT, VIBRANCE,
+    WHITES,
 };
 
 /// Current edit recipe schema version.
@@ -14,7 +15,8 @@ use crate::adjustments::{
 ///   made before keep their exact look; new recipes default to `Look::Standard`.
 /// - 3: adds highlights, shadows, whites and blacks (ADR 0023). Older recipes read them
 ///   as 0, which renders exactly as before.
-pub const RECIPE_VERSION: u32 = 3;
+/// - 4: adds tint and vibrance (ADR 0024); older recipes read them as 0.
+pub const RECIPE_VERSION: u32 = 4;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -39,8 +41,12 @@ pub struct EditRecipe {
     pub whites: f32,
     /// Blacks, -100..100: moves the black end of the tonal range.
     pub blacks: f32,
-    /// Warm/cool shift relative to the as-shot white balance, -100..100.
+    /// Warm/cool shift relative to the as-shot white balance, -100..100 (±120 mired).
     pub temperature: f32,
+    /// Green/magenta shift relative to the as-shot white balance, -100..100.
+    pub tint: f32,
+    /// Saturation that favours muted colours and spares skin tones, -100..100.
+    pub vibrance: f32,
     /// Colour saturation, -100 (monochrome) .. 100.
     pub saturation: f32,
     /// The base look the adjustments start from.
@@ -58,6 +64,8 @@ impl Default for EditRecipe {
             whites: 0.0,
             blacks: 0.0,
             temperature: 0.0,
+            tint: 0.0,
+            vibrance: 0.0,
             saturation: 0.0,
             look: Look::Standard,
         }
@@ -101,8 +109,9 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            // Version 2 lacks the tone fields; they read as 0, which is exact.
-            2 | 3 => Ok(Self {
+            // Later fields are missing from older versions and read as 0, which is
+            // exact.
+            2..=4 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -127,6 +136,8 @@ impl EditRecipe {
             whites: WHITES.clamp(self.whites),
             blacks: BLACKS.clamp(self.blacks),
             temperature: TEMPERATURE.clamp(self.temperature),
+            tint: TINT.clamp(self.tint),
+            vibrance: VIBRANCE.clamp(self.vibrance),
             saturation: SATURATION.clamp(self.saturation),
             look: self.look,
         }
@@ -155,6 +166,8 @@ impl EditRecipe {
             && s.contrast == 0.0
             && s.tone().is_identity()
             && s.temperature == 0.0
+            && s.tint == 0.0
+            && s.vibrance == 0.0
             && s.saturation == 0.0
             && s.look == Look::default()
     }
@@ -189,7 +202,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":3,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"temperature":0.0,"saturation":0.0,"look":"standard"}"#
+            r#"{"version":4,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"look":"standard"}"#
         );
     }
 
@@ -231,6 +244,15 @@ mod tests {
             (0.0, 0.0, 0.0, 0.0)
         );
         assert_eq!((r.exposure, r.look), (0.5, Look::Flat));
+    }
+
+    #[test]
+    fn version_3_recipes_read_tint_and_vibrance_as_zero() {
+        let r =
+            EditRecipe::from_json(r#"{"version":3,"temperature":20.0,"shadows":10.0}"#).unwrap();
+        assert_eq!(r.version, RECIPE_VERSION);
+        assert_eq!((r.tint, r.vibrance), (0.0, 0.0));
+        assert_eq!((r.temperature, r.shadows), (20.0, 10.0));
     }
 
     #[test]

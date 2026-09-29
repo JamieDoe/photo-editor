@@ -196,3 +196,22 @@ fn synthetic_dng_metadata_has_camera_and_size() {
     assert_eq!((m.width, m.height), (Some(640), Some(400)));
     assert_eq!(m.captured_at, None);
 }
+
+#[test]
+fn reports_the_as_shot_light() {
+    // The fixture's AsShotNeutral is the camera's response to a D65 white, so the
+    // as-shot light must come back as D65.
+    let dir = fixtures::TempDir::new("libraw-as-shot");
+    let path = synthetic_dng(dir.path(), 64, 40);
+    for scale in [DecodeScale::Full, DecodeScale::AtLeast(20)] {
+        let out = LibRawDecoder
+            .decode(&path, DecodeOptions::new(scale), &NeverCancel)
+            .unwrap();
+        let c = out.info.as_shot_white.expect("as-shot light");
+        let d65 = image_core::Chromaticity::D65;
+        assert!(
+            (c.x - d65.x).abs() < 1e-3 && (c.y - d65.y).abs() < 1e-3,
+            "{c:?}"
+        );
+    }
+}

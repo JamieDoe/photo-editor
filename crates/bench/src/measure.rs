@@ -24,6 +24,8 @@ fn bench_recipe(i: usize) -> EditRecipe {
         whites: 10.0,
         blacks: -10.0,
         temperature: 15.0,
+        tint: 5.0,
+        vibrance: 25.0,
         saturation: 20.0,
         ..EditRecipe::default()
     }
@@ -62,6 +64,7 @@ pub fn file(path: &Path, iterations: usize) -> Value {
     });
 
     // --- Pyramid ---
+    let as_shot_white = decoded.info.as_shot_white;
     let base = decoded.image;
     let (pyramid_ms, pyramid) = timed_n(iterations, || {
         Pyramid::build(base.clone(), config.limits.thumbnail_long_edge)
@@ -75,7 +78,7 @@ pub fn file(path: &Path, iterations: usize) -> Value {
     // --- Per-stage cost on the interactive-size level (renderer only, no job overhead) ---
     let interactive_level =
         &pyramid.levels()[pyramid.select_index(config.limits.interactive_max_long_edge * 85 / 100)];
-    let full_plan = RenderPlan::from_recipe(&bench_recipe(0));
+    let full_plan = RenderPlan::from_recipe(&bench_recipe(0), as_shot_white);
     let mut stage_costs = Vec::new();
     for n in 0..=full_plan.stages.len() {
         let plan = RenderPlan::new(full_plan.stages[..n].to_vec());

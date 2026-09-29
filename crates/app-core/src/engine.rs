@@ -9,6 +9,7 @@ use jobs::{CancelToken, JobHandle, JobSpec, JobSystem, Lane, Priority};
 use raw::{DecodeOptions, DecodeScale, DecoderRegistry};
 use renderer::{
     CpuRenderer, PreviewQuality, RECIPE_VERSION, RENDERER_VERSION, RenderBackend, RenderPlan,
+    TemperatureScale,
 };
 
 use crate::previews::PreviewCache;
@@ -144,6 +145,7 @@ impl Engine {
         };
         let level_index = image.pyramid.select_index(min_edge);
         let level = Arc::clone(&image.pyramid.levels()[level_index]);
+        let as_shot_white = image.as_shot_white;
         let recipe = req.recipe.sanitized();
         let key = RenderKey::new(
             image.source_id,
@@ -187,7 +189,7 @@ impl Engine {
         let spec = JobSpec::new(Lane::Interactive, priority, "preview").superseding(supersede_key);
         self.jobs.submit(spec, move |token| {
             let t0 = Instant::now();
-            let plan = RenderPlan::from_recipe(&recipe);
+            let plan = RenderPlan::from_recipe(&recipe, as_shot_white);
             let out = shared
                 .renderer
                 .render(&plan, &level, PixelFormat::Rgba8, token)?;
@@ -346,6 +348,7 @@ impl Shared {
             aperture: info.aperture,
             shutter_seconds: info.shutter_seconds,
             focal_length_mm: info.focal_length_mm,
+            temperature_scale: TemperatureScale::for_source(info.as_shot_white),
             full_width: info.full_width,
             full_height: info.full_height,
             levels: pyramid
@@ -364,6 +367,7 @@ impl Shared {
             path: identity.canonical_path.clone(),
             source_id: identity.source_id(),
             pyramid,
+            as_shot_white: info.as_shot_white,
         });
         let evicted = self.images.lock().expect("images lock").insert(opened);
         if !evicted.is_empty() {
@@ -413,7 +417,7 @@ impl Shared {
             fraction: 0.6,
         });
         let t = Instant::now();
-        let plan = RenderPlan::from_recipe(&req.recipe);
+        let plan = RenderPlan::from_recipe(&req.recipe, decoded.info.as_shot_white);
         let rendered = self
             .renderer
             .render(&plan, &decoded.image, PixelFormat::Rgb8, token)?;

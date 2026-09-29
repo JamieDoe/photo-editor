@@ -3,7 +3,7 @@ use image_core::color::REC709_LUMA;
 
 use super::lut::CurveLut;
 use crate::ops::tone::{self, ToneBase, ToneParams};
-use crate::ops::{contrast, look};
+use crate::ops::{contrast, look, vibrance};
 use crate::{RenderPlan, Stage};
 
 /// Where a chunk of pixels sits in the image (needed by stages that look at
@@ -20,6 +20,7 @@ pub(super) enum Kernel {
     Gain([f32; 3]),
     Curve(Box<CurveLut>),
     Saturation(f32),
+    Vibrance(f32),
     /// Highlights/shadows (with the surroundings map) and whites/blacks, with the
     /// gains as lookup tables over "stops below white".
     Tone(Box<ToneKernel>),
@@ -161,6 +162,11 @@ impl Kernel {
                     px[2] = (y + (px[2] - y) * f).max(0.0);
                 }
             }
+            Self::Vibrance(amount) => {
+                for px in rgb.as_chunks_mut::<3>().0 {
+                    *px = vibrance::apply(*px, *amount);
+                }
+            }
         }
     }
 }
@@ -207,6 +213,7 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
                 params,
             )))),
             Stage::Saturation { factor } => out.push(Kernel::Saturation(factor)),
+            Stage::Vibrance { amount } => out.push(Kernel::Vibrance(amount)),
             Stage::WhiteBalance { .. } | Stage::Exposure { .. } => unreachable!("handled above"),
         }
     }

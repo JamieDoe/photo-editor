@@ -3,15 +3,19 @@ import { ChevronIcon, ColourIcon, DetailIcon, LightIcon } from "../../components
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { Look } from "../../ipc/generated/Look";
+import type { TemperatureScale } from "../../ipc/generated/TemperatureScale";
 import { PanelSection } from "./PanelSection";
 import { isAdjustmentKey } from "./recipe";
 import { formatSliderValue, sliderTrack } from "./sliderTrack";
+import { formatKelvin, kelvinAt, WHITE_BALANCE_TRACKS } from "./whiteBalance";
 
 interface Props {
   specs: AdjustmentSpec[];
   recipe: EditRecipe;
   onChange: (r: EditRecipe) => void;
   disabled: boolean;
+  /** Shows Temperature in kelvin; null when the photo's as-shot light is unknown. */
+  temperatureScale: TemperatureScale | null;
 }
 
 const LOOKS: ReadonlyArray<{ id: Look; label: string; hint: string }> = [
@@ -29,9 +33,14 @@ const GROUP_ICONS: Record<string, ReactNode> = {
  * An edited value can be reset by clicking it (it reads “Reset” on hover) or by
  * double-clicking the slider.
  */
-export function AdjustmentPanel({ specs, recipe, onChange, disabled }: Props) {
+export function AdjustmentPanel({ specs, recipe, onChange, disabled, temperatureScale }: Props) {
   const groups = [...new Set(specs.map((s) => s.group))];
   const valueOf = (spec: AdjustmentSpec) => (isAdjustmentKey(spec.key) ? recipe[spec.key] : spec.default);
+  // As in the design, Temperature reads as the light it assumes ("5650 K").
+  const format = (spec: AdjustmentSpec, v: number) =>
+    spec.key === "temperature" && temperatureScale
+      ? formatKelvin(kelvinAt(temperatureScale, v))
+      : formatSliderValue(v, spec.min, spec.step, spec.unit);
   return (
     <>
       <div className="look-row">
@@ -62,6 +71,7 @@ export function AdjustmentPanel({ specs, recipe, onChange, disabled }: Props) {
             <GroupSliders
               specs={groupSpecs}
               valueOf={valueOf}
+              format={format}
               disabled={disabled}
               onChange={(key, v) => {
                 if (isAdjustmentKey(key)) onChange({ ...recipe, [key]: v });
@@ -82,11 +92,13 @@ export function AdjustmentPanel({ specs, recipe, onChange, disabled }: Props) {
 function GroupSliders({
   specs,
   valueOf,
+  format,
   disabled,
   onChange,
 }: {
   specs: AdjustmentSpec[];
   valueOf: (s: AdjustmentSpec) => number;
+  format: (s: AdjustmentSpec, v: number) => string;
   disabled: boolean;
   onChange: (key: string, v: number) => void;
 }) {
@@ -96,7 +108,14 @@ function GroupSliders({
   const [open, setOpen] = useState(false);
   const showMore = open || moreEdited;
   const slider = (spec: AdjustmentSpec) => (
-    <Slider key={spec.key} spec={spec} value={valueOf(spec)} disabled={disabled} onChange={(v) => onChange(spec.key, v)} />
+    <Slider
+      key={spec.key}
+      spec={spec}
+      value={valueOf(spec)}
+      shown={format(spec, valueOf(spec))}
+      disabled={disabled}
+      onChange={(v) => onChange(spec.key, v)}
+    />
   );
   return (
     <>
@@ -123,18 +142,21 @@ function GroupSliders({
 function Slider({
   spec,
   value,
+  shown,
   disabled,
   onChange,
 }: {
   spec: AdjustmentSpec;
   value: number;
+  shown: string;
   disabled: boolean;
   onChange: (v: number) => void;
 }) {
   const id = `adjust-${spec.key}`;
   const edited = value !== spec.default;
   const track = sliderTrack(value, spec.min, spec.max);
-  const shown = formatSliderValue(value, spec.min, spec.step, spec.unit);
+  // White balance sliders show their colours instead of a fill, as in the design.
+  const background = WHITE_BALANCE_TRACKS[spec.key] ?? track.background;
   return (
     <div className={edited ? "slider edited" : "slider"}>
       <div className="slider-head">
@@ -165,7 +187,7 @@ function Slider({
           step={spec.step}
           value={value}
           disabled={disabled}
-          style={{ background: track.background }}
+          style={{ background }}
           onDoubleClick={() => onChange(spec.default)}
           onChange={(e) => onChange(Number(e.currentTarget.value))}
         />

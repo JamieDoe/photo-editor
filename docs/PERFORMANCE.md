@@ -334,3 +334,23 @@ Tone stage on the 1516×1010 interactive level (bench recipe, development Mac, n
 - **Building the map:** about 2.8 ms at this size. It is rebuilt when exposure or
   white balance change.
 - **Low-end hardware:** not yet measured.
+
+## 14. Temperature / Tint / Vibrance (ADR 0024)
+
+Stage costs on the 1516×1010 interactive level (Nikon Z 6, bench recipe, three runs):
+
+| Cumulative stages | ms |
+|---|---|
+| none (u16→f32 + encode) | 0.89 – 1.09 |
+| + white balance (Temperature and Tint) | 0.94 – 1.12 |
+| + … base curve | 4.36 – 4.37 |
+| + vibrance | 4.77 – 4.83 |
+| + saturation (whole recipe) | 4.89 – 5.13 |
+
+- **White balance:** merged into the channel gains, so Tint costs nothing extra.
+- **Vibrance:** about +0.45 ms.
+- **Release self-test:** it changes Temperature, Tint and Vibrance on every drag
+  frame.
+  - Median render: 3.2 ms (Nikon), 2.8 ms (Canon), 3.3 ms (Fuji).
+  - Preview: 30 fps on all three.
+

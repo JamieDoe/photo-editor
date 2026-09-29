@@ -3,7 +3,7 @@
 
 use app_core::{EngineError, EngineInfo, ErrorKind, ExportStage, ExportSummary, ImageSummary};
 use renderer::adjustments::AdjustmentSpec;
-use renderer::{EditRecipe, PreviewQuality};
+use renderer::{EditRecipe, PreviewQuality, TemperatureScale};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -76,6 +76,8 @@ pub struct ImageSummaryDto {
     pub aperture: Option<f32>,
     pub shutter_seconds: Option<f32>,
     pub focal_length_mm: Option<f32>,
+    /// For showing Temperature in kelvin (camera RAW with a known as-shot light).
+    pub temperature_scale: Option<TemperatureScale>,
     pub full_width: u32,
     pub full_height: u32,
     pub levels: Vec<(u32, u32)>,
@@ -127,6 +129,7 @@ impl From<ImageSummary> for ImageSummaryDto {
             aperture: s.aperture,
             shutter_seconds: s.shutter_seconds,
             focal_length_mm: s.focal_length_mm,
+            temperature_scale: s.temperature_scale,
             full_width: s.full_width,
             full_height: s.full_height,
             levels: s.levels,

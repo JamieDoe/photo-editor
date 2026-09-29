@@ -67,7 +67,7 @@ async function drag(driver: SelfTestDriver, base: EditRecipe, steps: number, fra
   let last = await nextFrame();
   const t0 = performance.now();
   for (let i = 1; i <= steps; i++) {
-    driver.editor().setRecipe({ ...base, exposure: Math.sin(i / 10) * 1.5, temperature: (i % 40) - 20 });
+    driver.editor().setRecipe({ ...base, exposure: Math.sin(i / 10) * 1.5, temperature: (i % 40) - 20, tint: (i % 30) - 15, vibrance: 30 });
     const now = await nextFrame();
     gaps.push(now - last);
     last = now;

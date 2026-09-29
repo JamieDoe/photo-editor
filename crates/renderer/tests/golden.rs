@@ -72,6 +72,21 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                 ..r
             },
         ),
+        ("tint_plus60", EditRecipe { tint: 60.0, ..r }),
+        (
+            "vibrance_plus80",
+            EditRecipe {
+                vibrance: 80.0,
+                ..r
+            },
+        ),
+        (
+            "vibrance_minus80",
+            EditRecipe {
+                vibrance: -80.0,
+                ..r
+            },
+        ),
         (
             "saturation_minus100",
             EditRecipe {
@@ -127,7 +142,7 @@ fn renderer_matches_golden_images() {
     let mut failures = Vec::new();
 
     for (name, recipe) in cases() {
-        let plan = RenderPlan::from_recipe(&recipe);
+        let plan = RenderPlan::from_recipe(&recipe, None);
         let out = CpuRenderer
             .render(&plan, &source, PixelFormat::Rgb8, &NeverCancel)
             .unwrap();

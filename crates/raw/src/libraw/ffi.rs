@@ -22,6 +22,7 @@ pub struct PeRawInfo {
     pub focal_length: f32,
     pub make: [c_char; 64],
     pub model: [c_char; 64],
+    pub as_shot_white: [f32; 3],
 }
 
 impl Default for PeRawInfo {
@@ -39,6 +40,7 @@ impl Default for PeRawInfo {
             focal_length: 0.0,
             make: [0; 64],
             model: [0; 64],
+            as_shot_white: [0.0; 3],
         }
     }
 }

@@ -87,6 +87,10 @@ pub struct SourceInfo {
     pub shutter_seconds: Option<f32>,
     pub aperture: Option<f32>,
     pub focal_length_mm: Option<f32>,
+    /// The light the camera's as-shot white balance neutralised, if known (camera
+    /// RAW). White balance adjustments are relative to it. Rendered images have none:
+    /// their white is the display's (D65).
+    pub as_shot_white: Option<image_core::Chromaticity>,
 }
 
 #[derive(Debug, Clone)]

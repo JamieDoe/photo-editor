@@ -38,6 +38,30 @@ static void limit_openmp_threads(uint32_t max_threads) {
 #endif
 }
 
+/* The as-shot illuminant in linear sRGB (D65 = 1, 1, 1), or zeros if unknown.
+ *
+ * LibRaw's rgb_cam maps camera values scaled by the daylight multipliers (pre_mul) to
+ * sRGB, with a D65 white landing on (1, 1, 1). A neutral lit by the as-shot light
+ * reads 1/cam_mul in camera space, so the light itself is rgb_cam * (pre_mul/cam_mul).
+ * Must run before processing: with use_camera_wb, dcraw_process overwrites pre_mul. */
+static void as_shot_white(const libraw_data_t *lr, float out[3]) {
+    out[0] = out[1] = out[2] = 0.0f;
+    if (lr->idata.colors != 3) return; /* CMYG and other layouts: not supported */
+    float n[3];
+    for (int i = 0; i < 3; i++) {
+        float cam = lr->color.cam_mul[i], pre = lr->color.pre_mul[i];
+        if (!(cam > 0.0f) || !(pre > 0.0f)) return;
+        n[i] = pre / cam;
+    }
+    float rgb[3];
+    for (int c = 0; c < 3; c++) {
+        rgb[c] = lr->color.rgb_cam[c][0] * n[0] + lr->color.rgb_cam[c][1] * n[1] +
+                 lr->color.rgb_cam[c][2] * n[2];
+        if (!(rgb[c] > 0.0f)) return;
+    }
+    memcpy(out, rgb, sizeof(rgb));
+}
+
 static void copy_str(char *dst, const char *src, size_t n) {
     strncpy(dst, src, n - 1);
     dst[n - 1] = '\0';
@@ -75,6 +99,7 @@ int pe_raw_decode(const char *path, uint32_t min_long_edge, uint32_t max_threads
 
     int rc = libraw_open_file(lr, path);
     if (rc != LIBRAW_SUCCESS) goto fail;
+    as_shot_white(lr, info->as_shot_white);
 
     {
         uint32_t w = lr->sizes.width, h = lr->sizes.height;

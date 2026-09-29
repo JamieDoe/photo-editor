@@ -18,10 +18,15 @@ mod recipe;
 pub use backend::{RenderBackend, RenderError};
 pub use cpu::CpuRenderer;
 pub use ops::look::Look;
+pub use ops::white_balance::TemperatureScale;
 pub use plan::{OutputTransform, RenderPlan, Stage};
 pub use quality::{PreviewQuality, QualityLimits};
 pub use recipe::{EditRecipe, RECIPE_VERSION, RecipeError};
 
 /// Version of the rendering algorithms. Bump whenever the same recipe would produce
 /// different pixels, so caches are invalidated and old edits can be migrated.
-pub const RENDERER_VERSION: u32 = 2;
+///
+/// - 2: the Standard base look (ADR 0022).
+/// - 3: Temperature is relative to each photo's as-shot light instead of a fixed
+///   6500 K reference (ADR 0024), so existing temperature edits shift slightly.
+pub const RENDERER_VERSION: u32 = 3;
