@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { EngineInfoDto } from "./generated/EngineInfoDto";
+import type { BackupStatusDto } from "./generated/BackupStatusDto";
 import type { ClientErrorReport } from "./generated/ClientErrorReport";
 import type { CollectionCountsDto } from "./generated/CollectionCountsDto";
 import type { CollectionKindDto } from "./generated/CollectionKindDto";
@@ -84,6 +85,13 @@ export const setPhotoMarks = (paths: string[], change: MarkChangeDto) =>
 
 /** Saves a library photo's edit (a default recipe removes it). */
 export const saveEdit = (path: string, recipe: EditRecipe) => invoke<EditSavedDto>("save_edit", { path, recipe });
+
+export const libraryBackups = () => invoke<BackupStatusDto>("library_backups");
+export const backUpLibrary = () => invoke<BackupStatusDto>("back_up_library");
+export const showBackups = () => invoke<void>("show_backups");
+/** Native folder dialog; null if cancelled. */
+export const chooseBackupCopyFolder = () => invoke<BackupStatusDto | null>("choose_backup_copy_folder");
+export const stopBackupCopies = () => invoke<BackupStatusDto>("stop_backup_copies");
 
 export const libraryCollection = (kind: CollectionKindDto) =>
   invoke<CollectionListingDto>("library_collection", { kind });

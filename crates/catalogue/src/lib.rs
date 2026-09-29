@@ -7,6 +7,7 @@
 //! A *photo* is separate from the *file* that currently holds it, so ratings and edits
 //! follow a photograph when it is moved or renamed ([`Catalogue::record_file`]).
 
+mod backup;
 mod catalogue;
 mod details;
 mod edits;
@@ -15,6 +16,7 @@ mod identity;
 mod marks;
 mod schema;
 
+pub use backup::{BackupInfo, BackupKind, BackupStore, newest_valid, schema_version_of, to_prune};
 pub use catalogue::{Catalogue, FileRecord, FileStatus, LibraryFolder, RecordOutcome, ScanId};
 pub use details::{METADATA_VERSION, PhotoDetails, camera_name};
 pub use edits::StoredEdit;

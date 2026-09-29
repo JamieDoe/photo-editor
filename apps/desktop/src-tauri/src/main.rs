@@ -1,6 +1,7 @@
 // Prevents an extra console window on Windows in release builds.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod backups;
 mod commands;
 mod ipc;
 mod lifecycle;
@@ -49,6 +50,7 @@ fn main() {
             // created here rather than before the builder.
             let settings_path = app.path().app_config_dir()?.join("settings.json");
             let catalogue_path = app.path().app_data_dir()?.join("catalogue.sqlite");
+            let backups_dir = app.path().app_data_dir()?.join("backups");
             let thumbnail_dir = if self_test.is_some() {
                 // Self-test runs start cold and never touch the user's cache.
                 let dir = std::env::temp_dir().join("photo-editor-self-test-thumbnails");
@@ -61,8 +63,12 @@ fn main() {
                 settings_path,
                 catalogue_path,
                 thumbnail_dir,
+                backups_dir,
                 self_test.clone(),
             ));
+            if self_test.is_none() {
+                backups::start(app.handle().clone());
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -82,6 +88,11 @@ fn main() {
             commands::marks::set_photo_marks,
             commands::marks::library_collection,
             commands::edits::save_edit,
+            commands::backups::library_backups,
+            commands::backups::back_up_library,
+            commands::backups::show_backups,
+            commands::backups::choose_backup_copy_folder,
+            commands::backups::stop_backup_copies,
             commands::images::open_image_dialog,
             commands::images::open_image_path,
             commands::images::render_preview,

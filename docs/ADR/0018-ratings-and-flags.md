@@ -44,7 +44,8 @@ Library V1 needs ratings (0–5), pick/reject flags and filtering (PRODUCT.md §
 
 ## Consequences
 
-- **Marks are the first catalogue data that cannot be rebuilt from the files.** A
+- **Marks are the first catalogue data that cannot be rebuilt from the files.**
+  (Addressed by automatic backups, ADR 0021.) A
   corrupt catalogue is moved aside (ADR 0012), and its marks go with it.
   - Before V1 we need a way to keep them safe. Options: regular catalogue backups, or
     optional XMP sidecars (industry-standard, readable by other tools; needs a

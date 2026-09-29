@@ -48,14 +48,16 @@ pub async fn update_settings(
     Ok(view(&state))
 }
 
-/// Library folders are granted only through the native dialog (see the library
+/// Folders are chosen only through the native dialog (see the library and backup
 /// commands), so a settings update from the UI may *clear* the default folder but can
-/// never add or change folders, which would otherwise grant access at next launch.
+/// never add or change a folder: that would grant access at next launch, or send
+/// backups somewhere the user never chose.
 fn guard_library_changes(before: &Settings, mut requested: Settings) -> Settings {
     requested.library.recent_folders = before.library.recent_folders.clone();
     if requested.library.default_folder.is_some() {
         requested.library.default_folder = before.library.default_folder.clone();
     }
+    requested.backups.copy_folder = before.backups.copy_folder.clone();
     requested
 }
 
@@ -86,6 +88,19 @@ mod tests {
         let result = guard_library_changes(&before, with_folders(None, &[]));
         assert_eq!(result.library.default_folder, None);
         assert_eq!(result.library.recent_folders, ["/Photos"]);
+    }
+
+    #[test]
+    fn ui_cannot_set_or_change_the_backup_copy_folder() {
+        let mut before = Settings::default();
+        before.backups.copy_folder = Some("/Volumes/Backup".into());
+        let mut requested = before.clone();
+        requested.backups.copy_folder = Some("/tmp/elsewhere".into());
+        let result = guard_library_changes(&before, requested);
+        assert_eq!(
+            result.backups.copy_folder.as_deref(),
+            Some("/Volumes/Backup")
+        );
     }
 
     #[test]
