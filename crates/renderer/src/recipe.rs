@@ -2,10 +2,15 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
+use crate::Look;
 use crate::adjustments::{CONTRAST, EXPOSURE, SATURATION, TEMPERATURE};
 
 /// Current edit recipe schema version.
-pub const RECIPE_VERSION: u32 = 1;
+///
+/// - 1: exposure, contrast, temperature, saturation on a flat base (no tone curve).
+/// - 2: adds `look` (ADR 0022). Version 1 recipes migrate to `Look::Flat`, so edits
+///   made before keep their exact look; new recipes default to `Look::Standard`.
+pub const RECIPE_VERSION: u32 = 2;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -26,6 +31,8 @@ pub struct EditRecipe {
     pub temperature: f32,
     /// Colour saturation, -100 (monochrome) .. 100.
     pub saturation: f32,
+    /// The base look the adjustments start from.
+    pub look: Look,
 }
 
 impl Default for EditRecipe {
@@ -36,6 +43,7 @@ impl Default for EditRecipe {
             contrast: 0.0,
             temperature: 0.0,
             saturation: 0.0,
+            look: Look::Standard,
         }
     }
 }
@@ -69,12 +77,15 @@ impl EditRecipe {
         let recipe: Self =
             serde_json::from_str(json).map_err(|e| RecipeError::Invalid(e.to_string()))?;
         match recipe.version {
-            // Version 0 never shipped; treat a missing/zero version as the first schema.
+            // Version 0 never shipped; treat a zero version as the first schema. Version
+            // 1 had no tone curve: keep that look so old edits render as they did.
             0 | 1 => Ok(Self {
                 version: RECIPE_VERSION,
+                look: Look::Flat,
                 ..recipe
             }
             .sanitized()),
+            2 => Ok(recipe.sanitized()),
             v => Err(RecipeError::UnsupportedVersion(v)),
         }
     }
@@ -92,6 +103,7 @@ impl EditRecipe {
             contrast: CONTRAST.clamp(self.contrast),
             temperature: TEMPERATURE.clamp(self.temperature),
             saturation: SATURATION.clamp(self.saturation),
+            look: self.look,
         }
     }
 
@@ -100,9 +112,15 @@ impl EditRecipe {
         self.to_json().into_bytes()
     }
 
+    /// Whether this is the default: no adjustments on the default look. A photo with an
+    /// identity recipe has no saved edit.
     pub fn is_identity(&self) -> bool {
         let s = self.sanitized();
-        s.exposure == 0.0 && s.contrast == 0.0 && s.temperature == 0.0 && s.saturation == 0.0
+        s.exposure == 0.0
+            && s.contrast == 0.0
+            && s.temperature == 0.0
+            && s.saturation == 0.0
+            && s.look == Look::default()
     }
 }
 
@@ -135,19 +153,46 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":1,"exposure":0.5,"contrast":0.0,"temperature":0.0,"saturation":0.0}"#
+            r#"{"version":2,"exposure":0.5,"contrast":0.0,"temperature":0.0,"saturation":0.0,"look":"standard"}"#
         );
     }
 
     #[test]
     fn missing_fields_take_defaults() {
-        let r = EditRecipe::from_json(r#"{"version":1,"exposure":1.0}"#).unwrap();
+        let r = EditRecipe::from_json(r#"{"version":2,"exposure":1.0}"#).unwrap();
         assert_eq!(
             r,
             EditRecipe {
                 exposure: 1.0,
                 ..Default::default()
             }
+        );
+    }
+
+    #[test]
+    fn version_1_recipes_keep_their_flat_look() {
+        let r = EditRecipe::from_json(
+            r#"{"version":1,"exposure":0.5,"contrast":10.0,"temperature":0.0,"saturation":0.0}"#,
+        )
+        .unwrap();
+        assert_eq!(r.version, RECIPE_VERSION);
+        assert_eq!(r.look, Look::Flat);
+        assert_eq!((r.exposure, r.contrast), (0.5, 10.0));
+        // Even an all-zero version 1 recipe is an edit now: it keeps the flat look.
+        let zero = EditRecipe::from_json(r#"{"version":1}"#).unwrap();
+        assert!(!zero.is_identity());
+    }
+
+    #[test]
+    fn the_default_look_is_part_of_identity() {
+        let flat = EditRecipe {
+            look: Look::Flat,
+            ..Default::default()
+        };
+        assert!(!flat.is_identity());
+        assert_ne!(
+            flat.canonical_bytes(),
+            EditRecipe::default().canonical_bytes()
         );
     }
 

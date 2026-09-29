@@ -102,10 +102,18 @@ mod tests {
         assert_eq!(SavedEdit::from_stored(None), SavedEdit::None);
         let r = SavedEdit::from_stored(Some(&stored(1, r#"{"version":1,"exposure":1.5}"#)));
         assert_eq!(r.recipe().map(|r| r.exposure), Some(1.5));
-        // An identity recipe is no edit.
+        // An identity recipe (no adjustments, default look) is no edit.
         assert_eq!(
-            SavedEdit::from_stored(Some(&stored(1, r#"{"version":1}"#))),
+            SavedEdit::from_stored(Some(&stored(2, r#"{"version":2}"#))),
             SavedEdit::None
+        );
+        // A version 1 recipe keeps the flat look it was made on (ADR 0022), so even
+        // without adjustments it is an edit.
+        assert_eq!(
+            SavedEdit::from_stored(Some(&stored(1, r#"{"version":1}"#)))
+                .recipe()
+                .map(|r| r.look),
+            Some(renderer::Look::Flat)
         );
         // Newer schema, by column or by the JSON's own version: never interpreted.
         assert_eq!(

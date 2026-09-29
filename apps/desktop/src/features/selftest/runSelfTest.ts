@@ -271,7 +271,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const target = config.imagePath;
       const before = await ipc.libraryThumbnail(target);
       // Known values: earlier steps left other adjustments changed.
-      const original = { version: info.recipeVersion, exposure: 0, contrast: 0, temperature: 0, saturation: 0 };
+      const original = { version: info.recipeVersion, exposure: 0, contrast: 0, temperature: 0, saturation: 0, look: "standard" as const };
       const recipe = { ...original, exposure: 1, saturation: -40 };
       const saved = await ipc.saveEdit(target, recipe);
       const listed = (await ipc.listFolder(indexing.folder)).photos.find((p) => p.path === target)?.edited ?? null;

@@ -220,7 +220,7 @@ fn params_for(plan: &RenderPlan, pixel_count: u32) -> Result<Params, RenderError
         flags: 0,
         pixel_count,
     };
-    let mut phase = 0; // 0: gains, 1: contrast, 2: saturation
+    let mut phase = 0; // 0: gains, 1: contrast, 2: base curve, 3: saturation
     for stage in &plan.stages {
         match *stage {
             Stage::WhiteBalance { gains } if phase == 0 => {
@@ -238,10 +238,14 @@ fn params_for(plan: &RenderPlan, pixel_count: u32) -> Result<Params, RenderError
                 p.flags |= 1;
                 phase = 1;
             }
-            Stage::Saturation { factor } if phase <= 2 => {
+            Stage::BaseCurve if phase <= 2 => {
+                p.flags |= 4;
+                phase = 2;
+            }
+            Stage::Saturation { factor } if phase <= 3 => {
                 p.saturation = factor;
                 p.flags |= 2;
-                phase = 2;
+                phase = 3;
             }
             ref s => {
                 return Err(RenderError::Backend(format!(

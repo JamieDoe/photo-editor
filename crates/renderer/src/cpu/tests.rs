@@ -32,6 +32,7 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                 }
                 Stage::Exposure { multiplier } => rgb.map(|c| c * multiplier),
                 Stage::Contrast { gamma } => rgb.map(|c| ops::contrast::apply(c, gamma)),
+                Stage::BaseCurve => rgb.map(ops::look::standard),
                 Stage::Saturation { factor } => ops::saturation::apply(rgb, factor),
             };
         }
@@ -71,7 +72,11 @@ fn identity_reproduces_display_referred_source() {
     let table = color::srgb8_to_linear16_table();
     let data: Vec<u16> = (0..=255u16).flat_map(|v| [table[v as usize]; 3]).collect();
     let img = LinearImage::new(256, 1, data).unwrap();
-    let out = render(&EditRecipe::default(), &img);
+    let flat = EditRecipe {
+        look: crate::Look::Flat,
+        ..Default::default()
+    };
+    let out = render(&flat, &img);
     for (i, px) in out.data().as_chunks::<3>().0.iter().enumerate() {
         assert_eq!(*px, [i as u8; 3]);
     }
@@ -98,6 +103,7 @@ fn exposure_plus_one_doubles_linear_values() {
     let out = render(
         &EditRecipe {
             exposure: 1.0,
+            look: crate::Look::Flat,
             ..Default::default()
         },
         &img,

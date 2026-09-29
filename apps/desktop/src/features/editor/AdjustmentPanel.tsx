@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { ColourIcon, DetailIcon, LightIcon } from "../../components/icons";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
+import type { Look } from "../../ipc/generated/Look";
 import { PanelSection } from "./PanelSection";
 import { isAdjustmentKey } from "./recipe";
 import { formatSliderValue, sliderTrack } from "./sliderTrack";
@@ -12,6 +13,11 @@ interface Props {
   onChange: (r: EditRecipe) => void;
   disabled: boolean;
 }
+
+const LOOKS: ReadonlyArray<{ id: Look; label: string; hint: string }> = [
+  { id: "standard", label: "Standard", hint: "Camera-like brightness and contrast (the default)" },
+  { id: "flat", label: "Flat", hint: "No base tone curve: how photos looked before this update" },
+];
 
 const GROUP_ICONS: Record<string, ReactNode> = {
   Light: <LightIcon />,
@@ -28,6 +34,26 @@ export function AdjustmentPanel({ specs, recipe, onChange, disabled }: Props) {
   const valueOf = (spec: AdjustmentSpec) => (isAdjustmentKey(spec.key) ? recipe[spec.key] : spec.default);
   return (
     <>
+      <div className="look-row">
+        <span className="look-label" id="look-label">
+          Look
+        </span>
+        <div className="segmented small" role="radiogroup" aria-labelledby="look-label">
+          {LOOKS.map((l) => (
+            <label key={l.id} title={l.hint}>
+              <input
+                className="sr-only"
+                type="radio"
+                name="look"
+                checked={recipe.look === l.id}
+                disabled={disabled}
+                onChange={() => onChange({ ...recipe, look: l.id })}
+              />
+              {l.label}
+            </label>
+          ))}
+        </div>
+      </div>
       {groups.map((group) => {
         const groupSpecs = specs.filter((s) => s.group === group && isAdjustmentKey(s.key));
         const edited = groupSpecs.some((s) => valueOf(s) !== s.default);

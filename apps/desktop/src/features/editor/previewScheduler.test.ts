@@ -3,7 +3,7 @@ import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { PreviewQuality } from "../../ipc/generated/PreviewQuality";
 import { PreviewScheduler, type FrameInfo, type SchedulerDeps } from "./previewScheduler";
 
-const recipe = (exposure: number): EditRecipe => ({ version: 1, exposure, contrast: 0, temperature: 0, saturation: 0 });
+const recipe = (exposure: number): EditRecipe => ({ version: 1, exposure, contrast: 0, temperature: 0, saturation: 0, look: "standard" });
 
 interface Call {
   recipe: EditRecipe;

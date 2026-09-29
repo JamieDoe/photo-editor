@@ -38,4 +38,4 @@ pub use cache::DiskCacheStats;
 pub use export::ExportFormat;
 pub use jobs::{CancelToken, JobError, JobHandle};
 pub use raw::SourceKind;
-pub use renderer::{EditRecipe, PreviewQuality, RECIPE_VERSION};
+pub use renderer::{EditRecipe, Look, PreviewQuality, RECIPE_VERSION};

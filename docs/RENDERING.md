@@ -41,7 +41,8 @@ RAW decode (LibRaw)            camera WB (as shot), demosaic, camera matrix -> l
     ▼
 White balance (temperature)    per-channel gains, relative to as-shot
 Exposure                       multiply by 2^EV
-Tone (contrast)                S-curve around mid grey
+Tone (contrast)                S-curve around mid grey (scene-referred)
+Base look (Standard)           camera-like tone curve: lift, toe, shoulder (ADR 0022)
 Colour (saturation)            chroma scale around Rec.709 luminance
     ▼
 Output transform               clip [0,1], sRGB OETF, 8-bit quantise
@@ -58,11 +59,16 @@ Output transform               clip [0,1], sRGB OETF, 8-bit quantise
 - **Contrast** (`-100..100`): per channel, in a gamma-2.2 perceptual domain; curve
   fixes 0, mid grey (0.18) and 1; slope at the pivot is `2^(±0.8)` at the extremes;
   values above 1 pass through, so contrast alone never clips highlights.
+- **Base look** (`look`: `standard` | `flat`, ADR 0022):
+  - **Standard** is a per-channel log-logistic S-curve after a 1.25 EV lift
+    (slope 1.65, pivot 0.55), normalised so sensor white stays white. Its
+    parameters were fitted to six cameras' own JPEGs.
+  - **Flat** is no curve: the look of version-1 recipes, kept for their edits.
 - **Saturation** (`-100..100`): `Y + (rgb − Y)·(1 + s/100)` with Rec.709 luminance,
   clamped at 0. `-100` gives exact luminance-preserving monochrome.
-- **Output**: hard clip at 1.0. There is no highlight roll-off or base tone curve yet.
-  Identity recipe on a JPEG reproduces the source exactly (tested). RAW files
-  look flatter than camera JPEGs because no camera "look" or base curve is applied.
+- **Output**: hard clip at 1.0. With the Standard look, highlights roll off through
+  its shoulder before the clip. The Flat look on a JPEG reproduces the source exactly
+  (tested).
 
 ## 4. CPU backend
 
@@ -126,7 +132,8 @@ zoom needs a full-resolution decode path for the viewer (§7).
 - LUT vs reference: output LUT within 1 code; contrast LUT within 1/255 display.
 - CPU backend vs scalar reference over the chart: max 1 code difference.
 - Golden images (`tests/fixtures/golden/renderer/*.png` + `*.recipe.json`): procedural
-  chart × 10 recipes, tolerance 1 code, decoder-independent.
+  chart × 12 recipes, tolerance 1 code, decoder-independent. Single adjustments use the
+  Flat look (images unchanged since version 1); `standard_*` lock the Standard look.
 - RAW golden (`tests/fixtures/golden/raw/*.png`): synthetic DNG → LibRaw → renderer,
   tolerance 4 codes (absorbs LibRaw version drift).
 - The synthetic DNG simulates a sensor with unequal channel sensitivities and an RGGB
@@ -139,7 +146,9 @@ and bump `RENDERER_VERSION`.
 
 - White balance belongs in camera space before the colour matrix (needs camera matrix
   from the decoder and our own demosaic/scaling control).
-- No base tone curve / camera profile, no highlight reconstruction or roll-off.
+- One base look for every camera: no per-camera profiles or colour matrices beyond
+  LibRaw's. The cameras' JPEGs are still slightly more saturated. There is no
+  highlight reconstruction.
 - Working space is linear sRGB primaries; a wider working space (e.g. linear
   Rec.2020/ProPhoto) should be evaluated before adding colour grading.
 - No colour management of the display (assumes sRGB display) or export (no ICC).

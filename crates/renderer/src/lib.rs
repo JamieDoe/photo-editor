@@ -17,10 +17,11 @@ mod recipe;
 
 pub use backend::{RenderBackend, RenderError};
 pub use cpu::CpuRenderer;
+pub use ops::look::Look;
 pub use plan::{OutputTransform, RenderPlan, Stage};
 pub use quality::{PreviewQuality, QualityLimits};
 pub use recipe::{EditRecipe, RECIPE_VERSION, RecipeError};
 
 /// Version of the rendering algorithms. Bump whenever the same recipe would produce
 /// different pixels, so caches are invalidated and old edits can be migrated.
-pub const RENDERER_VERSION: u32 = 1;
+pub const RENDERER_VERSION: u32 = 2;
