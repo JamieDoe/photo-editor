@@ -325,6 +325,16 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     };
     const toneCurveOk = toneCurve.points === 49 && toneCurve.maxOffDiagonal < 0.01 && toneCurve.shadowsLift > 0.02;
 
+    // Auto level through the real command (ADR 0033): an angle or null, quickly.
+    const tLevel = performance.now();
+    let levelError: string | null = null;
+    const levelAngle = await ipc.autoLevel(driver.editor().image!.id).catch((e: unknown) => {
+      levelError = e instanceof Error ? e.message : JSON.stringify(e);
+      return undefined;
+    });
+    const autoLevel = { angle: levelAngle ?? null, ms: Math.round(performance.now() - tLevel), error: levelError };
+    const autoLevelOk = levelAngle !== undefined && autoLevel.ms < 2000;
+
     // Crop through the real pipeline (ADR 0032): the frame shows the cropped part and
     // reports its full-resolution size, which the viewer's box follows.
     const [fullW, fullH] = [summary.fullWidth, summary.fullHeight];
@@ -365,6 +375,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       savedEdits: editsOk,
       toneCurve: toneCurveOk,
       crop: cropOk,
+      autoLevel: autoLevelOk,
     };
     // Named so that a failing run explains itself.
     const failed = Object.entries(checks)
@@ -384,6 +395,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       reopen,
       toneCurve,
       crop,
+      autoLevel,
       quitGuard,
       indexing,
       thumbnails,

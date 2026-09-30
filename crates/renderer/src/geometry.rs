@@ -244,6 +244,160 @@ pub fn resample(source: &LinearImage, geometry: &Geometry) -> LinearImage {
     LinearImage::new(ow, oh, data).expect("dimensions match the buffer")
 }
 
+/// Auto level (ADR 0033): the straighten angle that levels the photo, or `None` when
+/// there is no clear horizon or vertical to go by.
+///
+/// Line-like edges are measured with a structure tensor (gradients of log luminance,
+/// averaged over 7x7 pixels): its orientation gives each edge's direction, and its
+/// coherence how line-like the neighbourhood is. Edges within 15° of horizontal or
+/// vertical vote for the angle that would level them, weighted by strength and
+/// coherence, so texture (grass, foliage, noise), which points every way, adds no
+/// preferred angle. The brightness is lightly blurred first, so pixel noise does not
+/// count as edges. The answer is the histogram's peak, if it stands out.
+pub fn auto_level(image: &LinearImage) -> Option<f32> {
+    level_estimate(image)
+        .filter(|e| e.confidence >= MIN_LEVEL_CONFIDENCE)
+        .map(|e| e.angle)
+}
+
+/// Share of the edge evidence that must agree (within ±0.5°) for Auto level to act:
+/// between pure noise and organic scenes (0.04–0.05 on the samples) and a real horizon
+/// (0.086 on the Ricoh beach; ADR 0033).
+const MIN_LEVEL_CONFIDENCE: f32 = 0.075;
+
+/// Auto level's best angle and how much of the edge evidence agrees with it (0..1).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LevelEstimate {
+    pub angle: f32,
+    pub confidence: f32,
+}
+
+/// See [`auto_level`]; the estimate before the confidence threshold.
+pub fn level_estimate(image: &LinearImage) -> Option<LevelEstimate> {
+    const BINS_PER_DEGREE: f32 = 10.0;
+    let (w, h) = (image.width() as usize, image.height() as usize);
+    if w < 16 || h < 16 {
+        return None;
+    }
+    // log2 luminance.
+    let l: Vec<f32> = image
+        .data()
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|p| {
+            let y = 0.2126 * f32::from(p[0]) + 0.7152 * f32::from(p[1]) + 0.0722 * f32::from(p[2]);
+            (y / 65535.0).max(1.0e-4).log2()
+        })
+        .collect();
+    // A light blur first: pixel noise averages out, long edges do not.
+    let mut l = l;
+    let mut scratch = crate::ops::detail::BlurScratch::default();
+    crate::ops::detail::box_plane(&mut l, w, h, 1, 2, &mut scratch);
+    // Structure tensor components, then averaged.
+    let mut jxx = vec![0.0f32; w * h];
+    let mut jyy = vec![0.0f32; w * h];
+    let mut jxy = vec![0.0f32; w * h];
+    for y in 1..h - 1 {
+        for x in 1..w - 1 {
+            let k = y * w + x;
+            // Scharr kernels: much less direction bias than central differences, which
+            // would pull small tilts towards the pixel axes.
+            let (a, b, c) = (l[k - w - 1], l[k - w], l[k - w + 1]);
+            let (d, f) = (l[k - 1], l[k + 1]);
+            let (g, hh, i) = (l[k + w - 1], l[k + w], l[k + w + 1]);
+            let gx = 3.0 * (c - a) + 10.0 * (f - d) + 3.0 * (i - g);
+            let gy = 3.0 * (g - a) + 10.0 * (hh - b) + 3.0 * (i - c);
+            jxx[k] = gx * gx;
+            jyy[k] = gy * gy;
+            jxy[k] = gx * gy;
+        }
+    }
+    for plane in [&mut jxx, &mut jyy, &mut jxy] {
+        crate::ops::detail::box_plane(plane, w, h, 3, 1, &mut scratch);
+    }
+
+    let bins = (2.0 * MAX_STRAIGHTEN * BINS_PER_DEGREE) as usize + 1;
+    let mut hist = vec![0.0f64; bins];
+    for k in 0..w * h {
+        let (a, b, c) = (jxx[k], jyy[k], jxy[k]);
+        let trace = a + b;
+        if trace < 1.0e-2 {
+            continue;
+        }
+        let spread = ((a - b) * (a - b) + 4.0 * c * c).sqrt();
+        let coherence = spread / trace;
+        // The dominant gradient's orientation; edges run across it.
+        let gradient = 0.5 * (2.0 * c).atan2(a - b);
+        let mut line = (gradient + std::f32::consts::FRAC_PI_2).to_degrees();
+        // Into (-90, 90].
+        if line > 90.0 {
+            line -= 180.0;
+        }
+        if line <= -90.0 {
+            line += 180.0;
+        }
+        // The straighten angle that would level this edge.
+        let correction = if line.abs() <= MAX_STRAIGHTEN {
+            line
+        } else if line.abs() >= 90.0 - MAX_STRAIGHTEN {
+            line - 90.0 * line.signum()
+        } else {
+            continue;
+        };
+        let bin = ((correction + MAX_STRAIGHTEN) * BINS_PER_DEGREE).round() as usize;
+        let c2 = coherence * coherence;
+        hist[bin.min(bins - 1)] += f64::from(trace.sqrt() * c2 * c2);
+    }
+
+    // Smooth (Gaussian, 0.3°), find the peak, and require it to stand out.
+    let sigma = 3.0f64;
+    let kernel: Vec<f64> = (-9..=9)
+        .map(|i| (-(f64::from(i) * f64::from(i)) / (2.0 * sigma * sigma)).exp())
+        .collect();
+    let smooth: Vec<f64> = (0..bins)
+        .map(|i| {
+            kernel
+                .iter()
+                .enumerate()
+                .map(|(j, k)| {
+                    let src = i as i64 + j as i64 - 9;
+                    if (0..bins as i64).contains(&src) {
+                        k * hist[src as usize]
+                    } else {
+                        0.0
+                    }
+                })
+                .sum()
+        })
+        .collect();
+    let total: f64 = hist.iter().sum();
+    if total <= 0.0 {
+        return None;
+    }
+    let peak = (0..bins).max_by(|&a, &b| smooth[a].total_cmp(&smooth[b]))?;
+    let near: f64 = hist[peak.saturating_sub(5)..(peak + 6).min(bins)]
+        .iter()
+        .sum();
+    // Sub-bin position from a parabola through the peak and its neighbours.
+    let offset = if peak > 0 && peak + 1 < bins {
+        let (l, c, r) = (smooth[peak - 1], smooth[peak], smooth[peak + 1]);
+        let d = l - 2.0 * c + r;
+        if d.abs() > 1e-12 {
+            (0.5 * (l - r) / d).clamp(-0.5, 0.5)
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
+    let angle = (peak as f64 + offset) as f32 / BINS_PER_DEGREE - MAX_STRAIGHTEN;
+    Some(LevelEstimate {
+        angle: (angle * 10.0).round() / 10.0,
+        confidence: (near / total) as f32,
+    })
+}
+
 #[inline]
 fn bilinear(source: &LinearImage, x: f32, y: f32) -> [u16; 3] {
     let (w, h) = (source.width() as usize, source.height() as usize);
@@ -337,6 +491,81 @@ mod tests {
         }
         // No rotation, original shape: the whole frame.
         assert_eq!(fit_crop(AspectRatio::Original, 0.0, w, h), CropRect::FULL);
+    }
+
+    /// Uniform noise in 0..1 for a pixel (splitmix64: no structure, unlike simple
+    /// linear hashes, which draw stripes the detector would rightly find).
+    fn noise(x: u32, y: u32) -> f32 {
+        let mut z = (u64::from(y) << 32 | u64::from(x)).wrapping_add(0x9e37_79b9_7f4a_7c15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^= z >> 31;
+        (z >> 40) as f32 / (1u64 << 24) as f32
+    }
+
+    /// A scene with long straight edges tilted by `tilt` degrees (anticlockwise on
+    /// screen): a horizon between sky and sea, and a few vertical posts.
+    fn tilted_scene(w: u32, h: u32, tilt: f32, texture: bool) -> LinearImage {
+        let t = tilt.to_radians();
+        let (cx, cy) = (w as f32 / 2.0, h as f32 / 2.0);
+        let data = (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .flat_map(|(x, y)| {
+                // Scene coordinates: undo the tilt.
+                let (dx, dy) = (x as f32 - cx, y as f32 - cy);
+                let (sx, sy) = (dx * t.cos() - dy * t.sin(), dx * t.sin() + dy * t.cos());
+                // Soft (anti-aliased) edges, as a lens draws them: a pixel-aligned
+                // staircase would read as level at small tilts.
+                let ramp = |d: f32| ((d + 1.0) / 2.0).clamp(0.0, 1.0);
+                let sea = ramp(sy);
+                let mut v = 40000.0 + (9000.0 - 40000.0) * sea;
+                // Posts: 5 px wide, every 60 px, below the horizon.
+                let m = sx.rem_euclid(60.0);
+                let post = ramp(m.min(5.0 - m).min(2.5)) * sea;
+                v += (25000.0 - v) * post;
+                if texture {
+                    v *= 0.8 + 0.4 * noise(x, y);
+                }
+                [v as u16; 3]
+            })
+            .collect();
+        LinearImage::new(w, h, data).unwrap()
+    }
+
+    #[test]
+    fn auto_level_finds_the_tilt() {
+        for tilt in [-7.5f32, -2.0, 0.0, 3.3, 11.0] {
+            let img = tilted_scene(600, 400, tilt, true);
+            let a = auto_level(&img).expect("a clear horizon");
+            // The correction turns the picture back: the opposite way.
+            assert!((a + tilt).abs() <= 0.35, "tilt {tilt}: {a}");
+        }
+    }
+
+    #[test]
+    fn auto_level_levels_what_straighten_turns() {
+        // Straightening by the answer levels the horizon (the same convention).
+        let img = tilted_scene(600, 400, 4.0, false);
+        let a = auto_level(&img).unwrap();
+        let g = Geometry {
+            straighten: a,
+            crop: fit_crop(AspectRatio::Original, a, 600.0, 400.0),
+            aspect: AspectRatio::Original,
+        };
+        let levelled = resample(&img, &g);
+        let again = auto_level(&levelled).unwrap();
+        assert!(again.abs() <= 0.35, "{again}");
+    }
+
+    #[test]
+    fn auto_level_declines_texture_without_lines() {
+        let (w, h) = (400u32, 300u32);
+        let data = (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .flat_map(|(x, y)| [(5000.0 + 40_000.0 * noise(x, y)) as u16; 3])
+            .collect();
+        let img = LinearImage::new(w, h, data).unwrap();
+        assert_eq!(auto_level(&img), None);
     }
 
     #[test]

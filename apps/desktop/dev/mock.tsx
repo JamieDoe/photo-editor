@@ -167,6 +167,9 @@ mockIPC((cmd, payload) => {
       }
       return counts();
     }
+    case "auto_level":
+      // Dev-only stand-in: a small tilt to correct.
+      return new Promise((r) => setTimeout(() => r(-1.4), 60));
     case "tone_curve": {
       // Dev-only stand-in for the renderer's curve: a rough response to exposure,
       // contrast and the end points, enough to see the graph move.

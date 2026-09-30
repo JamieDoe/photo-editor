@@ -63,6 +63,14 @@ export const ColourIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** The design's Auto level icon: a horizon under a chevron. */
+export const LevelIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M1.5 10h13" />
+    <path d="M4 7l4-3 4 3" />
+  </Icon>
+);
+
 /** The design's crop / Geometry icon. */
 export const CropIcon = (p: IconProps) => (
   <Icon {...p}>

@@ -102,6 +102,13 @@ pub async fn open_image_path(
     open(&state, file).await
 }
 
+/// Auto level (ADR 0033): the straighten angle that levels the open photo, or null
+/// when it has no clear horizon or vertical.
+#[tauri::command]
+pub async fn auto_level(state: State<'_, AppState>, image_id: u64) -> IpcResult<Option<f32>> {
+    wait(state.engine.auto_level(ImageId(image_id))).await
+}
+
 #[tauri::command]
 pub async fn render_preview(
     state: State<'_, AppState>,

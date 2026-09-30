@@ -121,6 +121,24 @@ impl Engine {
         })
     }
 
+    /// Auto level (ADR 0033): the straighten angle that levels the open photo, or `None`
+    /// without a clear horizon or vertical. Measured on a preview level of about
+    /// 1000 px, on the interactive lane (tens of milliseconds).
+    pub fn auto_level(&self, image: ImageId) -> JobHandle<Option<f32>, EngineError> {
+        let Some(image) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        let level = Arc::clone(&image.pyramid.levels()[image.pyramid.select_index(1000)]);
+        let spec = JobSpec::new(Lane::Interactive, Priority::Interactive, "auto-level")
+            .superseding("auto-level");
+        self.jobs.submit(spec, move |_token| {
+            Ok(renderer::geometry::auto_level(&level))
+        })
+    }
+
     /// Renders a preview. Cache hits complete immediately; otherwise the render runs on
     /// the interactive lane and supersedes the previous viewer render.
     pub fn render_preview(&self, req: PreviewRequest) -> JobHandle<PreviewFrame, EngineError> {

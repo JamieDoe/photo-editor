@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { CropIcon } from "../../components/icons";
+import { CropIcon, LevelIcon } from "../../components/icons";
+import * as ipc from "../../ipc/client";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { AspectRatio } from "../../ipc/generated/AspectRatio";
 import type { CropRect } from "../../ipc/generated/CropRect";
@@ -39,12 +40,20 @@ export function geometryEdited(r: EditRecipe): boolean {
  */
 export function useCropTool(opts: {
   recipe: EditRecipe | null;
+  imageId: number | null;
   size: { width: number; height: number } | null;
   onChange: (r: EditRecipe) => void;
   setViewTransform: (t: ((r: EditRecipe) => EditRecipe) | null) => void;
 }) {
-  const { recipe, size, onChange, setViewTransform } = opts;
+  const { recipe, imageId, size, onChange, setViewTransform } = opts;
   const [open, setOpen] = useState(false);
+  // Auto level's result, shown for a moment ("Horizon levelled · −1.4°").
+  const [status, setStatus] = useState<string | null>(null);
+  useEffect(() => {
+    if (status === null) return;
+    const t = window.setTimeout(() => setStatus(null), 3000);
+    return () => window.clearTimeout(t);
+  }, [status]);
   const g = recipe ? geometryOf(recipe) : NO_GEOMETRY;
   const view = size ? cropView(g.straighten, size.width, size.height) : FULL;
 
@@ -68,6 +77,12 @@ export function useCropTool(opts: {
     [recipe, onChange],
   );
 
+  const setStraighten = (straighten: number) => {
+    if (!size) return;
+    const next = cropView(straighten, size.width, size.height);
+    update({ ...g, straighten, crop: remap(g.crop, view, next) });
+  };
+
   const ratioInView = (a: AspectRatio) => {
     const r = size ? aspectRatioOf(a, size.width, size.height) : null;
     return r !== null && size ? viewRatio(r, view, size.width, size.height) : null;
@@ -90,10 +105,22 @@ export function useCropTool(opts: {
       const crop = r === null ? g.crop : fromView(largestIn(r), view);
       update({ ...g, aspect, crop });
     },
-    setStraighten: (straighten: number) => {
-      if (!size) return;
-      const next = cropView(straighten, size.width, size.height);
-      update({ ...g, straighten, crop: remap(g.crop, view, next) });
+    setStraighten,
+    status,
+    /** Levels the photo from its horizon or verticals, found by the renderer. */
+    autoLevel: () => {
+      if (imageId === null) return;
+      ipc
+        .autoLevel(imageId)
+        .then((angle) => {
+          if (angle === null) {
+            setStatus("No clear horizon found");
+            return;
+          }
+          setStraighten(angle);
+          setStatus(`Horizon levelled · ${angle > 0 ? "+" : angle < 0 ? "−" : ""}${Math.abs(angle).toFixed(1)}°`);
+        })
+        .catch(() => setStatus("Couldn't level the photo"));
     },
     setOverlay: (o: CropRect) => update({ ...g, crop: fromView(o, view) }),
   };
@@ -181,6 +208,9 @@ export function CropToolbar({ tool, straighten }: { tool: CropTool; straighten: 
         onDoubleClick={() => tool.setStraighten(0)}
       />
       <span className="crop-angle">{formatSliderValue(value, straighten.min, straighten.step, straighten.unit)}</span>
+      <button className="crop-reset" onClick={tool.autoLevel}>
+        Auto level
+      </button>
       <span className="toolbar-divider" />
       <button className="crop-reset" onClick={tool.reset}>
         Reset
@@ -188,6 +218,11 @@ export function CropToolbar({ tool, straighten }: { tool: CropTool; straighten: 
       <button className="primary crop-done" onClick={tool.done}>
         Done
       </button>
+      {tool.status && (
+        <span className="crop-status" role="status">
+          {tool.status}
+        </span>
+      )}
     </div>
   );
 }
@@ -228,10 +263,21 @@ export function GeometryControls({ tool, straighten, disabled }: { tool: CropToo
         disabled={disabled}
         onChange={tool.setStraighten}
       />
-      <button className="chip geometry-crop" disabled={disabled} onClick={tool.enter}>
-        <CropIcon size={14} />
-        Crop
-      </button>
+      <div className="geometry-actions">
+        <button className="chip geometry-crop" disabled={disabled} onClick={tool.autoLevel}>
+          <LevelIcon size={14} />
+          Auto level
+        </button>
+        <button className="chip geometry-crop" disabled={disabled} onClick={tool.enter}>
+          <CropIcon size={14} />
+          Crop
+        </button>
+      </div>
+      {tool.status && (
+        <span className="geometry-status" role="status">
+          {tool.status}
+        </span>
+      )}
     </>
   );
 }

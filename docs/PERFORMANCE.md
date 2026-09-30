@@ -488,3 +488,12 @@ Nikon Z 6, 1516×1010, median of 40, three runs:
 Crops choose a larger pyramid level so the kept part stays sharp. Those renders cost
 in proportion to the pixels kept.
 
+## 22. Auto level (ADR 0033)
+
+Measured on a preview level of about 1000 px:
+
+- about 33–39 ms each on the samples (the `auto_level` estimate alone);
+- 28–52 ms through the release app.
+
+It runs once per click, as an interactive job.
+

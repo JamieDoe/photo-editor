@@ -39,6 +39,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
   );
   const crop = useCropTool({
     recipe,
+    imageId: image?.id ?? null,
     size: fullSize,
     onChange: editor.setRecipe,
     setViewTransform: editor.setViewTransform,
