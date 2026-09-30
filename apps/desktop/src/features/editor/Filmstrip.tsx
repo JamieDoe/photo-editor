@@ -5,11 +5,11 @@ import { FILTERS } from "../library/marks";
 import { PhotoThumbnail } from "../library/PhotoThumbnail";
 import type { LibraryApi } from "../library/useLibrary";
 
-/** A thumbnail's width and the gap after it, and the strip's side padding (px). The
- *  rings of the open and ticked photos reach 4 px outside a thumbnail, so the gap
- *  leaves 6 px between two rings. */
+/** A thumbnail's width and the gap after it (the design's), and the strip's side
+ *  padding (px). The rings of the open and ticked photos are drawn inside a thumbnail's
+ *  edge, so neighbouring rings keep the whole gap between them. */
 const THUMB = 96;
-const GAP = 14;
+const GAP = 8;
 const STRIDE = THUMB + GAP;
 const PADDING = 16;
 /** Thumbnails kept mounted either side of those in view. */
