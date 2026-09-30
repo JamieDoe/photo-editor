@@ -10,9 +10,14 @@
 //! scene-linear gains after the white balance and exposure, Clarity in the detail
 //! stage.
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::CropRect;
+
+pub mod brush;
+pub use brush::Stroke;
 
 /// A mask: where, and what it changes there.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -35,7 +40,7 @@ pub struct Mask {
 }
 
 /// Where a mask covers the photo.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub enum MaskShape {
@@ -56,6 +61,8 @@ pub enum MaskShape {
         angle: f32,
         feather: f32,
     },
+    /// Painted strokes (ADR 0042), in the order painted; see [`brush`].
+    Brush { strokes: Vec<Stroke> },
 }
 
 /// What a mask changes where it covers the photo, as the global controls do.
@@ -90,6 +97,11 @@ impl LocalAdjustments {
 const POINT_RANGE: f32 = 2.0;
 
 impl MaskShape {
+    /// Covers nothing: a brush mask with nothing painted yet.
+    pub fn is_empty(&self) -> bool {
+        matches!(self, Self::Brush { strokes } if strokes.iter().all(|s| s.points.is_empty() || s.erase))
+    }
+
     pub fn sanitized(self) -> Self {
         let clean = |p: [f32; 2]| {
             p.map(|v| {
@@ -126,6 +138,13 @@ impl MaskShape {
                     feather: finite(feather, 50.0).clamp(0.0, 100.0),
                 }
             }
+            Self::Brush { strokes } => Self::Brush {
+                strokes: strokes
+                    .iter()
+                    .map(Stroke::sanitized)
+                    .filter(|s| !s.points.is_empty())
+                    .collect(),
+            },
         }
     }
 }
@@ -138,7 +157,7 @@ impl Mask {
     pub fn sanitized(&self) -> Self {
         Self {
             id: self.id,
-            shape: self.shape.sanitized(),
+            shape: self.shape.clone().sanitized(),
             invert: self.invert,
             hidden: self.hidden,
             adjustments: self.adjustments.sanitized(),
@@ -167,7 +186,7 @@ impl Frame {
 }
 
 /// A mask's shape in the frame's pixels, ready to evaluate per pixel.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum CompiledShape {
     /// Coverage `1 - smoothstep(t)` with `t = (p - start) · along`, where `along` is
     /// start → end divided by its squared length.
@@ -180,11 +199,16 @@ pub enum CompiledShape {
         axes: [[f32; 2]; 2],
         inner: f32,
     },
+    /// Coverage read from the strokes' map: `scale` takes frame pixels to map pixels.
+    Brush {
+        map: Arc<brush::CoverageMap>,
+        scale: [f32; 2],
+    },
 }
 
 impl CompiledShape {
     pub fn new(shape: &MaskShape, frame: &Frame) -> Self {
-        match shape.sanitized() {
+        match shape.clone().sanitized() {
             MaskShape::Linear { start, end } => {
                 let s = [start[0] * frame.width, start[1] * frame.height];
                 let e = [end[0] * frame.width, end[1] * frame.height];
@@ -208,6 +232,14 @@ impl CompiledShape {
                     centre: [centre[0] * frame.width, centre[1] * frame.height],
                     axes: [[cos / a, sin / a], [-sin / b, cos / b]],
                     inner: 1.0 - feather / 100.0,
+                }
+            }
+            MaskShape::Brush { strokes } => {
+                let map = brush::coverage(&strokes, frame.width, frame.height);
+                let (mw, mh) = map.size();
+                Self::Brush {
+                    map,
+                    scale: [mw as f32 / frame.width, mh as f32 / frame.height],
                 }
             }
         }
@@ -237,6 +269,7 @@ impl CompiledShape {
                 let t = ((d - inner) / (1.0 - inner)).clamp(0.0, 1.0);
                 1.0 - t * t * (3.0 - 2.0 * t)
             }
+            Self::Brush { ref map, scale } => map.sample(x * scale[0], y * scale[1]),
         }
     }
 }

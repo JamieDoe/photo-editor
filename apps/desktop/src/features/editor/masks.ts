@@ -17,10 +17,27 @@ export type Point = [number, number];
 export const MASK_KINDS: Record<MaskKind, { label: string; dot: string; add: string; hint: string }> = {
   linear: { label: "Linear gradient", dot: "var(--mask-linear)", add: "Linear", hint: "Graduated filter" },
   radial: { label: "Radial gradient", dot: "var(--mask-radial)", add: "Radial", hint: "Radial filter" },
+  brush: { label: "Brush", dot: "var(--mask-brush)", add: "Brush", hint: "Paint an area" },
 };
 
 /** The kinds that can be added, in the design's order. */
-export const ADDABLE_KINDS: readonly MaskKind[] = ["linear", "radial"];
+export const ADDABLE_KINDS: readonly MaskKind[] = ["brush", "linear", "radial"];
+
+/** The brush the next stroke is painted with (ADR 0042): its radius as a fraction of
+ *  the frame's diagonal, its soft edge and flow (0..100), and whether it erases. */
+export interface BrushSettings {
+  size: number;
+  feather: number;
+  flow: number;
+  erase: boolean;
+}
+
+export const DEFAULT_BRUSH: BrushSettings = { size: 0.04, feather: 50, flow: 100, erase: false };
+
+/** The Size slider (1..100) and the brush radius it sets: 100 is a quarter of the
+ *  frame's diagonal. */
+export const brushSizeFromSlider = (v: number) => v / 400;
+export const sliderFromBrushSize = (size: number) => Math.round(size * 400);
 
 export const FULL_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1 };
 
@@ -73,8 +90,21 @@ export function newRadialMask(masks: readonly Mask[], crop: CropRect): Mask {
   };
 }
 
+/** A new brush mask, with nothing painted yet. */
+export function newBrushMask(masks: readonly Mask[]): Mask {
+  const id = masks.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+  return { id, shape: { kind: "brush", strokes: [] }, adjustments: { exposure: 0, warmth: 0, clarity: 0 } };
+}
+
 export function newMask(kind: MaskKind, masks: readonly Mask[], crop: CropRect): Mask {
-  return kind === "linear" ? newLinearMask(masks, crop) : newRadialMask(masks, crop);
+  switch (kind) {
+    case "linear":
+      return newLinearMask(masks, crop);
+    case "radial":
+      return newRadialMask(masks, crop);
+    case "brush":
+      return newBrushMask(masks);
+  }
 }
 
 export function updateMask(masks: readonly Mask[], id: number, change: (m: Mask) => Mask): Mask[] {
@@ -97,6 +127,9 @@ function mapShape(shape: MaskShape, f: (p: Point) => Point, turn: (angle: number
       return { ...shape, start: f(shape.start), end: f(shape.end) };
     case "radial":
       return { ...shape, centre: f(shape.centre), angle: normaliseAngle(turn(shape.angle)) };
+    case "brush":
+      // Sizes are fractions of the diagonal, which turns leave alone.
+      return { ...shape, strokes: shape.strokes.map((s) => ({ ...s, points: s.points.map(f) })) };
   }
 }
 

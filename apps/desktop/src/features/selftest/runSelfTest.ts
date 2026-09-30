@@ -508,8 +508,41 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
             renderMs: radialFrame.frame.renderMs,
           }
         : null;
+    // A brush stroke (ADR 0042), -1 EV across the middle: that band darker, the top
+    // rows unchanged.
+    const brushedFrame = await show(
+      {
+        ...beforeCrop,
+        masks: [
+          {
+            id: 1,
+            shape: {
+              kind: "brush",
+              strokes: [{ size: 0.05, feather: 40, flow: 100, points: [[0.05, 0.5], [0.5, 0.52], [0.95, 0.5]] }],
+            },
+            adjustments: { exposure: -1, warmth: 0, clarity: 0 },
+          },
+        ],
+      },
+      "brush mask frame",
+    );
+    const unbrushedFrame = await show(beforeCrop, "frame without the brush mask", brushedFrame);
+    const brush =
+      brushedFrame && unbrushedFrame
+        ? {
+            bandDarker: Math.round((patchMean(unbrushedFrame, 0.48, 0.53, 0.1, 0.9) - patchMean(brushedFrame, 0.48, 0.53, 0.1, 0.9)) * 10) / 10,
+            topChange: Math.round((patchMean(brushedFrame, 0, 0.2, 0, 1) - patchMean(unbrushedFrame, 0, 0.2, 0, 1)) * 100) / 100,
+            renderMs: brushedFrame.frame.renderMs,
+          }
+        : null;
     const maskOk =
-      linearMaskOk && radial !== null && radial.edgesDarker > 5 && Math.abs(radial.middleChange) < 0.5;
+      linearMaskOk &&
+      radial !== null &&
+      radial.edgesDarker > 5 &&
+      Math.abs(radial.middleChange) < 0.5 &&
+      brush !== null &&
+      brush.bandDarker > 5 &&
+      Math.abs(brush.topChange) < 0.5;
 
     // A quarter turn (ADR 0039): the frame is the photo on its side.
     const framesBeforeTurn = frames.length;
@@ -642,6 +675,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       turn,
       mask,
       radial,
+      brush,
       chromaticAberration,
       histogram,
       autoLevel,

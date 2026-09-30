@@ -2,12 +2,20 @@ import { CloseIcon, EyeIcon, EyeOffIcon, PlusIcon } from "../../components/icons
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { LocalAdjustments } from "../../ipc/generated/LocalAdjustments";
 import type { MaskTool } from "./MaskTool";
-import { ADDABLE_KINDS, MASK_KINDS, maskName } from "./masks";
+import { ADDABLE_KINDS, MASK_KINDS, brushSizeFromSlider, maskName, sliderFromBrushSize } from "./masks";
 import { Slider } from "./Slider";
 import { formatSliderValue } from "./sliderTrack";
 import { WHITE_BALANCE_TRACKS } from "./whiteBalance";
 
 const LOCAL_KEYS = ["exposure", "warmth", "clarity"] as const;
+
+/** The brush's settings (ADR 0042): tool settings for the next stroke, not stored
+ *  until painted (each stroke keeps its own). */
+const BRUSH_SPECS: Record<"size" | "feather" | "flow", AdjustmentSpec> = {
+  size: { key: "size", label: "Size", group: "Brush", min: 1, max: 100, step: 1, default: 16, more: false, unit: "" },
+  feather: { key: "feather", label: "Feather", group: "Brush", min: 0, max: 100, step: 1, default: 50, more: false, unit: "" },
+  flow: { key: "flow", label: "Flow", group: "Brush", min: 1, max: 100, step: 1, default: 100, more: false, unit: "" },
+};
 const isLocalKey = (k: string): k is keyof LocalAdjustments => (LOCAL_KEYS as readonly string[]).includes(k);
 
 /**
@@ -62,7 +70,8 @@ export function SelectiveControls({
         })}
         {tool.masks.length === 0 && (
           <div className="mask-empty">
-            Adjust just part of the photo: a linear gradient to darken a sky, a radial one to lift a face or darken the edges.
+            Adjust just part of the photo: paint with a brush, darken a sky with a linear gradient, or lift a face with a
+            radial one.
           </div>
         )}
       </div>
@@ -87,6 +96,63 @@ export function SelectiveControls({
               );
             })}
           <div className="mask-shape-controls">
+            {active.shape.kind === "brush" && (
+              <>
+                <div className="brush-mode">
+                  <div className="segmented small" role="radiogroup" aria-label="Brush">
+                    {([false, true] as const).map((erase) => (
+                      <label key={String(erase)}>
+                        <input
+                          className="sr-only"
+                          type="radio"
+                          name="brush-mode"
+                          checked={tool.brush.erase === erase}
+                          disabled={disabled}
+                          onChange={() => tool.setBrush({ erase })}
+                        />
+                        {erase ? "Erase" : "Paint"}
+                      </label>
+                    ))}
+                  </div>
+                  <button
+                    className="ghost small"
+                    disabled={disabled || active.shape.strokes.length === 0}
+                    title="Remove everything painted in this mask"
+                    onClick={() => tool.setStrokes([])}
+                  >
+                    Clear
+                  </button>
+                </div>
+                <Slider
+                  id="brush-size"
+                  spec={BRUSH_SPECS.size}
+                  value={sliderFromBrushSize(tool.brush.size)}
+                  shown={String(sliderFromBrushSize(tool.brush.size))}
+                  zeroMark={false}
+                  disabled={disabled}
+                  onChange={(v) => tool.setBrush({ size: brushSizeFromSlider(v) })}
+                />
+                <Slider
+                  id="brush-feather"
+                  spec={BRUSH_SPECS.feather}
+                  value={tool.brush.feather}
+                  shown={String(tool.brush.feather)}
+                  zeroMark={false}
+                  disabled={disabled}
+                  onChange={(v) => tool.setBrush({ feather: v })}
+                />
+                <Slider
+                  id="brush-flow"
+                  spec={BRUSH_SPECS.flow}
+                  value={tool.brush.flow}
+                  shown={String(tool.brush.flow)}
+                  zeroMark={false}
+                  disabled={disabled}
+                  onChange={(v) => tool.setBrush({ flow: v })}
+                />
+                <p className="brush-hint">Paint on the photo. Hold Option to erase; [ and ] change the size.</p>
+              </>
+            )}
             {active.shape.kind === "radial" && (
               <Slider
                 id="mask-feather"

@@ -214,6 +214,34 @@ fn matches_scalar_reference_for_all_stages() {
                     clarity: 25.0,
                 },
             },
+            crate::masks::Mask {
+                id: 4,
+                hidden: false,
+                shape: crate::masks::MaskShape::Brush {
+                    strokes: vec![
+                        crate::masks::Stroke {
+                            erase: false,
+                            size: 0.06,
+                            feather: 60.0,
+                            flow: 80.0,
+                            points: vec![[0.1, 0.8], [0.5, 0.7], [0.9, 0.85]],
+                        },
+                        crate::masks::Stroke {
+                            erase: true,
+                            size: 0.03,
+                            feather: 30.0,
+                            flow: 100.0,
+                            points: vec![[0.5, 0.6], [0.5, 0.9]],
+                        },
+                    ],
+                },
+                invert: false,
+                adjustments: crate::masks::LocalAdjustments {
+                    exposure: 0.7,
+                    warmth: -25.0,
+                    clarity: 30.0,
+                },
+            },
         ],
         ..Default::default()
     };

@@ -40,7 +40,8 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 17: adds masks (ADR 0040), written only when there are some; older recipes have
 ///   none.
 /// - 18: adds radial masks, and inverted and hidden masks (ADR 0041).
-pub const RECIPE_VERSION: u32 = 18;
+/// - 19: adds brush masks (ADR 0042).
+pub const RECIPE_VERSION: u32 = 19;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -199,7 +200,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=18 => Ok(Self {
+            7..=19 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -347,7 +348,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":18,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":19,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -485,6 +486,32 @@ mod tests {
         assert_eq!(back.masks, masked.masks);
         assert!(!back.is_identity());
         assert!(!EditRecipe::default().to_json().contains("masks"));
+        // Brush strokes round-trip with their points.
+        let brushed = EditRecipe {
+            masks: vec![crate::masks::Mask {
+                id: 2,
+                hidden: false,
+                invert: false,
+                shape: crate::masks::MaskShape::Brush {
+                    strokes: vec![crate::masks::Stroke {
+                        erase: true,
+                        size: 0.05,
+                        feather: 40.0,
+                        flow: 70.0,
+                        points: vec![[0.25, 0.5], [0.3, 0.55]],
+                    }],
+                },
+                adjustments: Default::default(),
+            }],
+            ..Default::default()
+        };
+        assert!(brushed.to_json().contains(
+            r#""shape":{"kind":"brush","strokes":[{"erase":true,"size":0.05,"feather":40.0,"flow":70.0,"points":[[0.25,0.5],[0.3,0.55]]}]}"#
+        ));
+        assert_eq!(
+            EditRecipe::from_json(&brushed.to_json()).unwrap().masks,
+            brushed.masks
+        );
         // Version 14 recipes have no channel curves; a red curve round-trips, all
         // diagonals are dropped.
         assert_eq!(

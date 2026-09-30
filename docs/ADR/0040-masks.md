@@ -81,7 +81,6 @@ Recorded in ADR 0016:
 
 - Radial gradients and brushes add shape kinds. Everything downstream (stages,
   panel, overlay switch) is shared.
-- Brushes will need their strokes rasterised (and cached) rather than evaluated
-  analytically.
+- Brushes rasterise their strokes into a cached coverage map (ADR 0042).
 - Masks are in a frame that straighten and perspective change. If that shows with
   brushes, masks can move to source coordinates through the geometry's mapping.
