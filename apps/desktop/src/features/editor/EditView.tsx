@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon } from "../../components/icons";
+import { CompareIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../../ipc/generated/MarksDto";
@@ -10,6 +10,7 @@ import type { EditSavingDto } from "../../ipc/generated/EditSavingDto";
 import type { SaveState } from "./autosave";
 import { geometryEdited, isIdentity } from "./recipe";
 import { AdjustmentPanel } from "./AdjustmentPanel";
+import { CompareOverlay, useCompare } from "./Compare";
 import { CropOverlay, CropToolbar, GeometryControls, useCropTool } from "./CropTool";
 import { ChromaticAberrationToggle } from "./LensControls";
 import { Histogram } from "./Histogram";
@@ -49,18 +50,27 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
     setViewTransform: editor.setViewTransform,
   });
   const masks = useMaskTool({ recipe, imageId: image?.id ?? null, onChange: editor.setRecipe });
-  // One tool at a time: cropping or masking.
+  const compare = useCompare();
+  // One at a time: cropping, masking or comparing.
   const enterCrop = () => {
     masks.done();
+    compare.close();
     crop.enter();
   };
   const enterMasks = () => {
     crop.done();
+    compare.close();
     masks.enter();
   };
   const pickMask = (id: number) => {
     crop.done();
+    compare.close();
     masks.pick(id);
+  };
+  const toggleCompare = () => {
+    crop.done();
+    masks.done();
+    compare.toggle();
   };
   const frame = editor.displayed?.frame;
 
@@ -69,6 +79,12 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (hasCommandModifier(e) || isTextEntry(e.target) || e.target instanceof HTMLInputElement) return;
+      // \ shows the photo before and after editing, as in other editors.
+      if (e.key === "\\" && image) {
+        toggleCompare();
+        e.preventDefault();
+        return;
+      }
       if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
         onStep(e.key === "ArrowLeft" ? -1 : 1);
         e.preventDefault();
@@ -82,7 +98,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [marks, onMark, onStep]);
+  }, [marks, onMark, onStep, image, toggleCompare]);
   const exif = image
     ? [
         image.iso != null ? `ISO ${image.iso}` : null,
@@ -148,11 +164,13 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
               <CropOverlay tool={crop} />
             ) : masks.open && frame ? (
               <MaskOverlay tool={masks} size={{ width: frame.fullWidth, height: frame.fullHeight }} />
+            ) : compare.open && image && recipe && info ? (
+              <CompareOverlay compare={compare} editor={editor} recipe={recipe} specs={info.adjustments} />
             ) : undefined
           }
         />
-        {/* The design's floating toolbar under the photo (zoom, masks and compare join
-            it as they are built); while cropping, the crop toolbar takes its place. */}
+        {/* The design's floating toolbar under the photo (zoom joins it when built);
+            while cropping or masking, that tool's toolbar takes its place. */}
         <div className="photo-toolbar-strip">
           {crop.open && info ? (
             <CropToolbar tool={crop} straighten={info.straighten} />
@@ -168,6 +186,10 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
                 <button className="tool-button" title="Masks" onClick={enterMasks}>
                   <MaskIcon size={15} />
                   Masks
+                </button>
+                <button className="tool-button" title={"Before / after (\\)"} aria-pressed={compare.open} onClick={toggleCompare}>
+                  <CompareIcon size={15} />
+                  Compare
                 </button>
                 {marks && (
                   <>

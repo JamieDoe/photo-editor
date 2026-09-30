@@ -30,7 +30,7 @@ pub use thumbnails::{
 };
 pub use types::{
     EmbeddedFrame, EngineInfo, ExportProgress, ExportRequest, ExportStage, ExportSummary, ImageId,
-    ImageSummary, PreviewFrame, PreviewRequest,
+    ImageSummary, PreviewFrame, PreviewRequest, PreviewSlot,
 };
 
 // Re-exported so shells depend on one crate for the engine API.

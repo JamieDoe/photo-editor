@@ -118,6 +118,13 @@ export const RefreshIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const CompareIcon = (p: IconProps) => (
+  <Icon size={15} {...p}>
+    <rect x="2" y="3" width="12" height="10" rx="2" />
+    <path d="M8 1.5v13" />
+  </Icon>
+);
+
 export const OpenIcon = (p: IconProps) => (
   <Icon size={15} {...p}>
     <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3L8 4.5h4.5A1.5 1.5 0 0 1 14 6v1" />

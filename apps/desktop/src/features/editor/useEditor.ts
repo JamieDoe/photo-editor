@@ -231,6 +231,23 @@ export function useEditor() {
     [],
   );
 
+  /** Renders `r` for the before/after comparison (ADR 0045), in its own slot so it
+   *  and the edit's renders never cancel each other. Rejects with a cancellation if
+   *  another photo was opened meanwhile. */
+  const renderCompare = useCallback(async (r: EditRecipe, longEdge: number) => {
+    const img = imageRef.current;
+    if (!img) throw ipc.staleError();
+    const frame = await ipc.renderPreview({
+      imageId: img.id,
+      recipe: r,
+      quality: "detail",
+      targetLongEdge: Math.max(64, Math.round(longEdge)),
+      slot: "compare",
+    });
+    if (imageRef.current?.id !== img.id) throw ipc.staleError();
+    return frame;
+  }, []);
+
   const subscribeFrames = useCallback((l: FrameListener) => {
     listenersRef.current.add(l);
     return () => listenersRef.current.delete(l);
@@ -255,6 +272,7 @@ export function useEditor() {
     setTargetLongEdge,
     setViewTransform,
     subscribeFrames,
+    renderCompare,
     schedulerStats: (): SchedulerStats =>
       schedulerRef.current?.stats() ?? { requested: 0, shown: 0, superseded: 0, stale: 0, errors: 0 },
     clearError: () => setError(null),

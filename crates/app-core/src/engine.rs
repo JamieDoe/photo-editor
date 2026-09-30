@@ -16,13 +16,15 @@ use crate::previews::PreviewCache;
 use crate::session::{OpenImages, OpenedImage};
 use crate::{
     EmbeddedFrame, EngineConfig, EngineError, EngineInfo, ExportProgress, ExportRequest,
-    ExportStage, ExportSummary, ImageId, ImageSummary, PreviewFrame, PreviewRequest,
+    ExportStage, ExportSummary, ImageId, ImageSummary, PreviewFrame, PreviewRequest, PreviewSlot,
     SourceIdentity,
 };
 
 /// Supersede key for the main viewer's preview renders: a new request cancels the
 /// previous one whether it is interactive or detail quality.
 const VIEWER_PREVIEW_KEY: &str = "viewer-preview";
+/// Supersede key for the comparison's before renders (ADR 0045).
+const COMPARE_PREVIEW_KEY: &str = "compare-preview";
 const OPEN_KEY: &str = "open";
 const RGBA_FORMAT_TAG: u8 = 0;
 const INTERACTIVE_UNDERSAMPLE_PERCENT: u32 = 85;
@@ -172,6 +174,16 @@ impl Engine {
     /// Renders a preview. Cache hits complete immediately; otherwise the render runs on
     /// the interactive lane and supersedes the previous viewer render.
     pub fn render_preview(&self, req: PreviewRequest) -> JobHandle<PreviewFrame, EngineError> {
+        self.render_preview_in(req, PreviewSlot::Viewer)
+    }
+
+    /// Renders a preview for `slot`: as [`Engine::render_preview`], superseding only the
+    /// previous render for the same slot. Compare renders yield to the viewer's.
+    pub fn render_preview_in(
+        &self,
+        req: PreviewRequest,
+        slot: PreviewSlot,
+    ) -> JobHandle<PreviewFrame, EngineError> {
         let Some(image) = self
             .shared
             .images
@@ -216,9 +228,10 @@ impl Engine {
                 format!("thumbnail-{}", req.image.0),
                 Priority::VisibleThumbnail,
             ),
-            PreviewQuality::Interactive | PreviewQuality::Detail => {
-                (VIEWER_PREVIEW_KEY.to_owned(), Priority::Interactive)
-            }
+            PreviewQuality::Interactive | PreviewQuality::Detail => match slot {
+                PreviewSlot::Viewer => (VIEWER_PREVIEW_KEY.to_owned(), Priority::Interactive),
+                PreviewSlot::Compare => (COMPARE_PREVIEW_KEY.to_owned(), Priority::VisiblePreview),
+            },
         };
 
         if let Some(hit) = self
