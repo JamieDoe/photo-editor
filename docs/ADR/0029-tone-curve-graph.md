@@ -1,6 +1,6 @@
 # ADR 0029: The tone curve as a graph of the Light controls
 
-- Status: Accepted (Phase 4, milestone 7)
+- Status: Superseded by ADR 0037 (the graph is now the photographer's editable curve)
 - Date: 2026-09-29
 
 ## Context

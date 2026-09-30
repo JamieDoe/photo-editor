@@ -31,7 +31,9 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   geometry reads them as 0.
 /// - 13: adds chromatic aberration removal (ADR 0035), written only when on; older
 ///   recipes have none.
-pub const RECIPE_VERSION: u32 = 13;
+/// - 14: adds the tone curve's points (ADR 0037), written only when shaped; older
+///   recipes have none.
+pub const RECIPE_VERSION: u32 = 14;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -92,6 +94,11 @@ pub struct EditRecipe {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub chromatic_aberration: Option<crate::chromatic::ChromaticAberration>,
+    /// The tone curve's points, `[input, output]` display tones. `None` (and omitted
+    /// from the JSON) while it is the diagonal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional, type = "Array<[number, number]>"))]
+    pub point_curve: Option<crate::ops::point_curve::PointCurve>,
     /// The base look the adjustments start from.
     pub look: Look,
 }
@@ -120,6 +127,7 @@ impl Default for EditRecipe {
             mixer: None,
             geometry: None,
             chromatic_aberration: None,
+            point_curve: None,
             look: Look::Standard,
         }
     }
@@ -172,7 +180,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=13 => Ok(Self {
+            7..=14 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -214,6 +222,7 @@ impl EditRecipe {
                 .filter(|g| !g.is_identity()),
             // Kept while on, even if nothing was measured: the toggle stays on.
             chromatic_aberration: self.chromatic_aberration.map(|c| c.sanitized()),
+            point_curve: self.point_curve.filter(|c| !c.is_identity()),
             look: self.look,
         }
     }
@@ -264,6 +273,7 @@ impl EditRecipe {
             && s.mixer.is_none()
             && s.geometry.is_none()
             && s.chromatic_aberration.is_none()
+            && s.point_curve.is_none()
             && s.look == Look::default()
     }
 }
@@ -307,7 +317,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":13,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":14,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -415,6 +425,33 @@ mod tests {
             EditRecipe::from_json(r#"{"version":10}"#).unwrap().geometry,
             None
         );
+        // Version 13 recipes have no tone curve; a shaped one round-trips, the
+        // diagonal is dropped.
+        assert_eq!(
+            EditRecipe::from_json(r#"{"version":13}"#)
+                .unwrap()
+                .point_curve,
+            None
+        );
+        let curve =
+            crate::ops::point_curve::PointCurve::new(&[[0.0, 0.05], [0.5, 0.6], [1.0, 1.0]]);
+        let shaped = EditRecipe {
+            point_curve: Some(curve),
+            ..Default::default()
+        };
+        assert!(
+            shaped
+                .to_json()
+                .contains(r#""pointCurve":[[0.0,0.05],[0.5,0.6],[1.0,1.0]]"#)
+        );
+        let back = EditRecipe::from_json(&shaped.to_json()).unwrap();
+        assert_eq!(back.point_curve, Some(curve));
+        assert!(!back.is_identity());
+        let diagonal = EditRecipe {
+            point_curve: Some(Default::default()),
+            ..Default::default()
+        };
+        assert!(diagonal.is_identity() && !diagonal.to_json().contains("pointCurve"));
         // Version 12 recipes have no chromatic aberration removal.
         assert_eq!(
             EditRecipe::from_json(r#"{"version":12}"#)

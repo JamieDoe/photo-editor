@@ -99,6 +99,11 @@ geometry?: Geometry,
  */
 chromaticAberration?: ChromaticAberration, 
 /**
+ * The tone curve's points, `[input, output]` display tones. `None` (and omitted
+ * from the JSON) while it is the diagonal.
+ */
+pointCurve?: Array<[number, number]>, 
+/**
  * The base look the adjustments start from.
  */
 look: Look, };

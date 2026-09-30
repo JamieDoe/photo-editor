@@ -555,3 +555,18 @@ load about 4:
 - Each frame gains 4 KB.
 - Release self-test, Nikon Z 6: all 162 viewer frames carried a histogram that counted
   every pixel. The interactive render median was 30 ms, as before (§22).
+
+## 26. Tone curve (ADR 0037)
+
+A full render of a 1516×1010 frame (default look, no sharpening), median of 40, three
+rounds, machine load about 7:
+
+| Case | ms |
+|---|---|
+| No curve | 1.75–2.23 |
+| With a four-point curve | 2.64–2.93 |
+
+- The cost is the 4096-entry lookup table built for each render, plus one lookup per
+  channel per pixel.
+- Release self-test, Nikon Z 6: a render with a curve took 5.6 ms. The frame's mean
+  luminance rose from 155 to 192.

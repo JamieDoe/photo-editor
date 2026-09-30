@@ -17,7 +17,6 @@ pub mod ops;
 mod plan;
 mod quality;
 mod recipe;
-mod tone_curve;
 
 pub use backend::{RenderBackend, RenderError};
 pub use chromatic::ChromaticAberration;
@@ -30,7 +29,6 @@ pub use ops::white_balance::TemperatureScale;
 pub use plan::{OutputTransform, RenderPlan, Stage};
 pub use quality::{PreviewQuality, QualityLimits};
 pub use recipe::{EditRecipe, RECIPE_VERSION, RecipeError};
-pub use tone_curve::tone_curve;
 
 /// Version of the rendering algorithms. Bump whenever the same recipe would produce
 /// different pixels, so caches are invalidated and old edits can be migrated.

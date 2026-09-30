@@ -118,6 +118,9 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                 Stage::Exposure { multiplier } => rgb.map(|c| c * multiplier),
                 Stage::Contrast { gamma } => rgb.map(|c| ops::contrast::apply(c, gamma)),
                 Stage::BaseCurve => rgb.map(ops::look::standard),
+                Stage::PointCurve { curve } => rgb.map(|c| {
+                    color::srgb_to_linear(curve.eval(color::linear_to_srgb(c.clamp(0.0, 1.0))))
+                }),
                 Stage::Saturation { factor } => ops::saturation::apply(rgb, factor),
                 Stage::Vibrance { amount } => ops::vibrance::apply(rgb, amount),
                 Stage::ColourMixer { bands } => {
@@ -150,6 +153,12 @@ fn matches_scalar_reference_for_all_stages() {
         noise_reduction: 70.0,
         vignette: -40.0,
         grain: 30.0,
+        point_curve: Some(crate::ops::point_curve::PointCurve::new(&[
+            [0.05, 0.0],
+            [0.3, 0.24],
+            [0.7, 0.8],
+            [1.0, 0.95],
+        ])),
         ..Default::default()
     };
     let plan = RenderPlan::from_recipe(&recipe, None);

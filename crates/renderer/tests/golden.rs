@@ -130,6 +130,18 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
             },
         ),
         (
+            "tone_curve_s",
+            EditRecipe {
+                point_curve: Some(renderer::ops::point_curve::PointCurve::new(&[
+                    [0.0, 0.03],
+                    [0.25, 0.18],
+                    [0.75, 0.85],
+                    [1.0, 0.97],
+                ])),
+                ..r
+            },
+        ),
+        (
             "chromatic_aberration",
             EditRecipe {
                 chromatic_aberration: Some(renderer::ChromaticAberration {

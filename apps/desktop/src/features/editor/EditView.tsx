@@ -16,7 +16,6 @@ import { Histogram } from "./Histogram";
 import { PanelSection } from "./PanelSection";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
-import { useToneCurve } from "./useToneCurve";
 import { Viewer } from "./Viewer";
 
 interface Props {
@@ -34,7 +33,8 @@ interface Props {
 /** The Edit mode: photograph in the centre, adjustments on the right. */
 export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }: Props) {
   const { info, image, recipe, busy } = editor;
-  const toneCurve = useToneCurve(recipe);
+  // The histogram of what the viewer shows, for the panel's graph and the tone curve.
+  const histogram = image && editor.displayed?.imageId === image.id ? editor.displayed.frame.histogram : null;
   const fullSize = useMemo(
     () => (image ? { width: image.fullWidth, height: image.fullHeight } : null),
     [image?.fullWidth, image?.fullHeight],
@@ -143,7 +143,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
       </div>
       <aside className="panel-right" aria-label="Adjustments">
         <Histogram
-          histogram={image && editor.displayed?.imageId === image.id ? editor.displayed.frame.histogram : null}
+          histogram={histogram}
           specs={info?.adjustments ?? []}
           recipe={recipe}
           onChange={editor.setRecipe}
@@ -156,7 +156,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
             <AdjustmentPanel
               specs={info.adjustments}
               mixerSpec={info.mixer}
-              toneCurve={toneCurve}
+              histogram={histogram}
               recipe={recipe}
               onChange={editor.setRecipe}
               disabled={!image}

@@ -4,6 +4,7 @@ use crate::chromatic::ChromaticAberration;
 use crate::geometry::Geometry;
 use crate::ops::colour_mixer::HslShift;
 use crate::ops::detail::DetailParams;
+use crate::ops::point_curve::PointCurve;
 use crate::ops::tone::ToneParams;
 use crate::ops::{contrast, saturation, white_balance};
 use image_core::Chromaticity;
@@ -38,6 +39,9 @@ pub enum Stage {
     Contrast { gamma: f32 },
     /// The Standard base look's tone curve, per channel (ADR 0022).
     BaseCurve,
+    /// The photographer's tone curve (ADR 0037), per channel on display tones, after
+    /// the base look.
+    PointCurve { curve: PointCurve },
     /// Hue, saturation and luminance per colour band (ADR 0025), in band order.
     ColourMixer { bands: [HslShift; 8] },
     /// Chroma boost weighted towards muted colours, sparing skin (-1..1).
@@ -60,6 +64,7 @@ impl Stage {
             Self::Grain { .. } => "grain",
             Self::Contrast { .. } => "contrast",
             Self::BaseCurve => "base_curve",
+            Self::PointCurve { .. } => "point_curve",
             Self::ColourMixer { .. } => "colour_mixer",
             Self::Vibrance { .. } => "vibrance",
             Self::Saturation { .. } => "saturation",
@@ -149,6 +154,9 @@ impl RenderPlan {
         }
         if r.look == Look::Standard {
             stages.push(Stage::BaseCurve);
+        }
+        if let Some(curve) = r.point_curve.filter(|c| !c.is_identity()) {
+            stages.push(Stage::PointCurve { curve });
         }
         if let Some(mixer) = r.mixer {
             stages.push(Stage::ColourMixer {

@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use image_core::LinearImage;
-use image_core::color::REC709_LUMA;
+use image_core::color::{REC709_LUMA, linear_to_srgb, srgb_to_linear};
 
 use super::lut::CurveLut;
 use crate::chromatic::ChromaticAberration;
@@ -707,6 +707,9 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
                 }))));
             }
             Stage::BaseCurve => out.push(Kernel::Curve(Box::new(CurveLut::build(look::standard)))),
+            Stage::PointCurve { curve } => out.push(Kernel::Curve(Box::new(CurveLut::held(|x| {
+                srgb_to_linear(curve.eval(linear_to_srgb(x)))
+            })))),
             Stage::Dehaze { amount } => {
                 let model = cached_dehaze(source, gains_so_far, amount);
                 let columns = model.map().columns(source.width() as usize);

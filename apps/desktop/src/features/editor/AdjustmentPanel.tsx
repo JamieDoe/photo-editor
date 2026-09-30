@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { ChevronIcon, ColourIcon, DetailIcon, LightIcon } from "../../components/icons";
+import type { FrameHistogram } from "../../ipc/frame";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { Look } from "../../ipc/generated/Look";
@@ -16,8 +17,9 @@ import { formatKelvin, kelvinAt, WHITE_BALANCE_TRACKS } from "./whiteBalance";
 interface Props {
   specs: AdjustmentSpec[];
   mixerSpec: MixerSpec;
-  /** The tone curve graph's points (see `useToneCurve`); null until known. */
-  toneCurve: number[] | null;
+  /** The shown frame's histogram, drawn behind the tone curve; null before the first
+   *  render. */
+  histogram: FrameHistogram | null;
   recipe: EditRecipe;
   onChange: (r: EditRecipe) => void;
   disabled: boolean;
@@ -41,7 +43,7 @@ const GROUP_ICONS: Record<string, ReactNode> = {
  * An edited value can be reset by clicking it (it reads “Reset” on hover) or by
  * double-clicking the slider.
  */
-export function AdjustmentPanel({ specs, mixerSpec, toneCurve, recipe, onChange, disabled, temperatureScale }: Props) {
+export function AdjustmentPanel({ specs, mixerSpec, histogram, recipe, onChange, disabled, temperatureScale }: Props) {
   const groups = [...new Set(specs.map((s) => s.group))];
   const valueOf = (spec: AdjustmentSpec) => (isAdjustmentKey(spec.key) ? recipe[spec.key] : spec.default);
   // As in the design, Temperature reads as the light it assumes ("5650 K").
@@ -75,10 +77,14 @@ export function AdjustmentPanel({ specs, mixerSpec, toneCurve, recipe, onChange,
         const groupSpecs = specs.filter((s) => s.group === group && isAdjustmentKey(s.key));
         // As in the design, the colour mixer is the Colour section's "More controls".
         // As in the design, the tone curve graph heads the Light section's "More
-        // controls", above Whites, Blacks and Dehaze.
+        // controls", above Whites, Blacks and Dehaze. It is editable (ADR 0037).
         const curve =
           group === "Light"
-            ? { edited: false, before: true, content: <ToneCurve points={toneCurve} /> }
+            ? {
+                edited: recipe.pointCurve !== undefined,
+                before: true,
+                content: <ToneCurve recipe={recipe} onChange={onChange} disabled={disabled} histogram={histogram} />,
+              }
             : undefined;
         // As in the design, the Detail section's "More controls" are headed "Finishing".
         const finishing =
@@ -100,7 +106,8 @@ export function AdjustmentPanel({ specs, mixerSpec, toneCurve, recipe, onChange,
                 ),
               }
             : undefined;
-        const edited = groupSpecs.some((s) => valueOf(s) !== s.default) || (mixer?.edited ?? false);
+        const edited =
+          groupSpecs.some((s) => valueOf(s) !== s.default) || (mixer?.edited ?? false) || (curve?.edited ?? false);
         return (
           <PanelSection key={group} title={group} icon={GROUP_ICONS[group] ?? <DetailIcon />} edited={edited}>
             <GroupSliders
