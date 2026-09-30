@@ -485,3 +485,27 @@ fn preview_cache_budget_can_shrink_at_runtime() {
     assert!(stats.used_bytes <= stats.budget_bytes, "{stats:?}");
     assert_eq!(stats.budget_bytes, 800 * 600 * 4 * 2);
 }
+
+#[test]
+fn viewer_frames_carry_their_histogram() {
+    let dir = fixtures::TempDir::new("engine-histogram");
+    let path = write(dir.path(), "chart.jpg", fixtures::chart_jpeg(800, 500, 90));
+    let engine = engine();
+    let s = engine.open(&path).wait().unwrap();
+    for quality in [PreviewQuality::Interactive, PreviewQuality::Detail] {
+        let frame = preview(&engine, s.id, EditRecipe::default(), quality);
+        let h = frame.histogram.expect("a histogram");
+        let pixels = u64::from(frame.image.width() * frame.image.height());
+        assert_eq!(h.total(), pixels, "{quality:?}");
+        // A cache hit brings one too.
+        let again = preview(&engine, s.id, EditRecipe::default(), quality);
+        assert!(again.cache_hit && again.histogram.as_deref() == Some(&*h));
+    }
+    let thumb = preview(
+        &engine,
+        s.id,
+        EditRecipe::default(),
+        PreviewQuality::Thumbnail,
+    );
+    assert!(thumb.histogram.is_none());
+}

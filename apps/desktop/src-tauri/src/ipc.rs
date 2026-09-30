@@ -22,7 +22,8 @@ pub const EXPORT_EVENT: &str = "export://event";
 /// | 16     | f32  | render / extract time in ms   |
 /// | 20     | u32  | full-resolution output width  |
 /// | 24     | u32  | full-resolution output height |
-/// | 28     | u8[] | RGBA8 pixels, width*height*4  |
+/// | 28     | u32[]| histogram, if `FRAME_FLAG_HISTOGRAM`: red, green, blue, luma counts, 256 each |
+/// | …      | u8[] | RGBA8 pixels, width*height*4  |
 ///
 /// The full-resolution size is the recipe's output (after crop) at the photo's full
 /// size: the exact shape of the picture, which preview levels only approximate.
@@ -30,6 +31,8 @@ pub const EXPORT_EVENT: &str = "export://event";
 pub const FRAME_HEADER_BYTES: usize = 28;
 /// The frame was served from the preview cache.
 pub const FRAME_FLAG_CACHE_HIT: u32 = 1;
+/// A histogram (`renderer::histogram::ENCODED_BYTES`) follows the header (ADR 0036).
+pub const FRAME_FLAG_HISTOGRAM: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

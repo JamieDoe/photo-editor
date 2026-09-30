@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use cache::{CacheStats, RenderKey};
-use image_core::{PixelFormat, Pyramid};
+use image_core::{OutputImage, PixelFormat, Pyramid};
 use jobs::{CancelToken, JobHandle, JobSpec, JobSystem, Lane, Priority};
 use raw::{DecodeOptions, DecodeScale, DecoderRegistry};
 use renderer::{
@@ -227,7 +227,9 @@ impl Engine {
         {
             // The request is satisfied; anything still rendering for this slot is obsolete.
             self.jobs.cancel_key(&supersede_key);
+            let histogram = viewer_histogram(req.quality, &hit);
             let frame = PreviewFrame {
+                histogram,
                 image: hit,
                 level: level_index,
                 cache_hit: true,
@@ -248,6 +250,7 @@ impl Engine {
                 .render(&plan, &level, PixelFormat::Rgba8, token)?;
             let render_ms = ms(t0);
             let out = Arc::new(out);
+            let histogram = viewer_histogram(quality, &out);
             shared.previews.lock().expect("preview cache lock").insert(
                 key,
                 Arc::clone(&out),
@@ -259,6 +262,7 @@ impl Engine {
                 cache_hit: false,
                 render_ms,
                 full_size: full_output,
+                histogram,
             })
         })
     }
@@ -518,6 +522,15 @@ impl Shared {
             total_ms,
         })
     }
+}
+
+/// The histogram the editor's graph shows, for viewer frames only (thumbnails have no
+/// use for one). One parallel pass over the frame.
+fn viewer_histogram(
+    quality: PreviewQuality,
+    image: &OutputImage,
+) -> Option<Arc<renderer::Histogram>> {
+    (quality != PreviewQuality::Thumbnail).then(|| Arc::new(renderer::Histogram::of(image)))
 }
 
 fn ms(since: Instant) -> f64 {

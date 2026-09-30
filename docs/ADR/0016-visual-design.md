@@ -72,6 +72,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Edit header: name, mono file details, "● Edited", "N of M" counter | as designed |
 | Floating photo toolbar under the photo: rating stars, pick, reject | as designed (zoom, crop, masks and compare to follow) |
 | Panel: exposure strip, collapsible sections, sliders with reset-on-hover | as designed |
+| Histogram above the exposure details: red, green and blue filled, luminance line, clipping triangles | as designed (ADR 0036), and draggable as in Lightroom |
 | Light section: Exposure (in EV), Contrast, Highlights, Shadows; "More controls" with the tone curve graph, then Whites, Blacks and Dehaze | as designed (the curve is the renderer's real response, ADR 0029) |
 | Colour section: Temperature in kelvin on a blue–amber track, Tint on a green–magenta track, Vibrance, Saturation | as designed |
 | Detail section: Texture, Clarity, Sharpening (default 40), Noise reduction; "More controls" headed "Finishing" with Vignette and Grain | as designed |
@@ -95,12 +96,13 @@ existing screens to the design now, and to match it for every screen built from 
 | Colour mixer | Accent mark on the dots of edited ranges | Otherwise an edit in a range not on screen is invisible |
 | Crop mode | Handles sit just inside the rectangle (design: 3 px outside); the crop view is the largest straightened area in the photo's shape | Handles stay whole at the photo's edge; no empty corners can be chosen (ADR 0032) |
 | Auto level | A status line under the button / above the crop toolbar | The design shows a toast; the app has no toast system yet (ADR 0033) |
+| Histogram | Dragging adjusts Blacks, Shadows, Exposure, Highlights or Whites by zone; hovering tints the zone and shows its name and value in place of the exposure details; multiply blending on the light theme | Requested (Lightroom's behaviour); the readout says what a drag will change; the design is dark only |
 | Remove chromatic aberration | The switch's subtitle says "Measuring…" and then the result, for three seconds | Turning it on measures the photo; the design has no in-progress state |
 | Settings | Whole screen (grouped cards, segmented controls) | The design has no settings; built from its tokens and components |
 
 ### Not built yet (and so not shown)
 
-Search, Recently imported, albums, histogram, presets and Auto, masks, compare, zoom,
+Search, Recently imported, albums, presets and Auto, masks, compare, zoom,
 the filmstrip, batch selection, the Export dialog, and the Lens correction switch.
 
 ## Consequences
