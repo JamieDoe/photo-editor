@@ -915,9 +915,11 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const presetFile = `${dir}photo-editor-self-test.preset`;
       const lightroomFile = config.imagePath.replace(/[/\\]local[/\\][^/\\]+$/, "/presets/lightroom-sample.xmp");
       const written = await ipc.exportPreset(saved.id, presetFile);
-      const imports = await ipc.importPresets([presetFile, lightroomFile, `${dir}missing.xmp`]);
+      const lrtemplateFile = lightroomFile.replace(/\.xmp$/, ".lrtemplate");
+      const imports = await ipc.importPresets([presetFile, lightroomFile, lrtemplateFile, `${dir}missing.xmp`]);
       const roundTrip = imports.imported.find((i) => !i.fromLightroom);
-      const fromLightroom = imports.imported.find((i) => i.fromLightroom);
+      const fromLightroom = imports.imported.find((i) => i.fromLightroom && i.preset.name === "Soft & Warm");
+      const fromLrtemplate = imports.imported.find((i) => i.fromLightroom && i.preset.name !== "Soft & Warm");
       for (const i of imports.imported) await ipc.deletePreset(i.preset.id);
       await ipc.deletePreset(saved.id);
       const after = await ipc.listPresets();
@@ -942,6 +944,9 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
           lightroom: fromLightroom
             ? { name: fromLightroom.preset.name, contrast: fromLightroom.preset.recipe.contrast, leftOut: fromLightroom.leftOut }
             : null,
+          lrtemplate: fromLrtemplate
+            ? { name: fromLrtemplate.preset.name, kelvin: fromLrtemplate.preset.recipe.whiteBalance?.kelvin ?? null }
+            : null,
           failed: imports.failed.map((f) => f.file),
         },
       };
@@ -963,7 +968,9 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       presetCheck.files.lightroom?.name === "Soft & Warm" &&
       presetCheck.files.lightroom.contrast === 18 &&
       presetCheck.files.lightroom.leftOut.includes("Color Grading") &&
-      presetCheck.files.failed.join() === "missing.xmp";
+      presetCheck.files.failed.join() === "missing.xmp" &&
+      presetCheck.files.lrtemplate?.name === 'Faded "Film"' &&
+      presetCheck.files.lrtemplate.kelvin === 5200;
 
     // Copy and paste (ADR 0048) through the panel footer and ⇧⌘V: the look comes
     // across, the crop does not (left out by default), as one undo step.
@@ -1012,6 +1019,30 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       copyPasteCheck.exposurePasted &&
       copyPasteCheck.cropLeftOut &&
       copyPasteCheck.undoLabel === "Paste";
+
+    // White balance set as a light (ADR 0051), on the real raw file: the photo's own
+    // as-shot light changes nothing; a warmer light warms it (more red than blue).
+    const lightCheck = await (async () => {
+      const scale = driver.editor().image?.temperatureScale;
+      if (!scale) return null;
+      const base = { ...beforeCrop, masks: undefined, temperature: 0, tint: 0 };
+      const plain = await show(base, "frame with relative white balance");
+      const same = await show({ ...base, whiteBalance: { kelvin: scale.asShotKelvin, tint: scale.asShotTint } }, "as-shot light", plain);
+      const warmer = await show({ ...base, whiteBalance: { kelvin: scale.asShotKelvin + 2000, tint: scale.asShotTint } }, "warmer light", plain);
+      const warmth = (f: RenderedFrame | null) => (f ? meanOf(f, "red") - meanOf(f, "green") : null);
+      return {
+        asShotKelvin: Math.round(scale.asShotKelvin),
+        sameChange: plain && same ? Math.round((meanLuma(same) - meanLuma(plain)) * 100) / 100 : null,
+        warmerRedLift: warmth(warmer) !== null && warmth(plain) !== null ? Math.round((warmth(warmer)! - warmth(plain)!) * 10) / 10 : null,
+      };
+    })();
+    driver.editor().setRecipe(beforeCrop);
+    const lightOk =
+      lightCheck !== null &&
+      lightCheck.sameChange !== null &&
+      Math.abs(lightCheck.sameChange) < 0.5 &&
+      lightCheck.warmerRedLift !== null &&
+      lightCheck.warmerRedLift > 3;
 
     // Shapes combined (ADR 0043): -1 EV over the top, less a hard circle at its
     // middle. Inside the circle unchanged, beside it darker.
@@ -1165,6 +1196,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       presets: presetOk,
       batch: batchOk,
       exportQueue: exportQueueOk,
+      whiteBalanceLight: lightOk,
       copyPaste: copyPasteOk,
       crop: cropOk,
       perspective: perspectiveOk,
@@ -1196,6 +1228,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       presets: presetCheck,
       batch,
       exportQueue,
+      whiteBalanceLight: lightCheck,
       copyPaste: copyPasteCheck,
       crop,
       perspective,
