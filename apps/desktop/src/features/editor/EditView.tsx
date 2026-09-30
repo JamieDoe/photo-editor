@@ -17,6 +17,7 @@ import { Histogram } from "./Histogram";
 import { MaskOverlay, MaskToolbar, useMaskTool } from "./MaskTool";
 import { SelectiveControls } from "./SelectiveControls";
 import { PanelSection } from "./PanelSection";
+import { PresetStrip } from "./PresetStrip";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
 import { Viewer } from "./Viewer";
@@ -249,6 +250,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
           details={exif}
           emptyDetails={image ? "No exposure details" : ""}
         />
+        <PresetStrip editor={editor} recipe={recipe} disabled={!image} />
         <div className="panel-scroll scroll">
           {info && recipe && (
             <AdjustmentPanel

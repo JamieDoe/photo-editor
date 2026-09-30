@@ -9,6 +9,7 @@ mod edits;
 mod engine;
 mod error;
 mod library;
+mod presets;
 mod previews;
 mod session;
 mod thumbnails;
@@ -16,7 +17,7 @@ mod types;
 
 pub use catalogue::{
     BackupInfo, BackupKind, BackupStore, Catalogue, CatalogueError, Collection, CollectionCounts,
-    CollectionEntry, FileStatus, Flag, MarkChange, Marks, PhotoDetails, PhotoId, Rating,
+    CollectionEntry, FileStatus, Flag, MarkChange, Marks, PhotoDetails, PhotoId, PresetId, Rating,
     SourceIdentity, StoredEdit, newest_valid,
 };
 pub use catalogue::{SCHEMA_VERSION, schema_version_of};
@@ -25,6 +26,10 @@ pub use edits::{SavedEdit, load_edit, save_edit};
 pub use engine::Engine;
 pub use error::{EngineError, ErrorKind};
 pub use library::{IndexProgress, IndexStage, IndexSummary};
+pub use presets::{
+    MAX_PRESET_NAME, Preset, PresetRef, create_preset, delete_preset, list_presets, rename_preset,
+    update_preset,
+};
 pub use thumbnails::{
     BatchSummary, Pregenerated, THUMBNAIL_LONG_EDGE, Thumbnail, ThumbnailBatch, ThumbnailSource,
 };

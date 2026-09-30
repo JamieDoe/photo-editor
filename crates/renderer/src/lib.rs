@@ -16,6 +16,7 @@ pub mod histogram;
 pub mod masks;
 pub mod ops;
 mod plan;
+pub mod presets;
 mod quality;
 mod recipe;
 

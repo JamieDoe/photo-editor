@@ -3,4 +3,4 @@
 /**
  * Which view a preview is for: each cancels only its own earlier renders.
  */
-export type PreviewSlotDto = "viewer" | "compare";
+export type PreviewSlotDto = "viewer" | "compare" | "presets";

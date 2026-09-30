@@ -130,8 +130,46 @@ function counts() {
   };
 }
 
+/** Dev-only presets: the built-in names (their recipes come from Rust in the app) and
+ *  any saved in this page. */
+const neutral = { version: 20, exposure: 0, contrast: 0, highlights: 0, shadows: 0, whites: 0, blacks: 0, dehaze: 0, temperature: 0, tint: 0, vibrance: 0, saturation: 0, texture: 0, clarity: 0, sharpening: 40, noiseReduction: 0, vignette: 0, grain: 0, look: "standard" };
+let mockPresets = [
+  ["natural", "Natural", { vibrance: 12, contrast: 8, shadows: 10 }],
+  ["vivid", "Vivid", { contrast: 25, vibrance: 35, saturation: 10, clarity: 15 }],
+  ["warm-film", "Warm film", { temperature: 30, contrast: -10, blacks: 25, saturation: -10, vignette: -25, highlights: -20 }],
+  ["matte", "Matte", { contrast: -25, blacks: 40, saturation: -15 }],
+  ["mono", "Mono", { saturation: -100, contrast: 30, clarity: 20 }],
+  ["cool-fade", "Cool fade", { temperature: -30, tint: 6, blacks: 30, contrast: -15 }],
+].map(([id, name, v]) => ({ id: `builtin:${id as string}`, name: name as string, builtIn: true, recipe: { ...neutral, ...(v as object) } as Record<string, unknown> }));
+let nextPresetId = 1;
+const lookOnly = (r: Record<string, unknown>) => {
+  const { geometry: _g, chromaticAberration: _c, masks: _m, ...look } = r;
+  return { ...look, exposure: 0 };
+};
+
 mockIPC((cmd, payload) => {
   switch (cmd) {
+    case "list_presets":
+      return mockPresets;
+    case "create_preset": {
+      const { name, recipe } = payload as { name: string; recipe: Record<string, unknown> };
+      const p = { id: `user:${nextPresetId++}`, name: name.trim(), builtIn: false, recipe: lookOnly(recipe) };
+      mockPresets = [...mockPresets, p];
+      return p;
+    }
+    case "rename_preset": {
+      const { id, name } = payload as { id: string; name: string };
+      mockPresets = mockPresets.map((p) => (p.id === id ? { ...p, name: name.trim() } : p));
+      return null;
+    }
+    case "update_preset": {
+      const { id, recipe } = payload as { id: string; recipe: Record<string, unknown> };
+      mockPresets = mockPresets.map((p) => (p.id === id ? { ...p, recipe: lookOnly(recipe) } : p));
+      return lookOnly(recipe);
+    }
+    case "delete_preset":
+      mockPresets = mockPresets.filter((p) => p.id !== (payload as { id: string }).id);
+      return null;
     case "engine_info":
       return { rendererVersion: 3, recipeVersion: 20, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs, mixer: mixerSpec, straighten: { key: "straighten", label: "Straighten", group: "Geometry", min: -15, max: 15, step: 0.1, default: 0, more: false, unit: "°" }, perspective: ["vertical", "horizontal"].map((key) => ({ key, label: key === "vertical" ? "Vertical" : "Horizontal", group: "Geometry", min: -100, max: 100, step: 1, default: 0, more: true, unit: "" })), mask: [{ key: "exposure", label: "Exposure", group: "Mask", min: -2, max: 2, step: 0.01, default: 0, more: false, unit: "EV" }, { key: "warmth", label: "Warmth", group: "Mask", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" }, { key: "clarity", label: "Clarity", group: "Mask", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" }], maskFeather: { key: "feather", label: "Feather", group: "Mask", min: 0, max: 100, step: 1, default: 50, more: false, unit: "" }, maskDensity: { key: "density", label: "Density", group: "Mask", min: 0, max: 100, step: 1, default: 100, more: false, unit: "" } };
     case "open_image_dialog":

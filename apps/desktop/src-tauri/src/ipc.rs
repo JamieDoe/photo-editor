@@ -132,6 +132,44 @@ pub enum EditSavingDto {
     NewerVersion,
 }
 
+/// A preset (ADR 0046): a built-in look or one the photographer saved. `id` is
+/// `builtin:<name>` or `user:<number>`; only saved presets can be changed.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PresetDto {
+    pub id: String,
+    pub name: String,
+    pub built_in: bool,
+    /// The look alone: applying it keeps the photo's exposure, geometry, lens
+    /// corrections and masks.
+    pub recipe: EditRecipe,
+}
+
+impl From<app_core::Preset> for PresetDto {
+    fn from(p: app_core::Preset) -> Self {
+        let (id, built_in) = match &p.id {
+            app_core::PresetRef::BuiltIn(name) => (format!("builtin:{name}"), true),
+            app_core::PresetRef::User(id) => (format!("user:{}", id.0), false),
+        };
+        Self {
+            id,
+            name: p.name,
+            built_in,
+            recipe: p.recipe,
+        }
+    }
+}
+
+/// The preset a `PresetDto::id` names.
+pub fn preset_ref(id: &str) -> Option<app_core::PresetRef> {
+    if let Some(name) = id.strip_prefix("builtin:") {
+        return Some(app_core::PresetRef::BuiltIn(name.to_owned()));
+    }
+    let n = id.strip_prefix("user:")?.parse().ok()?;
+    Some(app_core::PresetRef::User(app_core::PresetId(n)))
+}
+
 /// Result of saving an edit.
 #[derive(Debug, Clone, Copy, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -194,6 +232,8 @@ pub enum PreviewSlotDto {
     Viewer,
     /// The photo before editing, for the before/after comparison.
     Compare,
+    /// The preset strip's previews (ADR 0046).
+    Presets,
 }
 
 impl From<PreviewSlotDto> for app_core::PreviewSlot {
@@ -201,6 +241,7 @@ impl From<PreviewSlotDto> for app_core::PreviewSlot {
         match s {
             PreviewSlotDto::Viewer => Self::Viewer,
             PreviewSlotDto::Compare => Self::Compare,
+            PreviewSlotDto::Presets => Self::Presets,
         }
     }
 }
@@ -306,6 +347,7 @@ pub enum IpcErrorKind {
     ImageNotOpen,
     InvalidDestination,
     ExportFailed,
+    InvalidInput,
     /// Superseded by a newer request; the UI should ignore it silently.
     Cancelled,
     Internal,
@@ -358,6 +400,7 @@ impl From<EngineError> for IpcError {
             ErrorKind::ImageNotOpen => IpcErrorKind::ImageNotOpen,
             ErrorKind::InvalidDestination => IpcErrorKind::InvalidDestination,
             ErrorKind::ExportFailed => IpcErrorKind::ExportFailed,
+            ErrorKind::InvalidInput => IpcErrorKind::InvalidInput,
             ErrorKind::Cancelled => IpcErrorKind::Cancelled,
             ErrorKind::Internal => IpcErrorKind::Internal,
         };
@@ -706,4 +749,28 @@ pub struct LibraryStatusDto {
     /// Set if the catalogue was reset or could not be opened (shown once).
     pub notice: Option<String>,
     pub collections: CollectionCountsDto,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn preset_ids_round_trip() {
+        let saved = app_core::Preset {
+            id: app_core::PresetRef::User(app_core::PresetId(12)),
+            name: "Mine".into(),
+            recipe: EditRecipe::default(),
+        };
+        let dto = PresetDto::from(saved.clone());
+        assert_eq!((dto.id.as_str(), dto.built_in), ("user:12", false));
+        assert_eq!(preset_ref(&dto.id), Some(saved.id));
+        assert_eq!(
+            preset_ref("builtin:mono"),
+            Some(app_core::PresetRef::BuiltIn("mono".into()))
+        );
+        for bad in ["", "user:", "user:x", "12", "other:1"] {
+            assert_eq!(preset_ref(bad), None, "{bad}");
+        }
+    }
 }

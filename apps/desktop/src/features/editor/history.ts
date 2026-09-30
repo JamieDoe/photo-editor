@@ -63,10 +63,17 @@ export class EditHistory {
     if (last?.gesture === this.gesture) last.sealed = true;
   }
 
-  /** The edit changed from `before` to `after` at time `now` (ms). */
-  record(before: EditRecipe, after: EditRecipe, now: number): void {
+  /** The edit changed from `before` to `after` at time `now` (ms). A `label` names a
+   *  single action (applying a preset): it is a step of its own, never joined. */
+  record(before: EditRecipe, after: EditRecipe, now: number, label?: string): void {
     const keys = changedKeys(before, after);
     if (keys.length === 0) return;
+    if (label !== undefined) {
+      this.future.length = 0;
+      this.past.push({ recipe: before, keys, label, at: now, gesture: 0, sealed: true });
+      if (this.past.length > MAX_STEPS) this.past.shift();
+      return;
+    }
     const gesture = this.gestureActive ? this.gesture : 0;
     const last = this.past.at(-1);
     const joins =

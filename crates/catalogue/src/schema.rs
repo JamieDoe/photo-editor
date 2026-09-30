@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::CatalogueError;
 
 /// Schema version this build creates and understands.
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 const MIGRATIONS: &[&str] = &[
     // 1: library folders, photos, files.
@@ -83,6 +83,18 @@ const MIGRATIONS: &[&str] = &[
         photo_id       INTEGER PRIMARY KEY REFERENCES photos(id) ON DELETE CASCADE,
         recipe_version INTEGER NOT NULL,
         recipe         TEXT NOT NULL,
+        updated_at_ms  INTEGER NOT NULL
+    );
+    "#,
+    // 6: the photographer's presets (ADR 0046): named recipe templates, opaque JSON
+    // owned by the renderer like edits.
+    r#"
+    CREATE TABLE presets (
+        id             INTEGER PRIMARY KEY,
+        name           TEXT NOT NULL,
+        recipe_version INTEGER NOT NULL,
+        recipe         TEXT NOT NULL,
+        created_at_ms  INTEGER NOT NULL,
         updated_at_ms  INTEGER NOT NULL
     );
     "#,

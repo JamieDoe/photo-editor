@@ -4,6 +4,7 @@ import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { SelfTestConfigDto } from "../../ipc/generated/SelfTestConfigDto";
 import { fitCropFor } from "../editor/cropGeometry";
+import { applyPreset } from "../editor/presets";
 import { beforeRecipe, mixerOf, neutralRecipe } from "../editor/recipe";
 import type { DisplayedFrame, Editor } from "../editor/useEditor";
 
@@ -773,6 +774,87 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       !compareCheck.beforeRenderedAgain &&
       compareCheck.closed;
 
+    // Presets (ADR 0046): the strip's previews render, clicking Mono through the UI
+    // makes the photo black and white and keeps its exposure, as one undo step; saved
+    // presets are created, renamed and deleted (the self-test's catalogue is in memory).
+    const presetCheck = await (async () => {
+      const ed = () => driver.editor();
+      const edited = { ...beforeCrop, masks: undefined, exposure: beforeCrop.exposure + 0.5, contrast: 40 };
+      const shown = await show(edited, "edit before a preset");
+      const t0 = performance.now();
+      const tiles = () => [...document.querySelectorAll<HTMLElement>(".preset-apply")];
+      const drawn = await waitFor(
+        () => (tiles().length >= 6 && tiles().every((t) => !t.querySelector("canvas.empty")) ? tiles().length : null),
+        10_000,
+        "preset previews",
+      ).catch(() => null);
+      const previewsMs = Math.round(performance.now() - t0);
+      // Each preview's render time from request to frame (the strip renders them one
+      // after another, so these add up), for a photo the cache has not seen.
+      const previewMs: number[] = [];
+      for (const p of await ipc.listPresets()) {
+        const t = performance.now();
+        await ed().renderPresetPreview(applyPreset({ ...edited, exposure: edited.exposure + 0.01 }, p));
+        previewMs.push(Math.round((performance.now() - t) * 10) / 10);
+      }
+      const mono = tiles().find((t) => t.textContent === "Mono");
+      const mark = ed().schedulerStats().requested;
+      mono?.click();
+      const frame = await waitFor(
+        () => frames.find((f) => f.info.seq > mark && shown !== null && f.frame.width === shown.frame.width) ?? null,
+        10_000,
+        "Mono frame",
+      ).catch(() => null);
+      await nextFrame();
+      const applied = ed().recipe!;
+      // Mean channel difference: 0 for a black and white picture.
+      let spread = 0;
+      if (frame) {
+        const px = frame.frame.pixels;
+        for (let i = 0; i < px.length; i += 4) spread += Math.abs(px[i]! - px[i + 1]!) + Math.abs(px[i + 1]! - px[i + 2]!);
+        spread /= px.length / 4;
+      }
+      const colourSpread = shown
+        ? (() => {
+            let sum = 0;
+            const px = shown.frame.pixels;
+            for (let i = 0; i < px.length; i += 4) sum += Math.abs(px[i]! - px[i + 1]!) + Math.abs(px[i + 1]! - px[i + 2]!);
+            return sum / (px.length / 4);
+          })()
+        : null;
+      const undoLabel = ed().undoLabel;
+      const saved = await ipc.createPreset("Self-test look", edited);
+      await ipc.renamePreset(saved.id, "Self-test renamed");
+      const listed = await ipc.listPresets();
+      await ipc.deletePreset(saved.id);
+      const after = await ipc.listPresets();
+      return {
+        previews: drawn,
+        previewsMs,
+        previewMs,
+        pressed: mono?.getAttribute("aria-pressed") ?? null,
+        undoLabel,
+        exposureKept: applied.exposure === edited.exposure,
+        saturation: applied.saturation,
+        channelSpread: { before: colourSpread === null ? null : Math.round(colourSpread * 10) / 10, mono: Math.round(spread * 100) / 100 },
+        savedLookOnly: saved.recipe.exposure === 0 && saved.recipe.contrast === 40,
+        renamed: listed.some((p) => p.id === saved.id && p.name === "Self-test renamed"),
+        deleted: !after.some((p) => p.id === saved.id) && after.length === listed.length - 1,
+      };
+    })();
+    const presetOk =
+      presetCheck.previews !== null &&
+      presetCheck.pressed === "true" &&
+      presetCheck.undoLabel === "Mono" &&
+      presetCheck.exposureKept &&
+      presetCheck.saturation === -100 &&
+      presetCheck.channelSpread.before !== null &&
+      presetCheck.channelSpread.before > 5 &&
+      presetCheck.channelSpread.mono < 1 &&
+      presetCheck.savedLookOnly &&
+      presetCheck.renamed &&
+      presetCheck.deleted;
+
     // Shapes combined (ADR 0043): -1 EV over the top, less a hard circle at its
     // middle. Inside the circle unchanged, beside it darker.
     const combinedFrame = await show(
@@ -922,6 +1004,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       toneCurve: toneCurveOk,
       history: historyOk,
       compare: compareOk,
+      presets: presetOk,
       crop: cropOk,
       perspective: perspectiveOk,
       turn: turnOk,
@@ -949,6 +1032,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       toneCurve,
       history,
       compare: compareCheck,
+      presets: presetCheck,
       crop,
       perspective,
       turn,

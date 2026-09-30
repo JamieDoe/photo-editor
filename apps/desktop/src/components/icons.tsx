@@ -118,6 +118,14 @@ export const RefreshIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const MoreIcon = (p: IconProps) => (
+  <Icon size={14} {...p}>
+    <circle cx="3.5" cy="8" r="0.6" />
+    <circle cx="8" cy="8" r="0.6" />
+    <circle cx="12.5" cy="8" r="0.6" />
+  </Icon>
+);
+
 export const CompareIcon = (p: IconProps) => (
   <Icon size={15} {...p}>
     <rect x="2" y="3" width="12" height="10" rx="2" />
