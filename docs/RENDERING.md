@@ -53,6 +53,8 @@ Detail (texture, clarity,      local contrast at two scales, no halos (ADR 0026)
 Vignette                       gain towards the corners, by frame position (ADR 0031)
 Contrast                       S-curve around mid grey (scene-referred)
 Base look (Standard)           camera-like tone curve: lift, toe, shoulder (ADR 0022)
+Tone curve                     the photographer's points, per channel on display
+                               tones, monotone cubic (ADR 0037)
 Colour mixer                   hue/saturation/luminance per colour band (ADR 0025)
 Colour (vibrance, saturation)  chroma scale around Rec.709 luminance
 Grain                          film grain in frame coordinates, midtones (ADR 0031)
@@ -60,9 +62,9 @@ Grain                          film grain in frame coordinates, midtones (ADR 00
 Output transform               clip [0,1], sRGB OETF, 8-bit quantise
 ```
 
-The Light section's tone curve graph is computed by `renderer::tone_curve` (ADR 0029).
-It shows the Light controls' response for a neutral tone, against the default
-rendering.
+The Light section's tone curve graph is the photographer's own curve (ADR 0037), drawn
+from the recipe's points; it replaced the display of the Light controls' response
+(ADR 0029).
 
 ### Stage definitions (reference implementations in `renderer::ops`)
 

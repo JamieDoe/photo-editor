@@ -93,7 +93,6 @@ export const autoLevel = (imageId: number) => invoke<number | null>("auto_level"
 export const measureChromaticAberration = (imageId: number) =>
   invoke<ChromaticAberration | null>("measure_chromatic_aberration", { imageId });
 /** The Light section's tone curve for `recipe`: display values of evenly spaced tones. */
-export const toneCurve = (recipe: EditRecipe) => invoke<number[]>("tone_curve", { recipe });
 
 export const libraryBackups = () => invoke<BackupStatusDto>("library_backups");
 export const backUpLibrary = () => invoke<BackupStatusDto>("back_up_library");

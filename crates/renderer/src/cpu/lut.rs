@@ -2,10 +2,12 @@ use std::sync::OnceLock;
 
 use image_core::color::linear_to_srgb;
 
-/// Piecewise-linear LUT for a per-channel curve on [0, 1]. Values outside [0, 1] are
-/// passed through (clamped at 0), matching the reference curve definitions.
+/// Piecewise-linear LUT for a per-channel curve on [0, 1]. Values below 0 clamp to 0;
+/// values of 1 and above are passed through, matching the reference curve definitions,
+/// or held at the curve's end for curves defined only on [0, 1] ([`CurveLut::held`]).
 pub(super) struct CurveLut {
     table: Vec<f32>,
+    hold_end: bool,
 }
 
 impl CurveLut {
@@ -15,13 +17,28 @@ impl CurveLut {
         let table = (0..=Self::SIZE)
             .map(|i| f(i as f32 / Self::SIZE as f32))
             .collect();
-        Self { table }
+        Self {
+            table,
+            hold_end: false,
+        }
+    }
+
+    /// A curve whose value at 1 also applies above 1 (the tone curve's white end).
+    pub(super) fn held(f: impl Fn(f32) -> f32) -> Self {
+        Self {
+            hold_end: true,
+            ..Self::build(f)
+        }
     }
 
     #[inline]
     pub(super) fn eval(&self, x: f32) -> f32 {
         if !(0.0..1.0).contains(&x) {
-            return x.max(0.0);
+            return if x >= 1.0 && self.hold_end {
+                self.table[Self::SIZE]
+            } else {
+                x.max(0.0)
+            };
         }
         let pos = x * Self::SIZE as f32;
         let i = pos as usize;

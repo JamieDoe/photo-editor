@@ -10,6 +10,7 @@ pub mod detail;
 pub mod finishing;
 pub mod look;
 pub mod noise;
+pub mod point_curve;
 pub mod saturation;
 pub mod scene;
 pub mod tone;

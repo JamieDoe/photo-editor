@@ -182,20 +182,6 @@ mockIPC((cmd, payload) => {
     case "measure_chromatic_aberration":
       // Dev-only stand-in: a little red and blue spread.
       return new Promise((r) => setTimeout(() => r({ red: [0.0004, 0.0001], blue: [-0.0003, 0] }), 250));
-    case "tone_curve": {
-      // Dev-only stand-in for the renderer's curve: a rough response to exposure,
-      // contrast and the end points, enough to see the graph move.
-      const { recipe: raw } = payload as { recipe: Record<string, number | undefined> };
-      const r = (k: string) => raw[k] ?? 0;
-      const recipe = { exposure: r("exposure"), contrast: r("contrast"), shadows: r("shadows"), highlights: r("highlights"), whites: r("whites"), blacks: r("blacks") };
-      return Array.from({ length: 49 }, (_, i) => {
-        const x = i / 48;
-        let y = x + recipe.exposure * 0.12 * Math.sin(Math.PI * x) - recipe.contrast * 0.001 * Math.sin(2 * Math.PI * x);
-        y += recipe.shadows * 0.0015 * Math.sin(Math.PI * x) * (1 - x) + recipe.highlights * 0.0015 * Math.sin(Math.PI * x) * x;
-        y += recipe.whites * 0.002 * x ** 3 + recipe.blacks * 0.002 * (1 - x) ** 3;
-        return Math.min(1, Math.max(0, y));
-      });
-    }
     case "save_edit": {
       const { path, recipe } = payload as { path: string; recipe: Record<string, number> };
       const edited = ["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "dehaze", "temperature", "tint", "vibrance", "saturation", "texture", "clarity", "noiseReduction", "vignette", "grain"].some((k) => recipe[k] !== 0) || recipe.sharpening !== 40;

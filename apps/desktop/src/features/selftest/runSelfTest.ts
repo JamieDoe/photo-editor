@@ -314,17 +314,45 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     unlistenQuit();
     const quitGuard = { exportStarted: guardExport !== null, held: quitRequested !== null };
 
-    // Tone curve through the real command: the default recipe draws the diagonal, and
-    // Shadows lifts the low end.
-    const neutral = neutralRecipe(info.recipeVersion);
-    const flatCurve = await ipc.toneCurve(neutral);
-    const liftedCurve = await ipc.toneCurve({ ...neutral, shadows: 60 });
-    const toneCurve = {
-      points: flatCurve.length,
-      maxOffDiagonal: Math.max(...flatCurve.map((y, i) => Math.abs(y - i / (flatCurve.length - 1)))),
-      shadowsLift: (liftedCurve[8] ?? 0) - (flatCurve[8] ?? 0),
+    // Tone curve (ADR 0037) through the real renderer: a curve lifting the midtones
+    // brightens the frame (its mean luminance, from the frame's histogram).
+    const meanLuma = (f: RenderedFrame) => {
+      const h = f.frame.histogram;
+      if (!h) return NaN;
+      let sum = 0;
+      let count = 0;
+      h.luma.forEach((n, v) => {
+        sum += n * v;
+        count += n;
+      });
+      return sum / count;
     };
-    const toneCurveOk = toneCurve.points === 49 && toneCurve.maxOffDiagonal < 0.01 && toneCurve.shadowsLift > 0.02;
+    const beforeCurve = driver.editor().recipe!;
+    const baseline = frames.at(-1);
+    const framesBeforeCurve = frames.length;
+    driver.editor().setRecipe({
+      ...beforeCurve,
+      pointCurve: [
+        [0, 0],
+        [0.5, 0.75],
+        [1, 1],
+      ],
+    });
+    const curved = await waitFor(
+      () => frames.slice(framesBeforeCurve).find((f) => !f.frame.cacheHit) ?? null,
+      10_000,
+      "tone curve frame",
+    ).catch(() => null);
+    driver.editor().setRecipe(beforeCurve);
+    const toneCurve = {
+      baselineMeanLuma: baseline ? Math.round(meanLuma(baseline)) : null,
+      curvedMeanLuma: curved ? Math.round(meanLuma(curved)) : null,
+      renderMs: curved?.frame.renderMs ?? null,
+    };
+    const toneCurveOk =
+      toneCurve.baselineMeanLuma !== null &&
+      toneCurve.curvedMeanLuma !== null &&
+      toneCurve.curvedMeanLuma > toneCurve.baselineMeanLuma + 10;
 
     // Auto level through the real command (ADR 0033): an angle or null, quickly.
     const tLevel = performance.now();
