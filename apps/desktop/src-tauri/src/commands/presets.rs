@@ -145,7 +145,7 @@ pub async fn export_preset(
 }
 
 /// Imports preset files the photographer chooses: the app's own, or Lightroom `.xmp`
-/// presets. Each file is imported or reported on its own.
+/// and older `.lrtemplate` presets. Each file is imported or reported on its own.
 #[tauri::command]
 pub async fn import_presets(
     app: AppHandle,
@@ -158,7 +158,10 @@ pub async fn import_presets(
             let picked = tauri::async_runtime::spawn_blocking(move || {
                 app.dialog()
                     .file()
-                    .add_filter("Presets", &[app_core::PRESET_FILE_EXTENSION, "xmp"])
+                    .add_filter(
+                        "Presets",
+                        &[app_core::PRESET_FILE_EXTENSION, "xmp", "lrtemplate"],
+                    )
                     .blocking_pick_files()
             })
             .await

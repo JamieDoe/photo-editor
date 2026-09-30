@@ -171,7 +171,252 @@ fn curve(points: Option<&Vec<String>>) -> Option<PointCurve> {
 
 /// Reads a Lightroom `.xmp` preset.
 pub fn read_xmp(xml: &str) -> Result<LightroomPreset, LightroomError> {
-    let s = read_settings(xml.trim_start_matches('\u{feff}'))?;
+    map_settings(&read_settings(xml.trim_start_matches('\u{feff}'))?)
+}
+
+/// Reads an older Lightroom `.lrtemplate` preset (Lightroom before 7.3): the same
+/// settings, written as a Lua table (see [`read_lua`]).
+pub fn read_lrtemplate(text: &str) -> Result<LightroomPreset, LightroomError> {
+    let root = read_lua(text.trim_start_matches('\u{feff}')).ok_or(LightroomError::NotAPreset)?;
+    let field = |table: &[(Option<String>, Lua)], name: &str| {
+        table
+            .iter()
+            .find(|(k, _)| k.as_deref() == Some(name))
+            .map(|(_, v)| v.clone())
+    };
+    let Lua::Table(root) = root else {
+        return Err(LightroomError::NotAPreset);
+    };
+    let Some(Lua::Table(value)) = field(&root, "value") else {
+        return Err(LightroomError::NotAPreset);
+    };
+    let Some(Lua::Table(settings)) = field(&value, "settings") else {
+        return Err(LightroomError::NotAPreset);
+    };
+    let mut s = Settings::default();
+    for (key, v) in &settings {
+        let Some(key) = key else { continue };
+        match v {
+            Lua::Number(n) => {
+                s.values.insert(key.clone(), n.to_string());
+            }
+            Lua::Bool(b) => {
+                s.values
+                    .insert(key.clone(), if *b { "True" } else { "False" }.to_owned());
+            }
+            Lua::Str(text) => {
+                s.values.insert(key.clone(), text.clone());
+            }
+            // Tone curves are flat lists: x, y, x, y, ...
+            Lua::Table(items) => {
+                let numbers: Vec<f64> = items
+                    .iter()
+                    .filter_map(|(_, v)| match v {
+                        Lua::Number(n) => Some(*n),
+                        _ => None,
+                    })
+                    .collect();
+                s.lists.insert(
+                    key.clone(),
+                    numbers
+                        .as_chunks::<2>()
+                        .0
+                        .iter()
+                        .map(|[x, y]| format!("{x}, {y}"))
+                        .collect(),
+                );
+            }
+        }
+    }
+    // The title may be a translation key ("$$$/AgPreset/...=Name"): the name follows "=".
+    let name = [field(&root, "title"), field(&root, "internalName")]
+        .into_iter()
+        .flatten()
+        .find_map(|v| match v {
+            Lua::Str(t) => Some(t.rsplit('=').next().unwrap_or(&t).trim().to_owned()),
+            _ => None,
+        })
+        .filter(|n| !n.is_empty() && !n.starts_with("$$$"));
+    if let Some(name) = name {
+        s.values.insert("Name".to_owned(), name);
+    }
+    map_settings(&s)
+}
+
+/// A value of the Lua subset `.lrtemplate` files use.
+#[derive(Debug, Clone, PartialEq)]
+enum Lua {
+    Number(f64),
+    Str(String),
+    Bool(bool),
+    /// Entries in order, named (`key = value`) or not (list items).
+    Table(Vec<(Option<String>, Lua)>),
+}
+
+/// Reads `s = { ... }` (or just the table): numbers, strings with escapes, booleans,
+/// and tables of named or unnamed entries. Anything else, such as code, is refused.
+fn read_lua(text: &str) -> Option<Lua> {
+    let mut p = LuaReader {
+        src: text.as_bytes(),
+        at: 0,
+    };
+    p.space();
+    // An optional `name =` before the table.
+    let start = p.at;
+    if p.name().is_some() {
+        p.space();
+        if !p.eat(b'=') {
+            p.at = start;
+        }
+    }
+    p.space();
+    let value = p.value(0)?;
+    p.space();
+    (p.at == p.src.len()).then_some(value)
+}
+
+struct LuaReader<'a> {
+    src: &'a [u8],
+    at: usize,
+}
+
+impl LuaReader<'_> {
+    fn peek(&self) -> Option<u8> {
+        self.src.get(self.at).copied()
+    }
+
+    fn eat(&mut self, c: u8) -> bool {
+        let yes = self.peek() == Some(c);
+        if yes {
+            self.at += 1;
+        }
+        yes
+    }
+
+    /// Skips spaces and `--` comments.
+    fn space(&mut self) {
+        loop {
+            while self.peek().is_some_and(|c| c.is_ascii_whitespace()) {
+                self.at += 1;
+            }
+            if self.src[self.at..].starts_with(b"--") {
+                while self.peek().is_some_and(|c| c != b'\n') {
+                    self.at += 1;
+                }
+            } else {
+                return;
+            }
+        }
+    }
+
+    fn name(&mut self) -> Option<String> {
+        let start = self.at;
+        while self
+            .peek()
+            .is_some_and(|c| c.is_ascii_alphanumeric() || c == b'_')
+        {
+            self.at += 1;
+        }
+        let name = std::str::from_utf8(&self.src[start..self.at])
+            .ok()
+            .filter(|n| !n.is_empty() && !n.as_bytes()[0].is_ascii_digit())
+            .map(str::to_owned);
+        // Not a name (a number, say): leave it to be read as one.
+        if name.is_none() {
+            self.at = start;
+        }
+        name
+    }
+
+    fn value(&mut self, depth: usize) -> Option<Lua> {
+        // Presets nest a few levels; anything deep is not one.
+        if depth > 16 {
+            return None;
+        }
+        match self.peek()? {
+            b'{' => self.table(depth),
+            b'"' | b'\'' => self.string().map(Lua::Str),
+            b'-' | b'.' | b'0'..=b'9' => self.number().map(Lua::Number),
+            _ => match self.name()?.as_str() {
+                "true" => Some(Lua::Bool(true)),
+                "false" => Some(Lua::Bool(false)),
+                _ => None,
+            },
+        }
+    }
+
+    fn table(&mut self, depth: usize) -> Option<Lua> {
+        self.eat(b'{');
+        let mut entries = Vec::new();
+        loop {
+            self.space();
+            if self.eat(b'}') {
+                return Some(Lua::Table(entries));
+            }
+            let start = self.at;
+            let key = match self.name() {
+                Some(k) => {
+                    self.space();
+                    if self.eat(b'=') {
+                        Some(k)
+                    } else {
+                        self.at = start;
+                        None
+                    }
+                }
+                None => None,
+            };
+            self.space();
+            let value = self.value(depth + 1)?;
+            entries.push((key, value));
+            self.space();
+            if !self.eat(b',') && !self.eat(b';') {
+                self.space();
+                return self.eat(b'}').then_some(Lua::Table(entries));
+            }
+        }
+    }
+
+    fn string(&mut self) -> Option<String> {
+        let quote = self.peek()?;
+        self.at += 1;
+        let mut out = Vec::new();
+        loop {
+            let c = self.peek()?;
+            self.at += 1;
+            match c {
+                b'\\' => {
+                    let e = self.peek()?;
+                    self.at += 1;
+                    out.push(match e {
+                        b'n' => b'\n',
+                        b't' => b'\t',
+                        other => other,
+                    });
+                }
+                c if c == quote => return String::from_utf8(out).ok(),
+                c => out.push(c),
+            }
+        }
+    }
+
+    fn number(&mut self) -> Option<f64> {
+        let start = self.at;
+        while self
+            .peek()
+            .is_some_and(|c| c.is_ascii_digit() || matches!(c, b'-' | b'+' | b'.' | b'e' | b'E'))
+        {
+            self.at += 1;
+        }
+        std::str::from_utf8(&self.src[start..self.at])
+            .ok()?
+            .parse()
+            .ok()
+    }
+}
+
+/// Maps Camera Raw settings (from either format) onto a look.
+fn map_settings(s: &Settings) -> Result<LightroomPreset, LightroomError> {
     let mut r = EditRecipe::default();
     let mut used = false;
     let mut take = |key: &str, field: &mut f32| {
@@ -483,5 +728,62 @@ mod tests {
             <rdf:Description xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:CameraProfile="Adobe Standard"/>
             </rdf:RDF></x:xmpmeta>"#;
         assert_eq!(read_xmp(only_profile), Err(LightroomError::NothingUsable));
+    }
+
+    #[test]
+    fn reads_an_older_lrtemplate_preset() {
+        let text = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/presets/lightroom-sample.lrtemplate"
+        ))
+        .unwrap();
+        let p = read_lrtemplate(&text).unwrap();
+        // The title's translation key is dropped; escapes are read.
+        assert_eq!(p.name.as_deref(), Some("Faded \"Film\""));
+        let r = &p.recipe;
+        assert_eq!(
+            (r.contrast, r.blacks, r.clarity, r.saturation),
+            (-15.0, 22.0, -8.0, -10.0)
+        );
+        let wb = r.white_balance.unwrap();
+        assert_eq!((wb.kelvin, wb.tint), (5200.0, 8.0));
+        let mixer = r.mixer.unwrap();
+        assert_eq!(
+            (
+                mixer.blue.hue,
+                mixer.blue.saturation,
+                mixer.orange.luminance
+            ),
+            (-12.0, -20.0, 6.0)
+        );
+        let curve = r.parametric_curve.unwrap();
+        assert_eq!((curve.darks, curve.shadow_split), (10.0, 30.0));
+        // The flat list of curve numbers is read as pairs.
+        assert_eq!(r.point_curve.unwrap().points().len(), 3);
+        assert_eq!(p.left_out, ["Color Grading"]);
+    }
+
+    #[test]
+    fn lua_that_is_not_a_preset_is_refused() {
+        assert_eq!(
+            read_lrtemplate("print('hi')"),
+            Err(LightroomError::NotAPreset)
+        );
+        assert_eq!(
+            read_lrtemplate("s = { value = { } }"),
+            Err(LightroomError::NotAPreset)
+        );
+        assert_eq!(
+            read_lrtemplate("s = { value = { settings = { Contrast2012 = os.exit() } } }"),
+            Err(LightroomError::NotAPreset)
+        );
+        assert_eq!(
+            read_lua("{ 1, 2, 3 }").unwrap(),
+            Lua::Table(vec![
+                (None, Lua::Number(1.0)),
+                (None, Lua::Number(2.0)),
+                (None, Lua::Number(3.0))
+            ])
+        );
     }
 }

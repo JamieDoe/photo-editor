@@ -161,7 +161,7 @@ export function PresetStrip({ editor, recipe, disabled }: { editor: Editor; reci
         <button
           className="ghost small"
           disabled={disabled}
-          title="Add presets from files: this app’s, or Lightroom .xmp presets"
+          title="Add presets from files: this app’s, or Lightroom presets (.xmp and older .lrtemplate)"
           onClick={async (e) => {
             const anchor = e.currentTarget;
             setOpen(null);
