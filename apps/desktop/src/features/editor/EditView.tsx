@@ -92,6 +92,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
       ].filter((x): x is string => x !== null)
     : [];
   const size = image ? `${((image.fullWidth * image.fullHeight) / 1e6).toFixed(1)} MP` : "";
+  const details = image ? [image.camera, image.cameraRaw ? "RAW" : "JPEG", size].filter(Boolean).join(" · ") : "";
   return (
     <div className="edit-view">
       <div className="stage-column">
@@ -99,9 +100,11 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
           <div className="meta-title">
             {image ? (
               <>
-                <span className="photo-name">{image.fileName}</span>
-                <span className="mono">
-                  {[image.camera, image.cameraRaw ? "RAW" : "JPEG", size].filter(Boolean).join(" · ")}
+                <span className="photo-name" title={image.fileName}>
+                  {image.fileName}
+                </span>
+                <span className="mono" title={details}>
+                  {details}
                 </span>
               </>
             ) : (
@@ -122,9 +125,16 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
                 {position.index + 1} of {position.total.toLocaleString()}
               </span>
             )}
-            <button className="ghost" onClick={onOpenFile} disabled={busy || !info}>
+            {/* Icon-only on narrow stages (styles.css), so it keeps its name as a label. */}
+            <button
+              className="ghost open-photo"
+              onClick={onOpenFile}
+              disabled={busy || !info}
+              aria-label={busy ? "Opening…" : "Open photo…"}
+              title="Open photo…"
+            >
               <OpenIcon />
-              {busy ? "Opening…" : "Open photo…"}
+              <span className="button-label">{busy ? "Opening…" : "Open photo…"}</span>
             </button>
           </div>
         </div>
@@ -254,15 +264,16 @@ function EditStatus({
   edited: boolean;
   onReset: () => void;
 }) {
-  const note =
+  // Narrow stages show the short form (styles.css); the full note stays on hover.
+  const note: { full: string; short?: string } | null =
     saving === "notInLibrary"
-      ? "Not saved: this photo isn’t in your library"
+      ? { full: "Not saved: this photo isn’t in your library", short: "Not saved" }
       : saving === "newerVersion"
-        ? "Edited in a newer version; changes here aren’t saved"
+        ? { full: "Edited in a newer version; changes here aren’t saved", short: "Not saved" }
         : state === "saving"
-          ? "Saving…"
+          ? { full: "Saving…" }
           : state === "failed"
-            ? "Couldn’t save"
+            ? { full: "Couldn’t save" }
             : null;
   return (
     <span className="edit-status" aria-live="polite">
@@ -272,7 +283,18 @@ function EditStatus({
           Edited
         </span>
       )}
-      {note && <span className={state === "failed" ? "edit-note failed" : "edit-note"}>{note}</span>}
+      {note && (
+        <span className={state === "failed" ? "edit-note failed" : "edit-note"} title={note.short && note.full}>
+          {note.short ? (
+            <>
+              <span className="note-full">{note.full}</span>
+              <span className="note-short">{note.short}</span>
+            </>
+          ) : (
+            note.full
+          )}
+        </span>
+      )}
       {edited && (
         <button className="ghost small" onClick={onReset} title="Back to the original look (the file itself was never changed)">
           Reset

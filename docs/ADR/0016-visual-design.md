@@ -89,6 +89,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Library sidebar | "Indexed photos" is a count, not a view | "All photos" as a library-wide view is not built yet |
 | Edit header | "Open photo…" button | Opening a file outside the library; the design has no equivalent |
 | Edit header | Reset (whole photo) and save notes ("Not saved…", "Couldn't save") | Honest save state for photos outside the library; one-step reset |
+| Edit header on narrow stages | The file details, then the name, end in an ellipsis (in full on hover); below a 760 px stage the save note shortens to "Not saved" (in full on hover); below 600 px "Open photo…" becomes an icon button | The design has no narrow layout; the header must fit the 800 px minimum window (a 480 px stage) without hiding an action |
 | Edit panel top | "Look: Standard / Flat" row where the design has Presets | Base looks (ADR 0022) are profile choices; presets are not built yet |
 | Stage | Dimmed photo and "Loading…" pill while the next photo opens | ADR 0020; the design shows no loading state |
 | Light section | Exposure range ±5 EV (design ±4); "More controls" opens itself when a hidden slider is edited | Existing edits are never clamped; an edit is never out of sight |
