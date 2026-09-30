@@ -125,6 +125,20 @@ export const CompareIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const UndoIcon = (p: IconProps) => (
+  <Icon size={15} {...p}>
+    <path d="M5.5 3.5 2.5 6.5l3 3" />
+    <path d="M2.5 6.5h7a3.5 3.5 0 0 1 0 7H7.5" />
+  </Icon>
+);
+
+export const RedoIcon = (p: IconProps) => (
+  <Icon size={15} {...p}>
+    <path d="m10.5 3.5 3 3-3 3" />
+    <path d="M13.5 6.5h-7a3.5 3.5 0 0 0 0 7h2" />
+  </Icon>
+);
+
 export const OpenIcon = (p: IconProps) => (
   <Icon size={15} {...p}>
     <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h3L8 4.5h4.5A1.5 1.5 0 0 1 14 6v1" />

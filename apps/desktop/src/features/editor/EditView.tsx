@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { CompareIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon } from "../../components/icons";
+import { CompareIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, UndoIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../../ipc/generated/MarksDto";
@@ -99,6 +99,21 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [marks, onMark, onStep, image, toggleCompare]);
+
+  // ⌘Z undoes, ⇧⌘Z (or ⌘Y) redoes (ADR 0044); text fields keep their own undo.
+  const { undo, redo } = editor;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!hasCommandModifier(e) || isTextEntry(e.target)) return;
+      const key = e.key.toLowerCase();
+      if (key === "z") (e.shiftKey ? redo : undo)();
+      else if (key === "y") redo();
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
   const exif = image
     ? [
         image.iso != null ? `ISO ${image.iso}` : null,
@@ -135,6 +150,28 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
                 edited={!isIdentity(recipe)}
                 onReset={editor.resetRecipe}
               />
+            )}
+            {image && (
+              <span className="history-buttons">
+                <button
+                  className="icon-button history-button"
+                  onClick={undo}
+                  disabled={editor.undoLabel === null}
+                  aria-label={editor.undoLabel ? `Undo ${editor.undoLabel}` : "Undo"}
+                  title={editor.undoLabel ? `Undo ${editor.undoLabel} (⌘Z)` : "Nothing to undo"}
+                >
+                  <UndoIcon />
+                </button>
+                <button
+                  className="icon-button history-button"
+                  onClick={redo}
+                  disabled={editor.redoLabel === null}
+                  aria-label={editor.redoLabel ? `Redo ${editor.redoLabel}` : "Redo"}
+                  title={editor.redoLabel ? `Redo ${editor.redoLabel} (⇧⌘Z)` : "Nothing to redo"}
+                >
+                  <RedoIcon />
+                </button>
+              </span>
             )}
             {position && (
               <span className="photo-counter">

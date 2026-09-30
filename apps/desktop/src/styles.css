@@ -274,6 +274,8 @@ button.thumb-button:hover .thumb { box-shadow: 0 0 0 1px var(--hairline-strong);
 .meta-title .photo-name { font-size: 14px; font-weight: 500; flex-shrink: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
 .meta-title .mono { font-size: 12px; color: var(--text-3); min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .meta-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.history-buttons { display: flex; align-items: center; gap: 2px; }
+button.history-button { width: 28px; height: 28px; border-radius: 7px; }
 .edit-status { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-3); }
 .edited-label { display: flex; align-items: center; gap: 6px; }
 .edit-note.failed { color: var(--danger); }
