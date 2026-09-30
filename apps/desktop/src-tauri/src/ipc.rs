@@ -49,6 +49,8 @@ pub struct EngineInfoDto {
     pub mixer: MixerSpec,
     /// The Geometry section's Straighten slider (ADR 0032).
     pub straighten: AdjustmentSpec,
+    /// The Geometry section's Vertical and Horizontal sliders (ADR 0034).
+    pub perspective: Vec<AdjustmentSpec>,
 }
 
 impl From<EngineInfo> for EngineInfoDto {
@@ -66,6 +68,7 @@ impl From<EngineInfo> for EngineInfoDto {
             adjustments: i.adjustments,
             mixer: i.mixer,
             straighten: i.straighten,
+            perspective: i.perspective,
         }
     }
 }

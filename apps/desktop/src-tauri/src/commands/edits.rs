@@ -32,7 +32,7 @@ pub(super) async fn saved_edit(
     })
     .await;
     match loaded {
-        Ok(Ok(SavedEdit::Recipe(r))) => (Some(r), EditSavingDto::Library),
+        Ok(Ok(SavedEdit::Recipe(r))) => (Some(*r), EditSavingDto::Library),
         Ok(Ok(SavedEdit::None)) => (None, EditSavingDto::Library),
         Ok(Ok(SavedEdit::TooNew { .. })) => (None, EditSavingDto::NewerVersion),
         Ok(Err(e)) => {

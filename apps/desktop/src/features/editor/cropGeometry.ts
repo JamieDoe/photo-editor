@@ -1,11 +1,16 @@
 import type { AspectRatio } from "../../ipc/generated/AspectRatio";
 import type { CropRect } from "../../ipc/generated/CropRect";
+import type { Geometry } from "../../ipc/generated/Geometry";
+
+/** What turns the photo before it is cropped: straighten and perspective. */
+export type ViewShape = Pick<Geometry, "straighten" | "vertical" | "horizontal">;
 
 /**
  * Crop rectangle maths for the crop tool (ADR 0032). Rectangles are fractions of the
  * photo's width and height in the straightened view, as in the recipe. The renderer
  * owns the geometry (`renderer::geometry`); this is the interaction side: fitting a
  * shape, and moving rectangles between the photo and the crop view on screen.
+ * Perspective (ADR 0034) follows the renderer's `Mapping`.
  */
 
 export const FULL: CropRect = { x: 0, y: 0, w: 1, h: 1 };
@@ -49,10 +54,76 @@ export function fitCrop(ratio: number, straighten: number, w: number, h: number)
   return { x: 0.5 - cw / 2, y: 0.5 - ch / 2, w: cw, h: ch };
 }
 
-/** What the crop tool shows: the largest area of the straightened photo in its own
- *  shape (so no empty corners). */
-export function cropView(straighten: number, w: number, h: number): CropRect {
-  return fitCrop(w / h, straighten, w, h);
+/** Perspective at ±100 turns the virtual camera this many degrees. */
+const MAX_PERSPECTIVE_DEGREES = 20;
+
+/**
+ * Where view point (`vx`, `vy`) (photo fractions) comes from in the photo (pixels):
+ * straighten undone, then the perspective homography, centred. Mirrors the renderer's
+ * `Mapping::source`.
+ */
+export function viewToSource(g: ViewShape, w: number, h: number): (vx: number, vy: number) => [number, number] {
+  const t = (clamp(g.straighten, -15, 15) * Math.PI) / 180;
+  const [sin, cos] = [Math.sin(t), Math.cos(t)];
+  const focal = Math.max(w, h);
+  const a = (-clamp(g.vertical, -100, 100) / 100) * MAX_PERSPECTIVE_DEGREES * (Math.PI / 180);
+  const b = (-clamp(g.horizontal, -100, 100) / 100) * MAX_PERSPECTIVE_DEGREES * (Math.PI / 180);
+  const [sa, ca, sb, cb] = [Math.sin(a), Math.cos(a), Math.sin(b), Math.cos(b)];
+  // Rx(a) * Ry(b), row-major.
+  const r = [cb, 0, sb, sa * sb, ca, -sa * cb, -ca * sb, sa, ca * cb] as const;
+  const [cx, cy] = [r[2] / r[8], r[5] / r[8]];
+  const perspective = g.vertical !== 0 || g.horizontal !== 0;
+  return (vx, vy) => {
+    const [dx, dy] = [(vx - 0.5) * w, (vy - 0.5) * h];
+    let [px, py] = [dx * cos - dy * sin, dx * sin + dy * cos];
+    if (perspective) {
+      const [u, v] = [px / focal, py / focal];
+      const z = Math.max(r[6] * u + r[7] * v + r[8], 1e-3);
+      px = ((r[0] * u + r[1] * v + r[2]) / z - cx) * focal;
+      py = ((r[3] * u + r[4] * v + r[5]) / z - cy) * focal;
+    }
+    return [w / 2 + px, h / 2 + py];
+  };
+}
+
+/** Whether rectangle `c` of the view lies inside the photo. */
+function contains(map: (vx: number, vy: number) => [number, number], c: CropRect, w: number, h: number): boolean {
+  const corners: Array<[number, number]> = [
+    [c.x, c.y],
+    [c.x + c.w, c.y],
+    [c.x, c.y + c.h],
+    [c.x + c.w, c.y + c.h],
+  ];
+  return corners.every(([vx, vy]) => {
+    const [sx, sy] = map(vx, vy);
+    return sx >= -1e-3 && sx <= w + 1e-3 && sy >= -1e-3 && sy <= h + 1e-3;
+  });
+}
+
+/**
+ * The largest rectangle of pixel `ratio` centred in the view that fits inside the photo
+ * after straighten and perspective. Mirrors `renderer::geometry::fit_crop_for`.
+ */
+export function fitCropFor(ratio: number, g: ViewShape, w: number, h: number): CropRect {
+  if (g.vertical === 0 && g.horizontal === 0) return fitCrop(ratio, g.straighten, w, h);
+  const map = viewToSource(g, w, h);
+  const rect = (a: number): CropRect => {
+    const [cw, ch] = [(2 * a) / w, (2 * a) / ratio / h];
+    return { x: 0.5 - cw / 2, y: 0.5 - ch / 2, w: cw, h: ch };
+  };
+  let [lo, hi] = [0, 0.5 * Math.max(w, h * ratio)];
+  for (let i = 0; i < 40; i++) {
+    const mid = 0.5 * (lo + hi);
+    if (contains(map, rect(mid), w, h)) lo = mid;
+    else hi = mid;
+  }
+  return rect(lo);
+}
+
+/** What the crop tool shows: the largest area of the straightened, corrected photo in
+ *  its own shape (so no empty corners). */
+export function cropView(g: ViewShape, w: number, h: number): CropRect {
+  return fitCropFor(w / h, g, w, h);
 }
 
 /** `c` (photo fractions) as fractions of the view `v`. */
@@ -66,7 +137,7 @@ export function fromView(o: CropRect, v: CropRect): CropRect {
 }
 
 /** A crop kept in the same place relative to the view when the view changes (the
- *  straighten angle moved). */
+ *  straighten angle or perspective moved). */
 export function remap(c: CropRect, from: CropRect, to: CropRect): CropRect {
   return fromView(toView(c, from), to);
 }

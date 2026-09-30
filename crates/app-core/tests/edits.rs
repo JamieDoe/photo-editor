@@ -25,7 +25,10 @@ fn saved_recipes_load_back_and_identity_clears_them() {
         ..EditRecipe::default()
     };
     assert!(save_edit(&cat, id, &recipe).unwrap());
-    assert_eq!(load_edit(&cat, id).unwrap(), SavedEdit::Recipe(recipe));
+    assert_eq!(
+        load_edit(&cat, id).unwrap(),
+        SavedEdit::Recipe(Box::new(recipe))
+    );
     // Out-of-range values are stored sanitised.
     let wild = EditRecipe {
         exposure: 99.0,

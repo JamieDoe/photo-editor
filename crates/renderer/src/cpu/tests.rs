@@ -301,6 +301,7 @@ fn cropped_and_straightened_renders_frame_the_source_first() {
             h: 0.5,
         },
         aspect: AspectRatio::Free,
+        ..Geometry::default()
     };
     let recipe = EditRecipe {
         exposure: 0.5,

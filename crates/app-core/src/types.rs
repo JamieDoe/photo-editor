@@ -119,4 +119,5 @@ pub struct EngineInfo {
     pub adjustments: Vec<AdjustmentSpec>,
     pub mixer: MixerSpec,
     pub straighten: AdjustmentSpec,
+    pub perspective: Vec<AdjustmentSpec>,
 }

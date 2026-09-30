@@ -219,6 +219,33 @@ pub const STRAIGHTEN: AdjustmentSpec = AdjustmentSpec {
     unit: "°",
 };
 
+/// The Geometry section's perspective sliders (ADR 0034), behind "More controls":
+/// stored in the recipe's `geometry` under the same keys.
+pub const PERSPECTIVE: [AdjustmentSpec; 2] = [
+    AdjustmentSpec {
+        key: "vertical",
+        label: "Vertical",
+        group: "Geometry",
+        min: -100.0,
+        max: 100.0,
+        step: 1.0,
+        default: 0.0,
+        more: true,
+        unit: "",
+    },
+    AdjustmentSpec {
+        key: "horizontal",
+        label: "Horizontal",
+        group: "Geometry",
+        min: -100.0,
+        max: 100.0,
+        step: 1.0,
+        default: 0.0,
+        more: true,
+        unit: "",
+    },
+];
+
 /// The colour mixer's controls, per band (ADR 0025). Keys are `HslShift` fields.
 pub const MIXER_HUE: AdjustmentSpec = AdjustmentSpec {
     key: "hue",

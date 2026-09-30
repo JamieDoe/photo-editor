@@ -497,3 +497,17 @@ Measured on a preview level of about 1000 px:
 
 It runs once per click, as an interactive job.
 
+## 23. Perspective (ADR 0034)
+
+Resample of a 1516×1010 frame, median of 40, three rounds, machine load 20–30:
+
+| Case | ms |
+|---|---|
+| Straighten only (bilinear) | 5.5–6.2 |
+| Perspective and straighten (homography, bilinear) | 5.7–6.9 |
+
+- The projective divide costs little next to the bilinear fetches.
+- Fitting the crop by binary search takes about 2 µs.
+- Release self-test, Nikon Z 6: a perspective render at the fitted crop's level
+  (5542×3692 kept) took 12.4 ms.
+
