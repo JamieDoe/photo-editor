@@ -511,3 +511,32 @@ Resample of a 1516×1010 frame, median of 40, three rounds, machine load 20–30
 - Release self-test, Nikon Z 6: a perspective render at the fitted crop's level
   (5542×3692 kept) took 12.4 ms.
 
+## 24. Remove chromatic aberration (ADR 0035)
+
+Measuring runs once, when the switch is turned on. Scratch probe, release build,
+machine load 5–7:
+
+| Source | Level measured | ms |
+|---|---|---|
+| Canon R6, 20 MP | 2748×1835 | 233 |
+| Nikon Z 6, 24 MP | 3032×2020 | 252 |
+| Sony a7 III, 24 MP | 3012×2012 | 285 |
+| Fuji X-T3, 26 MP | 3123×2085 | 274 |
+| Sony a7R IV, 61 MP | 4784×3188 | 790 |
+
+- The app measures on the level nearest 2000 px or above. On the 61 MP file that is
+  2392 px: 178 ms in the release self-test (Nikon: 252 ms).
+- Framing resample at the interactive level (about 1500 px), median of 30:
+  - plain copy: 0.3 ms;
+  - with the correction: 4–7 ms (bilinear, three sample points per pixel).
+  - It runs only when the framing changes. The framed image is cached while other
+    controls are dragged.
+- Found at full size (largest of red and blue at the corners):
+  - Fuji X-T3: 7.2 px;
+  - Sony a7R IV: 6.1 px;
+  - Nikon: 1.7 px;
+  - Sony a7 III: 1.5 px;
+  - Canon: 1.0 px;
+  - Ricoh GR III: 0.7 px;
+  - synthetic chart: 0.0 px.
+

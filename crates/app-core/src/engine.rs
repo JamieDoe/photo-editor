@@ -140,6 +140,32 @@ impl Engine {
         })
     }
 
+    /// Remove chromatic aberration (ADR 0035): the correction measured on the open
+    /// photo, or `None` when it has too few clean edges to measure reliably. Measured on
+    /// the level nearest 2000 px or above (about a quarter of a second), on the
+    /// interactive lane: the user is waiting for the toggle.
+    pub fn measure_chromatic_aberration(
+        &self,
+        image: ImageId,
+    ) -> JobHandle<Option<renderer::ChromaticAberration>, EngineError> {
+        let Some(image) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        let level = Arc::clone(&image.pyramid.levels()[image.pyramid.select_index(2000)]);
+        let spec = JobSpec::new(
+            Lane::Interactive,
+            Priority::Interactive,
+            "chromatic-aberration",
+        )
+        .superseding("chromatic-aberration");
+        self.jobs.submit(spec, move |_token| {
+            Ok(renderer::chromatic::estimate(&level))
+        })
+    }
+
     /// Renders a preview. Cache hits complete immediately; otherwise the render runs on
     /// the interactive lane and supersedes the previous viewer render.
     pub fn render_preview(&self, req: PreviewRequest) -> JobHandle<PreviewFrame, EngineError> {

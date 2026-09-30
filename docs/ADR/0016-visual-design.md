@@ -76,7 +76,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Colour section: Temperature in kelvin on a blue–amber track, Tint on a green–magenta track, Vibrance, Saturation | as designed |
 | Detail section: Texture, Clarity, Sharpening (default 40), Noise reduction; "More controls" headed "Finishing" with Vignette and Grain | as designed |
 | Photo toolbar "Crop" button; crop mode (dimmed outside, thirds grid, handles, size label; toolbar with ratios, Straighten, Reset, Done); Geometry section (aspect ratio, Straighten, Crop) | as designed, including Auto level |
-| Geometry "More controls" headed "Perspective & lens": Vertical, Horizontal | as designed (ADR 0034); the Lens correction and Remove chromatic aberration toggles are not built yet |
+| Geometry "More controls" headed "Perspective & lens": Vertical, Horizontal, Remove chromatic aberration switch | as designed (ADRs 0034, 0035); the Lens correction switch is not built (no lens profiles) |
 | Colour mixer behind "More controls": label and range name, eight dots (Blues first), Hue / Saturation / Luminance | as designed |
 
 ### Deliberate deviations
@@ -95,13 +95,13 @@ existing screens to the design now, and to match it for every screen built from 
 | Colour mixer | Accent mark on the dots of edited ranges | Otherwise an edit in a range not on screen is invisible |
 | Crop mode | Handles sit just inside the rectangle (design: 3 px outside); the crop view is the largest straightened area in the photo's shape | Handles stay whole at the photo's edge; no empty corners can be chosen (ADR 0032) |
 | Auto level | A status line under the button / above the crop toolbar | The design shows a toast; the app has no toast system yet (ADR 0033) |
+| Remove chromatic aberration | The switch's subtitle says "Measuring…" and then the result, for three seconds | Turning it on measures the photo; the design has no in-progress state |
 | Settings | Whole screen (grouped cards, segmented controls) | The design has no settings; built from its tokens and components |
 
 ### Not built yet (and so not shown)
 
 Search, Recently imported, albums, histogram, presets and Auto, masks, compare, zoom,
-the filmstrip, batch selection, the Export dialog, and the Lens correction and Remove
-chromatic aberration toggles.
+the filmstrip, batch selection, the Export dialog, and the Lens correction switch.
 
 ## Consequences
 

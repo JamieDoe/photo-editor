@@ -330,6 +330,46 @@ fn cropped_and_straightened_renders_frame_the_source_first() {
 }
 
 #[test]
+fn chromatic_aberration_alone_frames_the_source_first() {
+    use crate::chromatic::ChromaticAberration;
+    use crate::geometry::{self, Geometry};
+    let img = chart();
+    let ca = ChromaticAberration {
+        red: [0.002, 0.0],
+        blue: [-0.001, 0.0005],
+    };
+    let recipe = EditRecipe {
+        exposure: 0.3,
+        chromatic_aberration: Some(ca),
+        ..Default::default()
+    };
+    let plan = RenderPlan::from_recipe(&recipe, None);
+    assert_eq!(plan.chromatic_aberration, Some(ca));
+    let out = CpuRenderer
+        .render(&plan, &img, PixelFormat::Rgb8, &NeverCancel)
+        .unwrap();
+    assert_eq!((out.width(), out.height()), (img.width(), img.height()));
+    let framed = geometry::resample_corrected(&img, &Geometry::default(), Some(&ca));
+    let plain = RenderPlan {
+        chromatic_aberration: None,
+        ..plan.clone()
+    };
+    let expected = CpuRenderer
+        .render(&plain, &framed, PixelFormat::Rgb8, &NeverCancel)
+        .unwrap();
+    assert_eq!(out.data(), expected.data());
+    // Measured as nothing: no framing at all.
+    let none = EditRecipe {
+        chromatic_aberration: Some(ChromaticAberration::default()),
+        ..Default::default()
+    };
+    assert_eq!(
+        RenderPlan::from_recipe(&none, None).chromatic_aberration,
+        None
+    );
+}
+
+#[test]
 fn consecutive_gains_are_fused() {
     let plan = RenderPlan::new(vec![
         Stage::WhiteBalance {

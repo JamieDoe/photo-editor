@@ -98,6 +98,7 @@ fn main() {
             commands::images::open_image_path,
             commands::images::render_preview,
             commands::images::auto_level,
+            commands::images::measure_chromatic_aberration,
             commands::export::export_image,
             commands::selftest::self_test_config,
             commands::selftest::self_test_report,

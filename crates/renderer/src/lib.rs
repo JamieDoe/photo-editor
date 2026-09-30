@@ -9,6 +9,7 @@
 
 pub mod adjustments;
 mod backend;
+pub mod chromatic;
 pub mod cpu;
 pub mod geometry;
 pub mod ops;
@@ -18,6 +19,7 @@ mod recipe;
 mod tone_curve;
 
 pub use backend::{RenderBackend, RenderError};
+pub use chromatic::ChromaticAberration;
 pub use cpu::CpuRenderer;
 pub use geometry::{AspectRatio, CropRect, Geometry};
 pub use ops::colour_mixer::{ColourMixer, HslShift};

@@ -58,8 +58,8 @@ shows the whole corrected view.
   Lensfun, an LGPL-3 native library with a CC BY-SA database. CLAUDE.md requires an
   explicit licensing decision before copyleft native code goes in, so the toggle is
   left out until that decision.
-- **Remove chromatic aberration** can be algorithmic, with no profiles. It is the next
-  milestone.
+- **Remove chromatic aberration** can be algorithmic, with no profiles. It followed
+  in ADR 0035.
 - Both toggles are listed as not built in ADR 0016.
 
 ## Measurements

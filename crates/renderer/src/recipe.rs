@@ -29,7 +29,9 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   have none.
 /// - 12: adds vertical and horizontal perspective to the geometry (ADR 0034); older
 ///   geometry reads them as 0.
-pub const RECIPE_VERSION: u32 = 12;
+/// - 13: adds chromatic aberration removal (ADR 0035), written only when on; older
+///   recipes have none.
+pub const RECIPE_VERSION: u32 = 13;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -85,6 +87,11 @@ pub struct EditRecipe {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub geometry: Option<crate::geometry::Geometry>,
+    /// Remove chromatic aberration: the measured correction while the toggle is on.
+    /// `None` (and omitted from the JSON) when off.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub chromatic_aberration: Option<crate::chromatic::ChromaticAberration>,
     /// The base look the adjustments start from.
     pub look: Look,
 }
@@ -112,6 +119,7 @@ impl Default for EditRecipe {
             grain: 0.0,
             mixer: None,
             geometry: None,
+            chromatic_aberration: None,
             look: Look::Standard,
         }
     }
@@ -164,7 +172,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=12 => Ok(Self {
+            7..=13 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -204,6 +212,8 @@ impl EditRecipe {
                 .geometry
                 .map(|g| g.sanitized())
                 .filter(|g| !g.is_identity()),
+            // Kept while on, even if nothing was measured: the toggle stays on.
+            chromatic_aberration: self.chromatic_aberration.map(|c| c.sanitized()),
             look: self.look,
         }
     }
@@ -253,6 +263,7 @@ impl EditRecipe {
             && s.grain == 0.0
             && s.mixer.is_none()
             && s.geometry.is_none()
+            && s.chromatic_aberration.is_none()
             && s.look == Look::default()
     }
 }
@@ -296,7 +307,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":12,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":13,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -403,6 +414,34 @@ mod tests {
         assert_eq!(
             EditRecipe::from_json(r#"{"version":10}"#).unwrap().geometry,
             None
+        );
+        // Version 12 recipes have no chromatic aberration removal.
+        assert_eq!(
+            EditRecipe::from_json(r#"{"version":12}"#)
+                .unwrap()
+                .chromatic_aberration,
+            None
+        );
+        let on = EditRecipe {
+            chromatic_aberration: Some(crate::ChromaticAberration {
+                red: [0.000512, -0.00002],
+                blue: [-0.0003, 0.0],
+            }),
+            ..Default::default()
+        };
+        let back = EditRecipe::from_json(&on.to_json()).unwrap();
+        assert_eq!(back.chromatic_aberration, on.chromatic_aberration);
+        assert!(!back.is_identity());
+        // On with nothing measured still counts as on.
+        let zero = EditRecipe {
+            chromatic_aberration: Some(crate::ChromaticAberration::default()),
+            ..Default::default()
+        };
+        assert!(
+            EditRecipe::from_json(&zero.to_json())
+                .unwrap()
+                .chromatic_aberration
+                .is_some()
         );
         // Version 11 geometry has no perspective.
         let v11 = EditRecipe::from_json(

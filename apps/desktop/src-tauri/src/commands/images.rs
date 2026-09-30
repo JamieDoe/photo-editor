@@ -109,6 +109,16 @@ pub async fn auto_level(state: State<'_, AppState>, image_id: u64) -> IpcResult<
     wait(state.engine.auto_level(ImageId(image_id))).await
 }
 
+/// Remove chromatic aberration (ADR 0035): the correction measured on the open photo,
+/// or null when it has too few clean edges to measure.
+#[tauri::command]
+pub async fn measure_chromatic_aberration(
+    state: State<'_, AppState>,
+    image_id: u64,
+) -> IpcResult<Option<renderer::ChromaticAberration>> {
+    wait(state.engine.measure_chromatic_aberration(ImageId(image_id))).await
+}
+
 #[tauri::command]
 pub async fn render_preview(
     state: State<'_, AppState>,
