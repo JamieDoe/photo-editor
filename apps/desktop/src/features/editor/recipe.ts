@@ -78,6 +78,7 @@ export function isIdentity(r: EditRecipe): boolean {
     r.pointCurve === undefined &&
     r.channelCurves === undefined &&
     r.whiteBalance === undefined &&
+    r.parametricCurve === undefined &&
     (r.masks ?? []).length === 0 &&
     r.look === "standard"
   );

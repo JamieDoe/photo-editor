@@ -190,7 +190,7 @@ mockIPC((cmd, payload) => {
         { id: "detail", label: "Detail and effects", fields: ["texture", "clarity", "sharpening", "noiseReduction", "vignette", "grain"], copiedByDefault: true },
         { id: "geometry", label: "Crop, geometry and lens", fields: ["geometry", "chromaticAberration"], copiedByDefault: false },
         { id: "masks", label: "Masks", fields: ["masks"], copiedByDefault: false },
-      ] };
+      ], curveRegions: [["highlights", "Highlights"], ["lights", "Lights"], ["darks", "Darks"], ["shadows", "Shadows"]].map(([key, label]) => ({ key, label, group: "Tone curve", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" })) };
     case "open_image_dialog":
     case "open_image_path":
       openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";

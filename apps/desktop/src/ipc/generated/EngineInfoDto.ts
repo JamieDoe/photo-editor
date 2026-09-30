@@ -31,4 +31,8 @@ maskDensity: AdjustmentSpec,
 /**
  * The recipe's settings by panel section, for copying edits (ADR 0048).
  */
-settingGroups: Array<SettingGroup>, };
+settingGroups: Array<SettingGroup>, 
+/**
+ * The parametric tone curve's region sliders (ADR 0051).
+ */
+curveRegions: Array<AdjustmentSpec>, };

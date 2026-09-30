@@ -43,7 +43,8 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 19: adds brush masks (ADR 0042).
 /// - 20: adds masks of several shapes, and mask density (ADR 0043); older masks are
 ///   one shape at full density.
-/// - 21: adds white balance set as a light (ADR 0051), written only when set.
+/// - 21: adds white balance set as a light and the parametric tone curve (ADR 0051),
+///   written only when set.
 pub const RECIPE_VERSION: u32 = 21;
 
 /// A non-destructive edit: parameters only, never pixels.
@@ -117,6 +118,11 @@ pub struct EditRecipe {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional, type = "Array<[number, number]>"))]
     pub point_curve: Option<crate::ops::point_curve::PointCurve>,
+    /// The parametric tone curve (ADR 0051): Lightroom's region sliders, before the
+    /// point curve. `None` (and omitted from the JSON) while its sliders are at zero.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub parametric_curve: Option<crate::ops::parametric_curve::ParametricCurve>,
     /// Red, green and blue tone curves, after the RGB one. `None` (and omitted from
     /// the JSON) while all three are the diagonal.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -157,6 +163,7 @@ impl Default for EditRecipe {
             geometry: None,
             chromatic_aberration: None,
             point_curve: None,
+            parametric_curve: None,
             channel_curves: None,
             masks: Vec::new(),
             look: Look::Standard,
@@ -255,6 +262,10 @@ impl EditRecipe {
             // Kept while on, even if nothing was measured: the toggle stays on.
             chromatic_aberration: self.chromatic_aberration.map(|c| c.sanitized()),
             point_curve: self.point_curve.filter(|c| !c.is_identity()),
+            parametric_curve: self
+                .parametric_curve
+                .map(|c| c.sanitized())
+                .filter(|c| !c.is_identity()),
             channel_curves: self
                 .channel_curves
                 .map(|c| c.sanitized())
@@ -316,6 +327,7 @@ impl EditRecipe {
             && s.geometry.is_none()
             && s.chromatic_aberration.is_none()
             && s.point_curve.is_none()
+            && s.parametric_curve.is_none()
             && s.channel_curves.is_none()
             && s.masks.is_empty()
             && s.look == Look::default()

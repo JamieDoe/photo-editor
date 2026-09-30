@@ -326,6 +326,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
             <AdjustmentPanel
               specs={info.adjustments}
               mixerSpec={info.mixer}
+              curveRegions={info.curveRegions}
               histogram={histogram}
               recipe={recipe}
               onChange={editor.setRecipe}

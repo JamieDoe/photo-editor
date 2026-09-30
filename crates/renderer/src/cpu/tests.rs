@@ -140,13 +140,15 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                 Stage::Contrast { gamma } => rgb.map(|c| ops::contrast::apply(c, gamma)),
                 Stage::BaseCurve => rgb.map(ops::look::standard),
                 Stage::PointCurve {
+                    ref parametric,
                     rgb: ref master,
                     ref channels,
                 } => {
                     let mut out = rgb;
                     for (v, channel) in out.iter_mut().zip(channels.iter()) {
                         let tone = color::linear_to_srgb(v.clamp(0.0, 1.0));
-                        *v = color::srgb_to_linear(channel.eval(master.eval(tone)));
+                        *v =
+                            color::srgb_to_linear(channel.eval(master.eval(parametric.eval(tone))));
                     }
                     out
                 }
@@ -182,6 +184,11 @@ fn matches_scalar_reference_for_all_stages() {
         noise_reduction: 70.0,
         vignette: -40.0,
         grain: 30.0,
+        parametric_curve: Some(crate::ops::parametric_curve::ParametricCurve {
+            shadows: 30.0,
+            highlights: -40.0,
+            ..Default::default()
+        }),
         point_curve: Some(crate::ops::point_curve::PointCurve::new(&[
             [0.05, 0.0],
             [0.3, 0.24],

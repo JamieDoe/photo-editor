@@ -269,6 +269,20 @@ pub fn read_xmp(xml: &str) -> Result<LightroomPreset, LightroomError> {
     }
 
     r.point_curve = curve(s.lists.get("ToneCurvePV2012"));
+    // The region sliders and their splits (ADR 0051).
+    let parametric = renderer::ops::parametric_curve::ParametricCurve {
+        shadows: s.num("ParametricShadows").unwrap_or(0.0),
+        darks: s.num("ParametricDarks").unwrap_or(0.0),
+        lights: s.num("ParametricLights").unwrap_or(0.0),
+        highlights: s.num("ParametricHighlights").unwrap_or(0.0),
+        shadow_split: s.num("ParametricShadowSplit").unwrap_or(25.0),
+        midtone_split: s.num("ParametricMidtoneSplit").unwrap_or(50.0),
+        highlight_split: s.num("ParametricHighlightSplit").unwrap_or(75.0),
+    };
+    if !parametric.is_identity() {
+        r.parametric_curve = Some(parametric);
+        used = true;
+    }
     let channels = ChannelCurves {
         red: curve(s.lists.get("ToneCurvePV2012Red")),
         green: curve(s.lists.get("ToneCurvePV2012Green")),
@@ -287,17 +301,6 @@ pub fn read_xmp(xml: &str) -> Result<LightroomPreset, LightroomError> {
             left_out.push(what);
         }
     };
-    note(
-        [
-            "ParametricShadows",
-            "ParametricDarks",
-            "ParametricLights",
-            "ParametricHighlights",
-        ]
-        .iter()
-        .any(|k| s.set(k)),
-        "Parametric curve",
-    );
     note(
         [
             "SplitToningShadowSaturation",
@@ -431,10 +434,9 @@ mod tests {
         let channels = r.channel_curves.unwrap();
         assert!(channels.red.is_none() && channels.green.is_none() && channels.blue.is_some());
         // What has no counterpart is named; the mask's own exposure was not taken.
-        assert_eq!(
-            p.left_out,
-            ["Parametric curve", "Color Grading", "Masks and healing"]
-        );
+        assert_eq!(p.left_out, ["Color Grading", "Masks and healing"]);
+        // The region sliders come across (ADR 0051).
+        assert_eq!(r.parametric_curve.map(|c| c.darks), Some(-6.0));
     }
 
     #[test]

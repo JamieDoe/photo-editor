@@ -6,6 +6,7 @@ import type { ColourMixer } from "./ColourMixer";
 import type { Geometry } from "./Geometry";
 import type { Look } from "./Look";
 import type { Mask } from "./Mask";
+import type { ParametricCurve } from "./ParametricCurve";
 
 /**
  * A non-destructive edit: parameters only, never pixels.
@@ -113,6 +114,11 @@ chromaticAberration?: ChromaticAberration,
  * from the JSON) while it is the diagonal.
  */
 pointCurve?: Array<[number, number]>, 
+/**
+ * The parametric tone curve (ADR 0051): Lightroom's region sliders, before the
+ * point curve. `None` (and omitted from the JSON) while its sliders are at zero.
+ */
+parametricCurve?: ParametricCurve, 
 /**
  * Red, green and blue tone curves, after the RGB one. `None` (and omitted from
  * the JSON) while all three are the diagonal.

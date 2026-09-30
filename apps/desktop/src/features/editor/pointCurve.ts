@@ -6,6 +6,7 @@
  */
 
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
+import type { ParametricCurve } from "../../ipc/generated/ParametricCurve";
 
 export type CurvePoint = [number, number];
 
@@ -177,5 +178,24 @@ export function channelEdited(r: EditRecipe, channel: CurveChannel): boolean {
 
 /** Whether any of the tone curves is shaped. */
 export function curvesEdited(r: EditRecipe): boolean {
-  return CURVE_CHANNELS.some((c) => channelEdited(r, c.id));
+  return CURVE_CHANNELS.some((c) => channelEdited(r, c.id)) || r.parametricCurve !== undefined;
+}
+
+/** The parametric curve's region sliders (ADR 0051), as `ParametricCurve` fields. */
+export type RegionKey = "highlights" | "lights" | "darks" | "shadows";
+
+export const isRegionKey = (k: string): k is RegionKey => ["highlights", "lights", "darks", "shadows"].includes(k);
+
+/** The parametric curve, or its neutral form (Lightroom's default splits). */
+export function parametricOf(r: EditRecipe): ParametricCurve {
+  return r.parametricCurve ?? { shadows: 0, darks: 0, lights: 0, highlights: 0, shadowSplit: 25, midtoneSplit: 50, highlightSplit: 75 };
+}
+
+/** `r` with a region slider set; the curve is left out while all four are at zero,
+ *  as the renderer writes it. */
+export function withRegion(r: EditRecipe, key: RegionKey, value: number): EditRecipe {
+  const curve = { ...parametricOf(r), [key]: value };
+  const neutral = curve.shadows === 0 && curve.darks === 0 && curve.lights === 0 && curve.highlights === 0;
+  const { parametricCurve: _, ...rest } = r;
+  return neutral ? rest : { ...rest, parametricCurve: curve };
 }

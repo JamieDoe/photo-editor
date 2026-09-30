@@ -47,6 +47,8 @@ pub enum Stage {
     /// on display tones, after the base look. Diagonals where unset.
     /// Boxed: four curves are much larger than any other stage.
     PointCurve {
+        /// The parametric curve (ADR 0051) as points, applied before the RGB curve.
+        parametric: Box<PointCurve>,
         rgb: Box<PointCurve>,
         channels: Box<[PointCurve; 3]>,
     },
@@ -200,8 +202,13 @@ impl RenderPlan {
         }
         let rgb = r.point_curve.filter(|c| !c.is_identity());
         let channels = r.channel_curves.filter(|c| !c.is_identity());
-        if rgb.is_some() || channels.is_some() {
+        let parametric = r
+            .parametric_curve
+            .map(|c| c.to_point_curve())
+            .filter(|c| !c.is_identity());
+        if rgb.is_some() || channels.is_some() || parametric.is_some() {
             stages.push(Stage::PointCurve {
+                parametric: Box::new(parametric.unwrap_or_default()),
                 rgb: Box::new(rgb.unwrap_or_default()),
                 channels: Box::new(channels.unwrap_or_default().curves()),
             });

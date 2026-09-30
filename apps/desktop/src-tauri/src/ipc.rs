@@ -133,6 +133,8 @@ pub struct EngineInfoDto {
     pub mask_density: AdjustmentSpec,
     /// The recipe's settings by panel section, for copying edits (ADR 0048).
     pub setting_groups: Vec<renderer::settings::SettingGroup>,
+    /// The parametric tone curve's region sliders (ADR 0051).
+    pub curve_regions: Vec<AdjustmentSpec>,
 }
 
 impl From<EngineInfo> for EngineInfoDto {
@@ -155,6 +157,7 @@ impl From<EngineInfo> for EngineInfoDto {
             mask_feather: i.mask_feather,
             mask_density: i.mask_density,
             setting_groups: i.setting_groups,
+            curve_regions: i.curve_regions,
         }
     }
 }

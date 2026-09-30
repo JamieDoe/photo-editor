@@ -153,4 +153,5 @@ pub struct EngineInfo {
     pub mask_feather: AdjustmentSpec,
     pub mask_density: AdjustmentSpec,
     pub setting_groups: Vec<renderer::settings::SettingGroup>,
+    pub curve_regions: Vec<AdjustmentSpec>,
 }

@@ -271,6 +271,30 @@ pub fn mask_specs() -> Vec<AdjustmentSpec> {
     vec![MASK_EXPOSURE, MASK_WARMTH, MASK_CLARITY]
 }
 
+/// The parametric tone curve's region sliders (ADR 0051), as Lightroom's, top to
+/// bottom. Keys are `ParametricCurve` fields.
+pub const CURVE_REGIONS: [AdjustmentSpec; 4] = {
+    const fn region(key: &'static str, label: &'static str) -> AdjustmentSpec {
+        AdjustmentSpec {
+            key,
+            label,
+            group: "Tone curve",
+            min: -100.0,
+            max: 100.0,
+            step: 1.0,
+            default: 0.0,
+            more: false,
+            unit: "",
+        }
+    }
+    [
+        region("highlights", "Highlights"),
+        region("lights", "Lights"),
+        region("darks", "Darks"),
+        region("shadows", "Shadows"),
+    ]
+};
+
 pub const PERSPECTIVE: [AdjustmentSpec; 2] = [
     AdjustmentSpec {
         key: "vertical",

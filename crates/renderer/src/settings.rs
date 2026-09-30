@@ -41,6 +41,7 @@ pub fn setting_groups() -> Vec<SettingGroup> {
                 "blacks",
                 "dehaze",
                 "pointCurve",
+                "parametricCurve",
                 "channelCurves",
             ],
             true,
@@ -180,6 +181,10 @@ mod tests {
                 ..Default::default()
             }),
             chromatic_aberration: Some(Default::default()),
+            parametric_curve: Some(crate::ops::parametric_curve::ParametricCurve {
+                darks: 20.0,
+                ..Default::default()
+            }),
             point_curve: Some(crate::ops::point_curve::PointCurve::new(&[
                 [0.0, 0.1],
                 [1.0, 1.0],
