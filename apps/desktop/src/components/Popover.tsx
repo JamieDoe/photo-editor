@@ -73,3 +73,22 @@ export function Popover({
     document.body,
   );
 }
+
+/** A popover's header, as the design's dialogs have it: a small picture (a thumbnail,
+ *  or an icon), a title (or a field in its place) and a line under it. */
+export function PopoverHeader({ visual, title, sub }: { visual: ReactNode; title: ReactNode; sub: string }) {
+  return (
+    <div className="popover-header">
+      {visual}
+      <div className="popover-heading">
+        {title}
+        <span className="popover-sub">{sub}</span>
+      </div>
+    </div>
+  );
+}
+
+/** An icon in the header's picture spot. */
+export function PopoverIcon({ children }: { children: ReactNode }) {
+  return <span className="popover-thumb popover-icon">{children}</span>;
+}

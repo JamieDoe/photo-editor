@@ -882,6 +882,54 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       presetCheck.files.lightroom.leftOut.includes("Color Grading") &&
       presetCheck.files.failed.join() === "missing.xmp";
 
+    // Copy and paste (ADR 0048) through the panel footer and ⇧⌘V: the look comes
+    // across, the crop does not (left out by default), as one undo step.
+    const copyPasteCheck = await (async () => {
+      const ed = () => driver.editor();
+      const footer = (label: string) =>
+        [...document.querySelectorAll<HTMLButtonElement>(".panel-footer button")].find((b) => b.textContent?.trim() === label);
+      const cropped = { x: 0.1, y: 0.1, w: 0.8, h: 0.8 };
+      const source = {
+        ...beforeCrop,
+        masks: undefined,
+        contrast: 35,
+        temperature: 20,
+        clarity: 25,
+        geometry: { ...(beforeCrop.geometry ?? { straighten: 0, aspect: "original" as const, vertical: 0, horizontal: 0, rotation: 0, flip: false }), crop: cropped },
+      };
+      await show(source, "edit to copy");
+      await waitFor(() => (ed().recipe === source ? true : null), 5_000, "edit to copy shown");
+      footer("Copy")?.click();
+      await nextFrame();
+      const toastAfterCopy = document.querySelector(".toast")?.textContent ?? null;
+      const target = { ...beforeCrop, masks: undefined, geometry: undefined, exposure: beforeCrop.exposure - 0.3 };
+      await show(target, "photo to paste onto");
+      await waitFor(() => (ed().recipe === target ? true : null), 5_000, "paste target shown");
+      const mark = ed().schedulerStats().requested;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "V", shiftKey: true, metaKey: true, ctrlKey: true }));
+      const frame = await waitFor(() => frames.find((f) => f.info.seq > mark) ?? null, 10_000, "pasted frame").catch(() => null);
+      await nextFrame();
+      const pasted = ed().recipe!;
+      return {
+        toastAfterCopy,
+        toastAfterPaste: document.querySelector(".toast")?.textContent ?? null,
+        rendered: frame !== null,
+        lookPasted: pasted.contrast === 35 && pasted.temperature === 20 && pasted.clarity === 25,
+        exposurePasted: pasted.exposure === source.exposure,
+        cropLeftOut: pasted.geometry === undefined,
+        undoLabel: ed().undoLabel,
+      };
+    })();
+    driver.editor().setRecipe(beforeCrop);
+    const copyPasteOk =
+      copyPasteCheck.toastAfterCopy === "Edits copied" &&
+      copyPasteCheck.toastAfterPaste === "Pasted to 1 photo" &&
+      copyPasteCheck.rendered &&
+      copyPasteCheck.lookPasted &&
+      copyPasteCheck.exposurePasted &&
+      copyPasteCheck.cropLeftOut &&
+      copyPasteCheck.undoLabel === "Paste";
+
     // Shapes combined (ADR 0043): -1 EV over the top, less a hard circle at its
     // middle. Inside the circle unchanged, beside it darker.
     const combinedFrame = await show(
@@ -1032,6 +1080,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       history: historyOk,
       compare: compareOk,
       presets: presetOk,
+      copyPaste: copyPasteOk,
       crop: cropOk,
       perspective: perspectiveOk,
       turn: turnOk,
@@ -1060,6 +1109,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       history,
       compare: compareCheck,
       presets: presetCheck,
+      copyPaste: copyPasteCheck,
       crop,
       perspective,
       turn,

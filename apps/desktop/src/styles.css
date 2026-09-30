@@ -678,3 +678,27 @@ button.popover-item.danger, button.popover-item.danger .icon { color: var(--dang
 .import-name { font-size: 12.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .import-note { font-size: 11.5px; line-height: 1.35; color: var(--text-3); }
 .import-list li.failed .import-name { color: var(--danger); }
+
+/* The panel footer (ADR 0048), as in the design: Reset, then Copy and Paste. */
+.panel-footer { height: 56px; flex-shrink: 0; padding: 0 12px; border-top: 1px solid var(--hairline); display: flex; align-items: center; gap: 6px; }
+.footer-spacer { flex-grow: 1; }
+button.footer-button { height: 32px; padding: 0 10px; border-radius: 8px; gap: 7px; background: transparent; border: 0; font-size: 12.5px; font-weight: 400; color: var(--text-2); }
+button.footer-button:hover:not(:disabled) { background: var(--hover-strong); color: var(--text); }
+.split-button { display: flex; align-items: center; }
+.split-button button.footer-button:first-child { padding-right: 6px; border-radius: 8px 0 0 8px; }
+button.footer-button.split-more { width: 22px; padding: 0; border-radius: 0 8px 8px 0; }
+button.footer-button.split-more[aria-expanded="true"] { background: var(--hover-strong); color: var(--text); }
+button.popover-item.check-item[aria-checked="false"] { color: var(--text-2); }
+.check-box { width: 16px; height: 16px; flex-shrink: 0; border-radius: 5px; display: flex; align-items: center; justify-content: center; border: 1.5px solid var(--hairline-strong); color: var(--primary-fg); }
+button.popover-item[aria-checked="true"] .check-box { background: var(--accent); border-color: var(--accent); }
+button.popover-item[aria-checked="true"] .check-box .icon { color: #0b0c0e; }
+
+/* A short confirmation, as the design's toast: a light pill low over the window. */
+.toast {
+  position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); z-index: 60;
+  height: 38px; padding: 0 14px 0 12px; border-radius: 10px; display: flex; align-items: center; gap: 8px;
+  background: #ededef; color: #0b0c0e; font-size: 13px; font-weight: 500; white-space: nowrap;
+  box-shadow: 0 16px 40px -10px rgb(0 0 0 / 60%); pointer-events: none;
+  animation: toast-in 0.2s var(--ease);
+}
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px); } }

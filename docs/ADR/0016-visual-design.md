@@ -88,7 +88,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Library header | Grid/List switch, Refresh, Set as default | The details list and folder actions predate the grid; the design has neither |
 | Library sidebar | "Indexed photos" is a count, not a view | "All photos" as a library-wide view is not built yet |
 | Edit header | "Open photo…" button | Opening a file outside the library; the design has no equivalent |
-| Edit header | Reset (whole photo) and save notes ("Not saved…", "Couldn't save") | Honest save state for photos outside the library; one-step reset |
+| Edit header | Edited and save notes ("Not saved…", "Couldn't save"); Reset moved to the panel footer as in the design (ADR 0048) | Honest save state for photos outside the library |
 | Edit header on narrow stages | The file details, then the name, end in an ellipsis (in full on hover); below a 760 px stage the save note shortens to "Not saved" (in full on hover); below 600 px "Open photo…" becomes an icon button | The design has no narrow layout; the header must fit the 800 px minimum window (a 480 px stage) without hiding an action |
 | Edit panel top | "Look: Standard / Flat" row where the design has Presets | Base looks (ADR 0022) are profile choices; presets are not built yet |
 | Stage | Dimmed photo and "Loading…" pill while the next photo opens | ADR 0020; the design shows no loading state |
@@ -103,6 +103,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Histogram | Dragging adjusts Blacks, Shadows, Exposure, Highlights or Whites by zone; hovering tints the zone and shows its name and value in place of the exposure details; multiply blending on the light theme | Requested (Lightroom's behaviour); the readout says what a drag will change; the design is dark only |
 | Remove chromatic aberration | The switch's subtitle says "Measuring…" and then the result, for three seconds | Turning it on measures the photo; the design has no in-progress state |
 | Settings | Whole screen (grouped cards, segmented controls) | The design has no settings; built from its tokens and components |
+| Panel footer (ADR 0048) | Reset, Copy, Paste (dimmed until something is copied) and the toast, as designed | A chevron beside Copy chooses which setting groups to copy (crop and masks off by default); ⇧⌘C / ⇧⌘V |
 | Presets (ADR 0046) | Strip under the histogram, 64×44 previews with names, accent ring on the applied one | Save… and Import… where the design has Auto (not built); Export… in a saved preset's menu, and a popover listing what an import brought in (ADR 0047); ⋯ on a saved preset opens a popover to rename, update or delete it; previews are real renders of the photo |
 | Undo and redo (ADR 0044) | Two icon buttons in the Edit header, between the save status and the photo counter; ⌘Z and ⇧⌘Z | The design has no undo control; placed with the edit's other status and actions |
 | Before / after (ADR 0045) | Compare button, white divider and round handle, Before and After pills, drag anywhere on the photo | The `\` shortcut; "Before…" while the before image renders; no focus-header button (that header is not built) |
