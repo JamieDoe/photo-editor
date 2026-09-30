@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 import { CropIcon, LevelIcon } from "../../components/icons";
 import * as ipc from "../../ipc/client";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
@@ -28,20 +36,6 @@ const NO_GEOMETRY: Geometry = { straighten: 0, crop: FULL, aspect: "original", v
 
 export function geometryOf(r: EditRecipe): Geometry {
   return r.geometry ?? NO_GEOMETRY;
-}
-
-/** Whether the photo is cropped, straightened or perspective-corrected. */
-export function geometryEdited(r: EditRecipe): boolean {
-  const g = geometryOf(r);
-  return (
-    g.straighten !== 0 ||
-    g.vertical !== 0 ||
-    g.horizontal !== 0 ||
-    g.crop.x !== 0 ||
-    g.crop.y !== 0 ||
-    g.crop.w !== 1 ||
-    g.crop.h !== 1
-  );
 }
 
 /**
@@ -264,11 +258,14 @@ export function GeometryControls({
   tool,
   straighten,
   perspective,
+  lens,
   disabled,
 }: {
   tool: CropTool;
   straighten: AdjustmentSpec;
   perspective: AdjustmentSpec[];
+  /** The lens switch, last in "Perspective & lens", and whether it is on. */
+  lens: { content: ReactNode; edited: boolean };
   disabled: boolean;
 }) {
   const value = tool.geometry.straighten;
@@ -312,6 +309,7 @@ export function GeometryControls({
         valueOf={(s) => (s.key === "vertical" ? tool.geometry.vertical : s.key === "horizontal" ? tool.geometry.horizontal : s.default)}
         format={(s, v) => formatSliderValue(v, s.min, s.step, s.unit)}
         extra={{ edited: false, before: true, content: <div className="more-title">Perspective &amp; lens</div> }}
+        after={lens}
         disabled={disabled}
         onChange={tool.setPerspective}
       />

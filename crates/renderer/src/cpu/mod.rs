@@ -35,12 +35,14 @@ impl CpuRenderer {
         out: &mut OutputImage,
         cancel: &dyn Cancellation,
     ) -> Result<(), RenderError> {
-        match &plan.geometry {
-            // Crop and straighten first; the stages run on the framed image, which is
-            // cached while other controls change.
-            Some(g) => self.render_frame(plan, &kernels::cached_frame(source, g), out, cancel),
-            None => self.render_frame(plan, source, out, cancel),
+        if plan.geometry.is_none() && plan.chromatic_aberration.is_none() {
+            return self.render_frame(plan, source, out, cancel);
         }
+        // Framing first (crop, straighten, perspective, chromatic aberration); the
+        // stages run on the framed image, which is cached while other controls change.
+        let g = plan.geometry.unwrap_or_default();
+        let frame = kernels::cached_frame(source, &g, plan.chromatic_aberration.as_ref());
+        self.render_frame(plan, &frame, out, cancel)
     }
 
     fn render_frame(

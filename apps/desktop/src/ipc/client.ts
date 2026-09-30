@@ -4,6 +4,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { ChromaticAberration } from "./generated/ChromaticAberration";
 import type { EngineInfoDto } from "./generated/EngineInfoDto";
 import type { BackupStatusDto } from "./generated/BackupStatusDto";
 import type { ClientErrorReport } from "./generated/ClientErrorReport";
@@ -87,6 +88,10 @@ export const setPhotoMarks = (paths: string[], change: MarkChangeDto) =>
 export const saveEdit = (path: string, recipe: EditRecipe) => invoke<EditSavedDto>("save_edit", { path, recipe });
 /** Auto level: the straighten angle that levels the open photo, or null (no clear horizon). */
 export const autoLevel = (imageId: number) => invoke<number | null>("auto_level", { imageId });
+/** Remove chromatic aberration: the correction measured on the open photo, or null (too
+ *  few clean edges to measure). */
+export const measureChromaticAberration = (imageId: number) =>
+  invoke<ChromaticAberration | null>("measure_chromatic_aberration", { imageId });
 /** The Light section's tone curve for `recipe`: display values of evenly spaced tones. */
 export const toneCurve = (recipe: EditRecipe) => invoke<number[]>("tone_curve", { recipe });
 

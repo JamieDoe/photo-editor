@@ -170,6 +170,9 @@ mockIPC((cmd, payload) => {
     case "auto_level":
       // Dev-only stand-in: a small tilt to correct.
       return new Promise((r) => setTimeout(() => r(-1.4), 60));
+    case "measure_chromatic_aberration":
+      // Dev-only stand-in: a little red and blue spread.
+      return new Promise((r) => setTimeout(() => r({ red: [0.0004, 0.0001], blue: [-0.0003, 0] }), 250));
     case "tone_curve": {
       // Dev-only stand-in for the renderer's curve: a rough response to exposure,
       // contrast and the end points, enough to see the graph move.

@@ -1,5 +1,6 @@
 use crate::EditRecipe;
 use crate::Look;
+use crate::chromatic::ChromaticAberration;
 use crate::geometry::Geometry;
 use crate::ops::colour_mixer::HslShift;
 use crate::ops::detail::DetailParams;
@@ -80,6 +81,8 @@ pub struct RenderPlan {
     /// resampled into the output frame, and the stages run on that. `None` renders the
     /// whole source.
     pub geometry: Option<Geometry>,
+    /// Red and blue scaled to line up with green (ADR 0035), in the same resample.
+    pub chromatic_aberration: Option<ChromaticAberration>,
     pub stages: Vec<Stage>,
     pub output: OutputTransform,
 }
@@ -88,6 +91,7 @@ impl RenderPlan {
     pub fn new(stages: Vec<Stage>) -> Self {
         Self {
             geometry: None,
+            chromatic_aberration: None,
             stages,
             output: OutputTransform::Srgb8,
         }
@@ -166,6 +170,7 @@ impl RenderPlan {
         }
         Self {
             geometry: r.geometry.filter(|g| !g.is_identity()),
+            chromatic_aberration: r.chromatic_aberration.filter(|c| !c.is_identity()),
             ..Self::new(stages)
         }
     }

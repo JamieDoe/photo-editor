@@ -382,6 +382,37 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     };
     const perspectiveOk = corrected !== null && Math.abs(corrected.frame.fullHeight - fitted.h * fullH) <= 2;
 
+    // Remove chromatic aberration (ADR 0035): measured through the real command, then
+    // rendered with (the whole frame, freshly resampled).
+    const tCa = performance.now();
+    let caError: string | null = null;
+    const measured = await ipc.measureChromaticAberration(driver.editor().image!.id).catch((e: unknown) => {
+      caError = e instanceof Error ? e.message : JSON.stringify(e);
+      return undefined;
+    });
+    const caMs = Math.round(performance.now() - tCa);
+    let caFrame: RenderedFrame | null = null;
+    if (measured) {
+      const framesBeforeCa = frames.length;
+      driver.editor().setRecipe({ ...beforeCrop, chromaticAberration: measured });
+      caFrame = await waitFor(
+        () =>
+          frames
+            .slice(framesBeforeCa)
+            .find((f) => f.frame.fullWidth === fullW && !f.frame.cacheHit) ?? null,
+        10_000,
+        "chromatic aberration frame",
+      ).catch(() => null);
+      driver.editor().setRecipe(beforeCrop);
+    }
+    const chromaticAberration = {
+      measured: measured ?? null,
+      ms: caMs,
+      error: caError,
+      renderMs: caFrame?.frame.renderMs ?? null,
+    };
+    const chromaticAberrationOk = measured !== undefined && caMs < 3000 && (measured === null || caFrame !== null);
+
     const stats = driver.editor().schedulerStats();
     const checks = {
       exportFinished: finished.type === "finished",
@@ -398,6 +429,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       toneCurve: toneCurveOk,
       crop: cropOk,
       perspective: perspectiveOk,
+      chromaticAberration: chromaticAberrationOk,
       autoLevel: autoLevelOk,
     };
     // Named so that a failing run explains itself.
@@ -419,6 +451,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       toneCurve,
       crop,
       perspective,
+      chromaticAberration,
       autoLevel,
       quitGuard,
       indexing,
