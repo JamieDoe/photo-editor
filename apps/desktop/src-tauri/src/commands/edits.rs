@@ -10,7 +10,9 @@ use tauri::State;
 use super::IpcResult;
 use super::library::{folder_unavailable, library_photo};
 use crate::AppState;
-use crate::ipc::{EditSavedDto, EditSavingDto, IpcError};
+use crate::ipc::{
+    EditSavedDto, EditSavingDto, FileFailureDto, IpcError, PastedEditsDto, PastedPhotoDto,
+};
 
 /// The saved edit of the photo at `path` and whether its edits are saved. Never fails:
 /// a catalogue problem means "not saved" rather than a photo that cannot be opened.
@@ -71,4 +73,57 @@ pub async fn save_edit(
     .map_err(IpcError::internal)?
     .map_err(IpcError::from)?;
     Ok(EditSavedDto { edited })
+}
+
+/// Sets the settings of `groups` from `source` on each library photo in `paths` (ADR
+/// 0049): pasting or syncing edits onto photos that are not open. Each photo is
+/// changed or reported on its own; photos outside the library are refused.
+#[tauri::command]
+pub async fn paste_edits_to(
+    state: State<'_, AppState>,
+    paths: Vec<String>,
+    source: EditRecipe,
+    groups: Vec<String>,
+) -> IpcResult<PastedEditsDto> {
+    let targets: Vec<(String, Option<(PathBuf, PathBuf)>)> = paths
+        .into_iter()
+        .map(|p| {
+            let file = state.folders.check(Path::new(&p));
+            let root = file.as_deref().and_then(|f| state.folders.root_of(f));
+            (p, file.zip(root))
+        })
+        .collect();
+    let catalogue = Arc::clone(&state.catalogue);
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        let mut result = PastedEditsDto {
+            applied: Vec::new(),
+            failed: Vec::new(),
+        };
+        for (path, target) in targets {
+            let name = Path::new(&path)
+                .file_name()
+                .map_or_else(|| path.clone(), |n| n.to_string_lossy().into_owned());
+            let outcome = match target {
+                None => Err("It isn’t in a library folder.".to_owned()),
+                Some((file, root)) => library_photo(&catalogue, &file, &root)
+                    .map_err(app_core::EngineError::from)
+                    .and_then(|photo| app_core::paste_onto(&catalogue, photo, &source, &groups))
+                    .map_err(|e| {
+                        log::warn!("paste onto {}: {}", file.display(), e.detail);
+                        e.message
+                    }),
+            };
+            match outcome {
+                Ok(edited) => result.applied.push(PastedPhotoDto { path, edited }),
+                Err(message) => result.failed.push(FileFailureDto {
+                    file: name,
+                    message,
+                }),
+            }
+        }
+        result
+    })
+    .await
+    .map_err(IpcError::internal)?;
+    Ok(result)
 }

@@ -305,6 +305,43 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       edits.restoredExposure === 1 &&
       !edits.resetEdited;
 
+    // Batch edits (ADR 0049) through the real command and catalogue: sync a look onto
+    // the folder's other photos. They are saved as edited; one with its own crop keeps
+    // it (the crop is not synced by default); a photo outside the library is refused.
+    const batch = await (async () => {
+      if (!indexing) return null;
+      const others = (await ipc.listFolder(indexing.folder)).photos.map((p) => p.path).filter((p) => p !== config.imagePath);
+      if (others.length < 2) return null;
+      const neutral = neutralRecipe(info.recipeVersion);
+      const ownCrop = { x: 0.2, y: 0.1, w: 0.6, h: 0.8 };
+      const cropped = { ...neutral, geometry: { straighten: 0, crop: ownCrop, aspect: "free" as const, vertical: 0, horizontal: 0, rotation: 0, flip: false } };
+      await ipc.saveEdit(others[0]!, cropped);
+      const source = { ...neutral, contrast: 40, saturation: -30, geometry: { ...cropped.geometry, crop: { x: 0, y: 0, w: 0.5, h: 0.5 } } };
+      const groups = info.settingGroups.filter((g) => g.copiedByDefault).map((g) => g.id);
+      const t0 = performance.now();
+      const result = await ipc.pasteEditsTo([...others, "/not/in/the/library.jpg"], source, groups);
+      const ms = Math.round(performance.now() - t0);
+      const listed = (await ipc.listFolder(indexing.folder)).photos.filter((p) => others.includes(p.path));
+      const reopened = await ipc.openImagePath(others[0]!);
+      for (const p of others) await ipc.saveEdit(p, neutral);
+      return {
+        photos: others.length,
+        ms,
+        applied: result.applied.length,
+        failed: result.failed.map((f) => f.message),
+        allEdited: listed.length === others.length && listed.every((p) => p.edited),
+        syncedLook: reopened?.savedRecipe?.contrast === 40 && reopened.savedRecipe.saturation === -30,
+        keptOwnCrop: JSON.stringify(reopened?.savedRecipe?.geometry?.crop) === JSON.stringify(ownCrop),
+      };
+    })();
+    const batchOk =
+      batch !== null &&
+      batch.applied === batch.photos &&
+      batch.failed.length === 1 &&
+      batch.allEdited &&
+      batch.syncedLook &&
+      batch.keptOwnCrop;
+
     // Quit guard: closing the window while an export runs must be held for
     // confirmation. The final shutdown (self_test_report) then cancels the export.
     let quitRequested: { exportsRunning: number } | null = null;
@@ -1080,6 +1117,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       history: historyOk,
       compare: compareOk,
       presets: presetOk,
+      batch: batchOk,
       copyPaste: copyPasteOk,
       crop: cropOk,
       perspective: perspectiveOk,
@@ -1109,6 +1147,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       history,
       compare: compareCheck,
       presets: presetCheck,
+      batch,
       copyPaste: copyPasteCheck,
       crop,
       perspective,

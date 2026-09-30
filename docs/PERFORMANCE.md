@@ -683,3 +683,17 @@ quality, 256 px, the `presets` render slot) takes 2–5 ms from request to frame
 built-in presets take about 22 ms in all. Previews are redrawn only when the photo's
 own settings (exposure, geometry, masks) change, 300 ms after the change stops, and
 never while a look slider moves.
+
+## 33. Batch edits (ADR 0049)
+
+Merging a copied edit into each photo's saved edit and saving it (`paste_onto`,
+release, machine load 6–8), 1,000 photos, three rounds:
+
+| Catalogue | ms per 1,000 photos |
+|---|---|
+| In memory | 18–19 |
+| On disk | 32 |
+
+Release self-test, Nikon Z 6 folder: syncing onto 7 photos took 1–7 ms through the
+command. A batch needs no progress bar; the thumbnails re-render afterwards, as each
+is shown.

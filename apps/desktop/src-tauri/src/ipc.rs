@@ -171,7 +171,7 @@ impl From<app_core::Preset> for PresetDto {
 pub struct PresetImportDto {
     pub imported: Vec<ImportedPresetDto>,
     /// Files that could not be imported, and why.
-    pub failed: Vec<PresetImportFailureDto>,
+    pub failed: Vec<FileFailureDto>,
 }
 
 #[derive(Debug, Clone, Serialize, TS)]
@@ -187,8 +187,8 @@ pub struct ImportedPresetDto {
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
-pub struct PresetImportFailureDto {
-    /// The file's name.
+pub struct FileFailureDto {
+    /// The file's name (a preset file, or a photo).
     pub file: String,
     pub message: String,
 }
@@ -200,6 +200,25 @@ pub fn preset_ref(id: &str) -> Option<app_core::PresetRef> {
     }
     let n = id.strip_prefix("user:")?.parse().ok()?;
     Some(app_core::PresetRef::User(app_core::PresetId(n)))
+}
+
+/// What pasting or syncing edits onto several photos did (ADR 0049).
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PastedEditsDto {
+    pub applied: Vec<PastedPhotoDto>,
+    /// Photos left as they were, and why.
+    pub failed: Vec<FileFailureDto>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PastedPhotoDto {
+    pub path: String,
+    /// The photo now differs from its original.
+    pub edited: bool,
 }
 
 /// Result of saving an edit.

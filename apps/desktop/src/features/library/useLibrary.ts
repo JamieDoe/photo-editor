@@ -8,7 +8,7 @@ import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { LibraryStatusDto } from "../../ipc/generated/LibraryStatusDto";
-import { applyChange, stepFrom, visiblePhotos, type LibraryFilter } from "./marks";
+import { applyChange, rangeToTick, stepFrom, visiblePhotos, type LibraryFilter } from "./marks";
 
 export type IndexProgress = Extract<IndexEvent, { type: "progress" }>;
 export type IndexFinished = Extract<IndexEvent, { type: "finished" }>;
@@ -30,6 +30,12 @@ export function useLibrary() {
   const [layout, setLayout] = useState<LibraryLayout>("grid");
   const [filter, setFilter] = useState<LibraryFilter>("all");
   const [selected, setSelected] = useState<string | null>(null);
+  /** Photos ticked for batch editing (ADR 0049), by path, in the order ticked; and
+   *  where a ⇧-click range starts. */
+  const [batch, setBatch] = useState<string[]>([]);
+  const batchAnchor = useRef<string | null>(null);
+  /** Bumped per photo when its edit changes, so its thumbnail is fetched again. */
+  const [thumbRevs, setThumbRevs] = useState<Record<string, number>>({});
   /** A library-wide collection being viewed instead of a folder. */
   const [collection, setCollection] = useState<CollectionListingDto | null>(null);
   const requestRef = useRef(0);
@@ -128,6 +134,11 @@ export function useLibrary() {
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
 
+  const batchInView = useMemo(() => {
+    const inView = new Set(photos.map((p) => p.path));
+    return batch.filter((path) => inView.has(path));
+  }, [batch, photos]);
+
   /** The photo `delta` places after `path` among the visible ones (Edit's ← →). */
   const neighbour = useCallback(
     (path: string | null, delta: number) => stepFrom(photosRef.current, visibleRef.current, path, delta),
@@ -158,11 +169,34 @@ export function useLibrary() {
     [load],
   );
 
-  /** A photo's edit was saved (or reset): update its "edited" state in the view. */
+  /** A photo's edit was saved (or reset): update its "edited" state in the view, and
+   *  fetch its thumbnail again where one is shown. */
   const markEdited = useCallback((path: string, edited: boolean) => {
     const update = (ps: PhotoEntryDto[]) => ps.map((p) => (p.path === path && p.edited !== edited ? { ...p, edited } : p));
     setListing((l) => (l ? { ...l, photos: update(l.photos) } : l));
     setCollection((c) => (c ? { ...c, photos: update(c.photos) } : c));
+    setThumbRevs((r) => ({ ...r, [path]: (r[path] ?? 0) + 1 }));
+  }, []);
+
+  /** Ticks or unticks a photo for batch editing. */
+  const toggleBatch = useCallback((path: string) => {
+    batchAnchor.current = path;
+    setBatch((b) => (b.includes(path) ? b.filter((p) => p !== path) : [...b, path]));
+  }, []);
+  /** Ticks every visible photo from the last one ticked to `path` (⇧-click). */
+  const tickRange = useCallback((path: string) => {
+    const range = rangeToTick(
+      visibleRef.current.map((p) => p.path),
+      batchAnchor.current,
+      path,
+    );
+    if (range.length === 0) return;
+    batchAnchor.current = path;
+    setBatch((b) => [...b, ...range.filter((p) => !b.includes(p))]);
+  }, []);
+  const clearBatch = useCallback(() => {
+    batchAnchor.current = null;
+    setBatch([]);
   }, []);
 
   const findPhoto = useCallback((path: string | null) => (path ? (photosRef.current.find((p) => p.path === path) ?? null) : null), []);
@@ -197,6 +231,12 @@ export function useLibrary() {
     setMarks,
     markEdited,
     findPhoto,
+    /** Batch selection (ADR 0049): the ticked photos still in this view. */
+    batch: batchInView,
+    toggleBatch,
+    tickRange,
+    clearBatch,
+    thumbRevs,
     chooseFolder,
     openFolder,
     refresh,

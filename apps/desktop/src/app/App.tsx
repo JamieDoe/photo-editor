@@ -143,6 +143,9 @@ export function App() {
               if (next) openFromLibrary(next.path);
             }}
             notify={notify}
+            library={library}
+            currentPath={editEntry ? editPath : null}
+            onOpenPhoto={openFromLibrary}
             onOpenFile={() => {
               setEditPath(null);
               void editor.openDialog();
