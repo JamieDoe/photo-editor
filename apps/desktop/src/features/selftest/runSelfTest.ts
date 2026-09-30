@@ -659,6 +659,33 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       };
     })();
 
+    // Shapes combined (ADR 0043): -1 EV over the top, less a hard circle at its
+    // middle. Inside the circle unchanged, beside it darker.
+    const combinedFrame = await show(
+      {
+        ...beforeCrop,
+        masks: [
+          {
+            id: 1,
+            shape: { kind: "linear", start: [0.5, 0], end: [0.5, 0.5] },
+            parts: [{ mode: "subtract", shape: { kind: "radial", centre: [0.5, 0.1], radius: [0.1, 0.1], angle: 0, feather: 0 } }],
+            adjustments: { exposure: -1, warmth: 0, clarity: 0 },
+          },
+        ],
+      },
+      "combined mask frame",
+      plainFrame,
+    );
+    const combined =
+      combinedFrame && plainFrame
+        ? {
+            insideChange:
+              Math.round((patchMean(combinedFrame, 0, 0.15, 0.47, 0.53) - patchMean(plainFrame, 0, 0.15, 0.47, 0.53)) * 100) / 100,
+            besideDarker: Math.round((patchMean(plainFrame, 0, 0.1, 0, 0.2) - patchMean(combinedFrame, 0, 0.1, 0, 0.2)) * 10) / 10,
+            renderMs: combinedFrame.frame.renderMs,
+          }
+        : null;
+
     const maskOk =
       linearMaskOk &&
       radial !== null &&
@@ -673,7 +700,10 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       !("error" in uiBrush) &&
       uiBrush.erasedMiddleChange !== null &&
       Math.abs(uiBrush.erasedMiddleChange) < 1 &&
-      (uiBrush.paintedLeftDarker ?? 0) > 5;
+      (uiBrush.paintedLeftDarker ?? 0) > 5 &&
+      combined !== null &&
+      Math.abs(combined.insideChange) < 0.5 &&
+      combined.besideDarker > 5;
 
     // A quarter turn (ADR 0039): the frame is the photo on its side.
     const framesBeforeTurn = frames.length;
@@ -808,6 +838,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       radial,
       brush,
       uiBrush,
+      combined,
       chromaticAberration,
       histogram,
       autoLevel,

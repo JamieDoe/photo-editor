@@ -236,6 +236,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
                 tool={{ ...masks, pick: pickMask }}
                 specs={info.mask}
                 feather={info.maskFeather}
+                density={info.maskDensity}
                 disabled={!image}
               />
             </PanelSection>

@@ -6,6 +6,9 @@
 //! does not move a mask over the picture. The renderer only asks a shape how much it
 //! covers each pixel (0..1); how a mask was made does not matter to it.
 //!
+//! A mask can combine shapes (ADR 0043): further shapes are added to it, subtracted
+//! from it or intersected with it, in order, and its Density scales the result.
+//!
 //! The adjustments are applied where the global ones are: Exposure and Warmth as
 //! scene-linear gains after the white balance and exposure, Clarity in the detail
 //! stage.
@@ -27,7 +30,11 @@ pub struct Mask {
     /// Tells masks apart while they are edited; not rendered.
     pub id: u32,
     pub shape: MaskShape,
-    /// Adjust outside the shape instead of inside.
+    /// Further shapes combined with `shape`, in order (ADR 0043).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<Vec<MaskPart>>"))]
+    pub parts: Vec<MaskPart>,
+    /// Adjust outside the shapes instead of inside.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
     pub invert: bool,
@@ -35,8 +42,56 @@ pub struct Mask {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
     pub hidden: bool,
+    /// How strongly the mask applies, 0..100 (ADR 0043): its coverage is scaled by it.
+    #[serde(default = "full_density", skip_serializing_if = "is_full_density")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<f32>"))]
+    pub density: f32,
     #[serde(default)]
     pub adjustments: LocalAdjustments,
+}
+
+fn full_density() -> f32 {
+    100.0
+}
+
+fn is_full_density(d: &f32) -> bool {
+    *d == 100.0
+}
+
+/// A further shape of a mask and how it changes the mask (ADR 0043).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct MaskPart {
+    pub mode: Combine,
+    pub shape: MaskShape,
+}
+
+/// How a shape changes the mask so far, as coverages combine: as independent layers
+/// (the brush composes its strokes the same way), so overlapping soft edges blend
+/// smoothly instead of meeting in a crease.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum Combine {
+    /// Covers where either covers: `c + p - c·p`.
+    Add,
+    /// Takes the shape away: `c·(1 - p)`.
+    Subtract,
+    /// Covers only where both cover: `c·p`.
+    Intersect,
+}
+
+impl Combine {
+    /// Coverage `c` so far, changed by a shape covering `p`.
+    #[inline]
+    pub fn apply(self, c: f32, p: f32) -> f32 {
+        match self {
+            Self::Add => c + p - c * p,
+            Self::Subtract => c * (1.0 - p),
+            Self::Intersect => c * p,
+        }
+    }
 }
 
 /// Where a mask covers the photo.
@@ -154,14 +209,62 @@ const MIN_RADIUS: f32 = 0.002;
 const MAX_RADIUS: f32 = 3.0;
 
 impl Mask {
+    /// A mask of one shape, at full density.
+    pub fn new(id: u32, shape: MaskShape, adjustments: LocalAdjustments) -> Self {
+        Self {
+            id,
+            shape,
+            parts: Vec::new(),
+            invert: false,
+            hidden: false,
+            density: 100.0,
+            adjustments,
+        }
+    }
+
     pub fn sanitized(&self) -> Self {
         Self {
             id: self.id,
             shape: self.shape.clone().sanitized(),
+            parts: self
+                .parts
+                .iter()
+                .map(|p| MaskPart {
+                    mode: p.mode,
+                    shape: p.shape.clone().sanitized(),
+                })
+                .collect(),
             invert: self.invert,
             hidden: self.hidden,
+            density: if self.density.is_finite() {
+                self.density.clamp(0.0, 100.0)
+            } else {
+                100.0
+            },
             adjustments: self.adjustments.sanitized(),
         }
+    }
+
+    /// Its shapes cover nothing before inverting: an empty brush, or shapes combined
+    /// down to nothing (only an added shape can cover more; intersecting with an empty
+    /// one leaves nothing).
+    pub fn covers_nothing(&self) -> bool {
+        self.parts
+            .iter()
+            .fold(self.shape.is_empty(), |empty, p| match p.mode {
+                Combine::Add => empty && p.shape.is_empty(),
+                Combine::Subtract => empty,
+                Combine::Intersect => empty || p.shape.is_empty(),
+            })
+    }
+
+    /// Changes nothing: hidden, at no density, without adjustments, or covering
+    /// nothing (unless inverted: then everything).
+    pub fn is_noop(&self) -> bool {
+        self.hidden
+            || self.density <= 0.0
+            || self.adjustments.is_identity()
+            || (!self.invert && self.covers_nothing())
     }
 }
 
@@ -279,8 +382,12 @@ impl CompiledShape {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocalMask {
     pub shape: MaskShape,
-    /// Adjusts outside the shape instead.
+    /// Further shapes combined with it, in order.
+    pub parts: Vec<MaskPart>,
+    /// Adjusts outside the shapes instead.
     pub invert: bool,
+    /// Coverage scale, 0..1.
+    pub density: f32,
     /// Exposure, in stops.
     pub stops: f32,
     /// Warmth as log2 channel gains.
@@ -299,23 +406,52 @@ impl LocalMask {
 /// adjustments at any pixel of the rendered image.
 #[derive(Debug, Clone)]
 pub struct LocalField {
-    masks: Vec<(CompiledShape, LocalMask)>,
+    masks: Vec<(CompiledMask, LocalMask)>,
     frame: Frame,
 }
 
+/// A mask's shapes, compiled: the first, then the others with how each combines.
+#[derive(Debug, Clone)]
+struct CompiledMask {
+    first: CompiledShape,
+    parts: Vec<(Combine, CompiledShape)>,
+}
+
 impl LocalField {
-    /// How much mask `m` covers frame point (`fx`, `fy`), its inversion included.
+    /// How much mask `m` covers frame point (`fx`, `fy`): its shapes combined,
+    /// inverted if it is, at its density.
     #[inline]
-    fn cover(shape: &CompiledShape, m: &LocalMask, fx: f32, fy: f32) -> f32 {
-        let c = shape.coverage(fx, fy);
-        if m.invert { 1.0 - c } else { c }
+    fn cover(shapes: &CompiledMask, m: &LocalMask, fx: f32, fy: f32) -> f32 {
+        let c = shapes
+            .parts
+            .iter()
+            .fold(shapes.first.coverage(fx, fy), |c, (mode, shape)| {
+                // Nothing left to intersect with or take away from.
+                if c == 0.0 && *mode != Combine::Add {
+                    c
+                } else {
+                    mode.apply(c, shape.coverage(fx, fy))
+                }
+            });
+        let c = if m.invert { 1.0 - c } else { c };
+        c * m.density
     }
 
     pub fn new(masks: &[LocalMask], frame: Frame) -> Self {
         Self {
             masks: masks
                 .iter()
-                .map(|m| (CompiledShape::new(&m.shape, &frame), m.clone()))
+                .map(|m| {
+                    let shapes = CompiledMask {
+                        first: CompiledShape::new(&m.shape, &frame),
+                        parts: m
+                            .parts
+                            .iter()
+                            .map(|p| (p.mode, CompiledShape::new(&p.shape, &frame)))
+                            .collect(),
+                    };
+                    (shapes, m.clone())
+                })
                 .collect(),
             frame,
         }
@@ -420,7 +556,9 @@ mod tests {
     fn the_field_follows_the_crop() {
         let masks = [LocalMask {
             shape: linear([0.5, 0.0], [0.5, 0.5]),
+            parts: Vec::new(),
             invert: false,
+            density: 1.0,
             stops: 1.0,
             warmth: [0.0; 3],
             clarity: 20.0,
@@ -504,7 +642,9 @@ mod tests {
     fn inverted_masks_adjust_outside() {
         let mask = |invert| LocalMask {
             shape: radial([0.5, 0.5], [0.1, 0.1], 0.0, 0.0),
+            parts: Vec::new(),
             invert,
+            density: 1.0,
             stops: 1.0,
             warmth: [0.0; 3],
             clarity: 0.0,
@@ -541,16 +681,14 @@ mod tests {
 
     #[test]
     fn serialises_with_its_kind() {
-        let m = Mask {
-            id: 3,
-            hidden: false,
-            shape: linear([0.5, 0.1], [0.5, 0.6]),
-            invert: false,
-            adjustments: LocalAdjustments {
+        let m = Mask::new(
+            3,
+            linear([0.5, 0.1], [0.5, 0.6]),
+            LocalAdjustments {
                 exposure: -0.5,
                 ..Default::default()
             },
-        };
+        );
         let json = serde_json::to_string(&m).unwrap();
         assert_eq!(
             json,
@@ -561,10 +699,146 @@ mod tests {
         let flagged = Mask {
             invert: true,
             hidden: true,
-            ..m
+            ..m.clone()
         };
         let json = serde_json::to_string(&flagged).unwrap();
         assert!(json.contains(r#""invert":true,"hidden":true"#), "{json}");
         assert_eq!(serde_json::from_str::<Mask>(&json).unwrap(), flagged);
+    }
+
+    /// A mask's coverage at frame point (`x`, `y`) of a 400 x 400 frame.
+    fn cover_at(mask: &Mask, x: f32, y: f32) -> f32 {
+        let m = LocalMask {
+            shape: mask.shape.clone(),
+            parts: mask.parts.clone(),
+            invert: mask.invert,
+            density: mask.density / 100.0,
+            stops: 1.0,
+            warmth: [0.0; 3],
+            clarity: 0.0,
+        };
+        let field = LocalField::new(&[m], Frame::whole(400, 400));
+        let (shapes, m) = &field.masks[0];
+        LocalField::cover(shapes, m, x, y)
+    }
+
+    fn part(mode: Combine, shape: MaskShape) -> MaskPart {
+        MaskPart { mode, shape }
+    }
+
+    #[test]
+    fn shapes_combine_in_order() {
+        // Two hard discs of radius 40 px (diagonal 565.7 px), 60 px apart.
+        let r = 40.0 / 400.0 / std::f32::consts::SQRT_2;
+        let left = radial([0.4, 0.5], [r, r], 0.0, 0.0);
+        let right = radial([0.55, 0.5], [r, r], 0.0, 0.0);
+        let exposure = LocalAdjustments {
+            exposure: 1.0,
+            ..Default::default()
+        };
+        let with = |mode| Mask {
+            parts: vec![part(mode, right.clone())],
+            ..Mask::new(1, left.clone(), exposure)
+        };
+        // Left only, the overlap, right only.
+        let (l, both, rt) = ((140.0, 200.0), (190.0, 200.0), (240.0, 200.0));
+        let at = |m: &Mask| [l, both, rt].map(|(x, y)| cover_at(m, x, y));
+        assert_eq!(at(&with(Combine::Add)), [1.0, 1.0, 1.0]);
+        assert_eq!(at(&with(Combine::Subtract)), [1.0, 0.0, 0.0]);
+        assert_eq!(at(&with(Combine::Intersect)), [0.0, 1.0, 0.0]);
+        // Inverting takes the complement of the combination; density scales it.
+        let inverted = Mask {
+            invert: true,
+            ..with(Combine::Subtract)
+        };
+        assert_eq!(at(&inverted), [0.0, 1.0, 1.0]);
+        let half = Mask {
+            density: 50.0,
+            ..with(Combine::Add)
+        };
+        assert_eq!(at(&half), [0.5, 0.5, 0.5]);
+        assert_eq!(cover_at(&half, 5.0, 5.0), 0.0);
+    }
+
+    #[test]
+    fn soft_edges_combine_as_layers() {
+        let c = 0.6;
+        let p = 0.5;
+        assert!((Combine::Add.apply(c, p) - 0.8).abs() < 1e-6);
+        assert!((Combine::Subtract.apply(c, p) - 0.3).abs() < 1e-6);
+        assert!((Combine::Intersect.apply(c, p) - 0.3).abs() < 1e-6);
+        // Subtracting is intersecting with the complement.
+        assert_eq!(
+            Combine::Subtract.apply(c, p),
+            Combine::Intersect.apply(c, 1.0 - p)
+        );
+    }
+
+    #[test]
+    fn a_mask_knows_when_it_covers_nothing() {
+        let empty = MaskShape::Brush {
+            strokes: Vec::new(),
+        };
+        let disc = radial([0.5, 0.5], [0.1, 0.1], 0.0, 50.0);
+        let exposure = LocalAdjustments {
+            exposure: 1.0,
+            ..Default::default()
+        };
+        let mask = |shape: &MaskShape, parts| Mask {
+            parts,
+            ..Mask::new(1, shape.clone(), exposure)
+        };
+        assert!(mask(&empty, vec![]).covers_nothing());
+        assert!(!mask(&empty, vec![part(Combine::Add, disc.clone())]).covers_nothing());
+        assert!(mask(&empty, vec![part(Combine::Subtract, disc.clone())]).covers_nothing());
+        assert!(mask(&disc, vec![part(Combine::Intersect, empty.clone())]).covers_nothing());
+        assert!(!mask(&disc, vec![part(Combine::Subtract, empty.clone())]).covers_nothing());
+        // An inverted empty mask covers everything; no density changes nothing.
+        let inverted = Mask {
+            invert: true,
+            ..mask(&empty, vec![])
+        };
+        assert!(!inverted.is_noop());
+        let faded = Mask {
+            density: 0.0,
+            ..mask(&disc, vec![])
+        };
+        assert!(faded.is_noop());
+    }
+
+    #[test]
+    fn older_masks_read_as_one_shape_at_full_density() {
+        let json = r#"{"id":1,"shape":{"kind":"radial","centre":[0.5,0.5],"radius":[0.1,0.1],"angle":0.0,"feather":50.0},"adjustments":{"exposure":1.0}}"#;
+        let m: Mask = serde_json::from_str(json).unwrap();
+        assert!(m.parts.is_empty());
+        assert_eq!(m.density, 100.0);
+        // And written the same way while they have no parts at full density.
+        let combined = Mask {
+            parts: vec![part(Combine::Subtract, linear([0.5, 0.0], [0.5, 0.2]))],
+            density: 60.0,
+            ..m.clone()
+        };
+        let out = serde_json::to_string(&combined).unwrap();
+        assert!(
+            out.contains(r#""parts":[{"mode":"subtract","shape":{"kind":"linear""#),
+            "{out}"
+        );
+        assert!(out.contains(r#""density":60.0"#), "{out}");
+        assert_eq!(serde_json::from_str::<Mask>(&out).unwrap(), combined);
+        assert!(!serde_json::to_string(&m).unwrap().contains("density"));
+    }
+
+    #[test]
+    fn density_is_kept_in_range() {
+        let disc = radial([0.5, 0.5], [0.1, 0.1], 0.0, 50.0);
+        let d = |density| {
+            Mask {
+                density,
+                ..Mask::new(1, disc.clone(), LocalAdjustments::default())
+            }
+            .sanitized()
+            .density
+        };
+        assert_eq!((d(150.0), d(-5.0), d(f32::NAN)), (100.0, 0.0, 100.0));
     }
 }

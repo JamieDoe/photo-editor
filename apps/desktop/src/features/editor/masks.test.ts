@@ -7,10 +7,14 @@ import {
   linearCoverage,
   maskName,
   brushSizeFromSlider,
-  newBrushMask,
-  newLinearMask,
+  addShape,
+  newMask,
+  newShape,
+  removeShape,
+  setShapeMode,
+  shapesOf,
   sliderFromBrushSize,
-  newRadialMask,
+  withShapeAt,
   radialCoverage,
   type Point,
   setAdjustment,
@@ -26,12 +30,12 @@ const startOf = (m: Mask) => (m.shape.kind === "linear" ? m.shape.start : null);
 describe("masks", () => {
   it("adds numbered linear gradients over the shown picture", () => {
     const crop = { x: 0.2, y: 0.1, w: 0.6, h: 0.8 };
-    const a = newLinearMask([], crop);
+    const a = newMask("linear", [], crop);
     expect(a.id).toBe(1);
     // In frame fractions, inside the crop.
     expect(startOf(a)![0]).toBeCloseTo(0.5);
     expect(startOf(a)![1]).toBeCloseTo(0.18);
-    const b = newLinearMask([a], crop);
+    const b = newMask("linear", [a], crop);
     expect(b.id).toBe(2);
     expect(maskName([a], a)).toBe("Linear gradient");
     expect(maskName([a, b], b)).toBe("Linear gradient 2");
@@ -58,14 +62,14 @@ describe("masks", () => {
 
   it("keeps the recipe's masks tidy", () => {
     const r = neutralRecipe(17);
-    const m = newLinearMask([], FULL_CROP);
+    const m = newMask("linear", [], FULL_CROP);
     const one = withMasks(r, setAdjustment([m], 1, "exposure", -0.5));
     expect(one.masks?.[0]?.adjustments.exposure).toBe(-0.5);
     expect(withMasks(one, []).masks).toBeUndefined();
   });
 
   it("adds radial gradients and turns them with the picture", () => {
-    const m = newRadialMask([], FULL_CROP);
+    const m = newMask("radial", [], FULL_CROP);
     expect(m.shape.kind).toBe("radial");
     const turned = turnMasks([{ ...m, shape: { ...(m.shape as Extract<Mask["shape"], { kind: "radial" }>), centre: [0.2, 0.1], angle: 120 } }], 1)[0]!;
     const shape = turned.shape as Extract<Mask["shape"], { kind: "radial" }>;
@@ -86,7 +90,7 @@ describe("masks", () => {
   });
 
   it("adds brush masks and turns their strokes with the picture", () => {
-    const m = newBrushMask([]);
+    const m = newMask("brush", [], FULL_CROP);
     expect(m.shape).toEqual({ kind: "brush", strokes: [] });
     const painted: Mask = {
       ...m,
@@ -107,5 +111,40 @@ describe("masks", () => {
     expect(linearCoverage([0.5, 0], [0.5, 0.5], [0.1, 0], 400, 200)).toBe(1);
     expect(linearCoverage([0.5, 0], [0.5, 0.5], [0.9, 0.75], 400, 200)).toBe(0);
     expect(linearCoverage([0.5, 0], [0.5, 0.5], [0.3, 0.25], 400, 200)).toBeCloseTo(0.5, 9);
+  });
+
+  it("combines shapes in a mask, in order", () => {
+    const m = newMask("linear", [], FULL_CROP);
+    const disc = newShape("radial", FULL_CROP);
+    const brush = newShape("brush", FULL_CROP);
+    const two = addShape(addShape(m, "subtract", disc), "add", brush);
+    expect(shapesOf(two).map((s) => [s.shape.kind, s.mode])).toEqual([
+      ["linear", null],
+      ["radial", "subtract"],
+      ["brush", "add"],
+    ]);
+    expect(shapesOf(setShapeMode(two, 1, "intersect"))[1]!.mode).toBe("intersect");
+    const moved = withShapeAt(two, 1, { ...(disc as Extract<Mask["shape"], { kind: "radial" }>), feather: 10 });
+    expect(moved.parts![0]!.shape).toMatchObject({ kind: "radial", feather: 10 });
+    expect(withShapeAt(two, 0, disc).shape).toBe(disc);
+    // Removing the first makes the next the first; the last one left stays.
+    expect(shapesOf(removeShape(two, 0)).map((s) => s.shape.kind)).toEqual(["radial", "brush"]);
+    expect(shapesOf(removeShape(two, 2)).map((s) => s.shape.kind)).toEqual(["linear", "radial"]);
+    const single = removeShape(removeShape(two, 2), 1);
+    expect(single.parts).toBeUndefined();
+    expect(removeShape(single, 0)).toBe(single);
+  });
+
+  it("turns every shape of a mask with the picture", () => {
+    const m: Mask = {
+      id: 1,
+      shape: { kind: "linear", start: [0.2, 0.1], end: [0.2, 0.6] },
+      parts: [{ mode: "subtract", shape: { kind: "radial", centre: [0.2, 0.1], radius: [0.1, 0.1], angle: 0, feather: 50 } }],
+      adjustments: { exposure: 0, warmth: 0, clarity: 0 },
+    };
+    const part = turnMasks([m], 1)[0]!.parts![0]!;
+    expect(part.mode).toBe("subtract");
+    expect(part.shape).toMatchObject({ centre: [0.9, 0.2], angle: 90 });
+    expect(flipMasks([m])[0]!.parts![0]!.shape).toMatchObject({ centre: [0.8, 0.1] });
   });
 });

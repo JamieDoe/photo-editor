@@ -1,5 +1,6 @@
 import type { CropRect } from "../../ipc/generated/CropRect";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
+import type { Combine } from "../../ipc/generated/Combine";
 import type { LocalAdjustments } from "../../ipc/generated/LocalAdjustments";
 import type { Mask } from "../../ipc/generated/Mask";
 import type { MaskShape } from "../../ipc/generated/MaskShape";
@@ -67,44 +68,68 @@ export function fromShown(p: Point, crop: CropRect): Point {
   return [crop.x + p[0] * crop.w, crop.y + p[1] * crop.h];
 }
 
-/** A new linear gradient over the shown picture: strongest at the top, fading out by
- *  a little past the middle (a sky, the common first use). */
-export function newLinearMask(masks: readonly Mask[], crop: CropRect): Mask {
-  const id = masks.reduce((max, m) => Math.max(max, m.id), 0) + 1;
-  return {
-    id,
-    shape: { kind: "linear", start: fromShown([0.5, 0.1], crop), end: fromShown([0.5, 0.55], crop) },
-    adjustments: { exposure: 0, warmth: 0, clarity: 0 },
-  };
-}
+const nextId = (masks: readonly Mask[]) => masks.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+const NO_ADJUSTMENTS: LocalAdjustments = { exposure: 0, warmth: 0, clarity: 0 };
 
-/** A new radial gradient in the middle of the shown picture: a circle a little under
- *  half its short side across, fading over half its radius. */
-export function newRadialMask(masks: readonly Mask[], crop: CropRect): Mask {
-  const id = masks.reduce((max, m) => Math.max(max, m.id), 0) + 1;
-  const r = 0.15 * Math.min(crop.w, crop.h);
-  return {
-    id,
-    shape: { kind: "radial", centre: fromShown([0.5, 0.5], crop), radius: [r, r], angle: 0, feather: 50 },
-    adjustments: { exposure: 0, warmth: 0, clarity: 0 },
-  };
-}
-
-/** A new brush mask, with nothing painted yet. */
-export function newBrushMask(masks: readonly Mask[]): Mask {
-  const id = masks.reduce((max, m) => Math.max(max, m.id), 0) + 1;
-  return { id, shape: { kind: "brush", strokes: [] }, adjustments: { exposure: 0, warmth: 0, clarity: 0 } };
+/** A new shape of `kind` over the shown picture:
+ *  - linear: strongest at the top, fading out by a little past the middle (a sky, the
+ *    common first use);
+ *  - radial: a circle in the middle, a little under half the short side across,
+ *    fading over half its radius;
+ *  - brush: nothing painted yet. */
+export function newShape(kind: MaskKind, crop: CropRect): MaskShape {
+  switch (kind) {
+    case "linear":
+      return { kind: "linear", start: fromShown([0.5, 0.1], crop), end: fromShown([0.5, 0.55], crop) };
+    case "radial": {
+      const r = 0.15 * Math.min(crop.w, crop.h);
+      return { kind: "radial", centre: fromShown([0.5, 0.5], crop), radius: [r, r], angle: 0, feather: 50 };
+    }
+    case "brush":
+      return { kind: "brush", strokes: [] };
+  }
 }
 
 export function newMask(kind: MaskKind, masks: readonly Mask[], crop: CropRect): Mask {
-  switch (kind) {
-    case "linear":
-      return newLinearMask(masks, crop);
-    case "radial":
-      return newRadialMask(masks, crop);
-    case "brush":
-      return newBrushMask(masks);
-  }
+  return { id: nextId(masks), shape: newShape(kind, crop), adjustments: { ...NO_ADJUSTMENTS } };
+}
+
+/** How each way of combining a shape is named, and what it does. */
+export const COMBINE_MODES: Record<Combine, { label: string; hint: string }> = {
+  add: { label: "Add", hint: "Also adjust where this shape covers" },
+  subtract: { label: "Subtract", hint: "Leave out where this shape covers" },
+  intersect: { label: "Intersect", hint: "Adjust only where this shape and the ones before it overlap" },
+};
+
+/** A mask's shapes in order (ADR 0043): the first, then each further shape with how
+ *  it combines. */
+export function shapesOf(m: Mask): Array<{ shape: MaskShape; mode: Combine | null }> {
+  return [{ shape: m.shape, mode: null }, ...(m.parts ?? []).map((p) => ({ shape: p.shape, mode: p.mode }))];
+}
+
+/** `m` with shape `i` (0 is the first) replaced. */
+export function withShapeAt(m: Mask, i: number, shape: MaskShape): Mask {
+  if (i === 0) return { ...m, shape };
+  return { ...m, parts: (m.parts ?? []).map((p, k) => (k === i - 1 ? { ...p, shape } : p)) };
+}
+
+/** `m` with another shape, combined as `mode`. */
+export function addShape(m: Mask, mode: Combine, shape: MaskShape): Mask {
+  return { ...m, parts: [...(m.parts ?? []), { mode, shape }] };
+}
+
+/** `m` without shape `i`; removing the first makes the next the first. The last shape
+ *  cannot be removed (remove the mask instead). */
+export function removeShape(m: Mask, i: number): Mask {
+  const parts = m.parts ?? [];
+  if (parts.length === 0) return m;
+  const rest = i === 0 ? { shape: parts[0]!.shape, parts: parts.slice(1) } : { shape: m.shape, parts: parts.filter((_, k) => k !== i - 1) };
+  return { ...m, shape: rest.shape, parts: rest.parts.length > 0 ? rest.parts : undefined };
+}
+
+/** `m` with shape `i` (not the first) combined as `mode`. */
+export function setShapeMode(m: Mask, i: number, mode: Combine): Mask {
+  return { ...m, parts: (m.parts ?? []).map((p, k) => (k === i - 1 ? { ...p, mode } : p)) };
 }
 
 export function updateMask(masks: readonly Mask[], id: number, change: (m: Mask) => Mask): Mask[] {
@@ -141,17 +166,23 @@ export function normaliseAngle(a: number): number {
 
 const tidy = (v: number) => Math.round(v * 1e6) / 1e6;
 
+/** `m` with every shape mapped as `mapShape` does. */
+function mapMask(m: Mask, f: (p: Point) => Point, turn: (angle: number) => number): Mask {
+  const parts = m.parts?.map((p) => ({ ...p, shape: mapShape(p.shape, f, turn) }));
+  return { ...m, shape: mapShape(m.shape, f, turn), ...(parts ? { parts } : {}) };
+}
+
 /** Masks turned with the picture a quarter clockwise (1) or anticlockwise (-1), as
  *  the crop is (ADR 0039). */
 export function turnMasks(masks: readonly Mask[], turn: 1 | -1): Mask[] {
   const f = ([x, y]: Point): Point => (turn === 1 ? [tidy(1 - y), x] : [y, tidy(1 - x)]);
   // Radii are fractions of the diagonal, which a turn leaves alone.
-  return masks.map((m) => ({ ...m, shape: mapShape(m.shape, f, (a) => a + 90 * turn) }));
+  return masks.map((m) => mapMask(m, f, (a) => a + 90 * turn));
 }
 
 /** Masks mirrored left to right with the picture. */
 export function flipMasks(masks: readonly Mask[]): Mask[] {
-  return masks.map((m) => ({ ...m, shape: mapShape(m.shape, ([x, y]): Point => [tidy(1 - x), y], (a) => -a) }));
+  return masks.map((m) => mapMask(m, ([x, y]): Point => [tidy(1 - x), y], (a) => -a));
 }
 
 /**

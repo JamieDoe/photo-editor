@@ -3,11 +3,12 @@ import type { Stroke } from "../../ipc/generated/Stroke";
 import { toShown } from "./masks";
 
 /**
- * The brush tint on a canvas (ADR 0042): where a brush mask covers the photo, drawn as
- * the renderer composes it. Each stroke is its profile at its flow; paint is drawn
- * over what is there and an erase stroke cuts it away ("destination-out"), so an
- * erase takes away only what came before. Finished strokes are kept in a cached layer:
- * while painting, only the stroke in progress is drawn, however many came before.
+ * A brush shape's coverage on a canvas (ADR 0042), drawn as the renderer composes it;
+ * `MaskTint` colours it and combines it with the mask's other shapes. Each stroke is
+ * its profile at its flow; paint is drawn over what is there and an erase stroke cuts
+ * it away ("destination-out"), so an erase takes away only what came before. Finished
+ * strokes are kept in a cached layer: while painting, only the stroke in progress is
+ * drawn, however many came before.
  */
 
 /** Rings a stroke's soft edge is drawn with. */
@@ -48,64 +49,65 @@ export interface TintView {
   crop: CropRect;
 }
 
-function canvas2d(c: HTMLCanvasElement): CanvasRenderingContext2D {
+export function canvas2d(c: HTMLCanvasElement): CanvasRenderingContext2D {
   const ctx = c.getContext("2d");
   if (!ctx) throw new Error("no 2D canvas");
   return ctx;
 }
 
+/** Sizes `c` to `width` x `height` (which clears it) if it is not already. */
+export function fit(c: HTMLCanvasElement, width: number, height: number): void {
+  if (c.width !== width || c.height !== height) {
+    c.width = width;
+    c.height = height;
+  }
+}
+
+export const viewKey = (v: TintView) => `${v.width}x${v.height}:${v.crop.x},${v.crop.y},${v.crop.w},${v.crop.h}`;
+
+/** A brush shape's coverage as a canvas's alpha. */
 export class BrushTint {
   /** Finished strokes (all but the last), and which they are. */
   private readonly base = document.createElement("canvas");
   private baseStrokes: readonly Stroke[] = [];
   private baseView = "";
-  /** The base with the last stroke over it. */
-  private readonly coverage = document.createElement("canvas");
+  /** The base with the last stroke over it, and what it was drawn from. */
+  private readonly cover = document.createElement("canvas");
+  private coverStrokes: readonly Stroke[] | null = null;
+  private coverView = "";
   /** One stroke's profile before it is composed. */
   private readonly scratch = document.createElement("canvas");
 
-  /** Draws `strokes`' coverage on `target` in `colour` (or, inverted, its complement). */
-  draw(target: HTMLCanvasElement, strokes: readonly Stroke[], view: TintView, colour: string, invert: boolean): void {
+  /** `strokes`' coverage, as alpha (kept until the next call). */
+  coverage(strokes: readonly Stroke[], view: TintView): HTMLCanvasElement {
+    const key = viewKey(view);
+    if (strokes === this.coverStrokes && key === this.coverView) return this.cover;
     const { width, height } = view;
-    for (const c of [target, this.base, this.coverage, this.scratch]) {
-      if (c.width !== width || c.height !== height) {
-        c.width = width;
-        c.height = height;
-      }
-    }
-    const viewKey = `${width}x${height}:${view.crop.x},${view.crop.y},${view.crop.w},${view.crop.h}:${colour}`;
+    for (const c of [this.base, this.cover, this.scratch]) fit(c, width, height);
     const finished = strokes.slice(0, -1);
     const last = strokes.at(-1);
     // The cached layer: extended when the finished strokes only grew, else redrawn.
     const extends_ =
-      viewKey === this.baseView &&
+      key === this.baseView &&
       this.baseStrokes.length <= finished.length &&
       this.baseStrokes.every((s, i) => s === finished[i]);
     const base = canvas2d(this.base);
     if (!extends_) base.clearRect(0, 0, width, height);
-    for (const s of finished.slice(extends_ ? this.baseStrokes.length : 0)) this.compose(base, s, view, colour);
+    for (const s of finished.slice(extends_ ? this.baseStrokes.length : 0)) this.compose(base, s, view);
     this.baseStrokes = finished;
-    this.baseView = viewKey;
+    this.baseView = key;
 
-    const cover = canvas2d(this.coverage);
+    const cover = canvas2d(this.cover);
     cover.clearRect(0, 0, width, height);
     cover.drawImage(this.base, 0, 0);
-    if (last) this.compose(cover, last, view, colour);
-
-    const out = canvas2d(target);
-    out.save();
-    out.clearRect(0, 0, width, height);
-    if (invert) {
-      out.fillStyle = colour;
-      out.fillRect(0, 0, width, height);
-      out.globalCompositeOperation = "destination-out";
-    }
-    out.drawImage(this.coverage, 0, 0);
-    out.restore();
+    if (last) this.compose(cover, last, view);
+    this.coverStrokes = strokes;
+    this.coverView = key;
+    return this.cover;
   }
 
   /** Stroke `s` drawn onto `ctx` as the renderer composes it. */
-  private compose(ctx: CanvasRenderingContext2D, s: Stroke, view: TintView, colour: string): void {
+  private compose(ctx: CanvasRenderingContext2D, s: Stroke, view: TintView): void {
     if (s.points.length === 0 || s.flow <= 0) return;
     const { width, height, crop } = view;
     const diagonal = Math.hypot(width / crop.w, height / crop.h);
@@ -130,7 +132,7 @@ export class BrushTint {
     const scratch = canvas2d(this.scratch);
     scratch.save();
     scratch.clearRect(x0, y0, x1 - x0, y1 - y0);
-    scratch.strokeStyle = colour;
+    scratch.strokeStyle = "#000";
     scratch.lineCap = "round";
     scratch.lineJoin = "round";
     for (const ring of edgeRings(r, s.feather)) {

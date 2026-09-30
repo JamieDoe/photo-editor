@@ -256,6 +256,15 @@ pub const MASK_FEATHER: AdjustmentSpec = AdjustmentSpec {
     ..MASK_WARMTH
 };
 
+/// A mask's Density (ADR 0043): how strongly it applies, as a percentage.
+pub const MASK_DENSITY: AdjustmentSpec = AdjustmentSpec {
+    key: "density",
+    label: "Density",
+    min: 0.0,
+    default: 100.0,
+    ..MASK_WARMTH
+};
+
 /// A mask's controls (ADR 0040), as the design has them. Keys are
 /// `LocalAdjustments` fields.
 pub fn mask_specs() -> Vec<AdjustmentSpec> {

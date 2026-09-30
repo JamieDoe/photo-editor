@@ -59,7 +59,8 @@ coverage can't be computed per pixel in closed form.
      the dashed inner one where the soft edge starts, with a minus sign when erasing.
      The system cursor is hidden over the photo.
    - **Tint:** drawn on a canvas from the strokes, as the renderer composes them
-     (`BrushTint`).
+     (`BrushTint`). Since ADR 0043 this is the brush's layer in the mask's combined
+     tint.
      - Each stroke is its exact profile: nested round-capped lines (ten rings over the
        soft edge, a solid core) whose stacked opacity follows the smoothstep to within
        0.08 (tested), composed at the stroke's flow.
