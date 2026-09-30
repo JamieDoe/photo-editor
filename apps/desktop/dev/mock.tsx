@@ -238,6 +238,11 @@ mockIPC((cmd, payload) => {
     case "measure_chromatic_aberration":
       // Dev-only stand-in: a little red and blue spread.
       return new Promise((r) => setTimeout(() => r({ red: [0.0004, 0.0001], blue: [-0.0003, 0] }), 250));
+    case "paste_edits_to": {
+      const { paths, source } = payload as { paths: string[]; source: Record<string, number> };
+      for (const path of paths) mockEdits.set(path, source);
+      return new Promise((r) => setTimeout(() => r({ applied: paths.map((path) => ({ path, edited: true })), failed: [] }), 250));
+    }
     case "save_edit": {
       const { path, recipe } = payload as { path: string; recipe: Record<string, number> };
       const edited = ["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "dehaze", "temperature", "tint", "vibrance", "saturation", "texture", "clarity", "noiseReduction", "vignette", "grain"].some((k) => recipe[k] !== 0) || recipe.sharpening !== 40;

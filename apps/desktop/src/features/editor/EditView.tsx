@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CompareIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, UndoIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
@@ -6,6 +6,9 @@ import type { MarksDto } from "../../ipc/generated/MarksDto";
 import { formatAperture, formatFocal, formatShutter } from "../../lib/format";
 import { hasCommandModifier, isTextEntry } from "../../lib/keyboard";
 import { markChangeForKey } from "../library/marks";
+import type { LibraryApi } from "../library/useLibrary";
+import * as ipc from "../../ipc/client";
+import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { EditSavingDto } from "../../ipc/generated/EditSavingDto";
 import type { SaveState } from "./autosave";
 import { geometryEdited, isIdentity } from "./recipe";
@@ -16,6 +19,7 @@ import { ChromaticAberrationToggle } from "./LensControls";
 import { Histogram } from "./Histogram";
 import { MaskOverlay, MaskToolbar, useMaskTool } from "./MaskTool";
 import { SelectiveControls } from "./SelectiveControls";
+import { Filmstrip } from "./Filmstrip";
 import { PanelFooter } from "./PanelFooter";
 import { PanelSection } from "./PanelSection";
 import { PresetStrip } from "./PresetStrip";
@@ -35,10 +39,15 @@ interface Props {
   onOpenFile: () => void;
   /** Shows a short confirmation ("Edits copied"). */
   notify: (message: string) => void;
+  /** The Library, for the filmstrip and batch editing (ADR 0049). */
+  library: LibraryApi;
+  /** The Library photo open here, if the open photo is one. */
+  currentPath: string | null;
+  onOpenPhoto: (path: string) => void;
 }
 
 /** The Edit mode: photograph in the centre, adjustments on the right. */
-export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, notify }: Props) {
+export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, notify, library, currentPath, onOpenPhoto }: Props) {
   const { info, image, recipe, busy } = editor;
   // The histogram of what the viewer shows, for the panel's graph and the tone curve.
   const histogram = image && editor.displayed?.imageId === image.id ? editor.displayed.frame.histogram : null;
@@ -104,14 +113,51 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
     return () => window.removeEventListener("keydown", onKey);
   }, [marks, onMark, onStep, image, toggleCompare]);
 
-  // Copy and paste (ADR 0048), confirmed as the design does.
+  // Copy and paste (ADR 0048), confirmed as the design does. With photos ticked in the
+  // filmstrip, Paste also applies to them, and Sync edits gives them this photo's edit
+  // (ADR 0049): they are written straight to the library.
+  const [syncing, setSyncing] = useState(false);
+  /** Sets `groups` from `source` on the ticked photos other than the open one. */
+  const applyToTicked = async (source: EditRecipe, groups: string[]) => {
+    const targets = library.batch.filter((p) => p !== currentPath);
+    if (targets.length === 0) return { applied: 0, failed: 0 };
+    const result = await ipc.pasteEditsTo(targets, source, groups);
+    for (const a of result.applied) library.markEdited(a.path, a.edited);
+    if (result.failed.length > 0) console.warn("batch edits left out", result.failed);
+    return { applied: result.applied.length, failed: result.failed.length };
+  };
+  const photos = (n: number) => `${n} photo${n === 1 ? "" : "s"}`;
+  const leftOut = (n: number) => (n > 0 ? ` · ${photos(n)} couldn’t be changed` : "");
   const copyEdits = () => {
     if (editor.copyEdits()) notify("Edits copied");
   };
-  const pasteEdits = () => {
+  const pasteEdits = async () => {
+    const copied = editor.copied;
     const done = editor.pasteEdits();
-    if (done === "pasted") notify("Pasted to 1 photo");
-    else if (done === "same") notify("This photo already has these edits");
+    if (!copied || library.batch.length === 0) {
+      if (done === "pasted") notify("Pasted to 1 photo");
+      else if (done === "same") notify("This photo already has these edits");
+      return;
+    }
+    try {
+      const others = await applyToTicked(copied.recipe, copied.groups);
+      const onOpen = done === "nothing" ? 0 : 1;
+      notify(`Pasted to ${photos(others.applied + onOpen)}${leftOut(others.failed)}`);
+    } catch (e) {
+      editor.reportError(e);
+    }
+  };
+  const syncEdits = async () => {
+    if (!recipe || syncing) return;
+    setSyncing(true);
+    try {
+      const done = await applyToTicked(recipe, editor.copyGroups);
+      notify(done.applied > 0 ? `Synced edits to ${photos(done.applied)}${leftOut(done.failed)}` : "Tick other photos to sync this one’s edits to");
+    } catch (e) {
+      editor.reportError(e);
+    } finally {
+      setSyncing(false);
+    }
   };
 
   // ⌘Z undoes, ⇧⌘Z (or ⌘Y) redoes (ADR 0044); ⇧⌘C and ⇧⌘V copy and paste edits, as in
@@ -128,7 +174,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
       if (key === "z") (e.shiftKey ? redo : undo)();
       else if (key === "y") redo();
       else if (key === "c" && e.shiftKey) copyRef.current();
-      else if (key === "v" && e.shiftKey) pasteRef.current();
+      else if (key === "v" && e.shiftKey) void pasteRef.current();
       else return;
       e.preventDefault();
     };
@@ -258,6 +304,9 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
             )
           )}
         </div>
+        {library.visible.length > 0 && (
+          <Filmstrip library={library} current={currentPath} onOpen={onOpenPhoto} onSync={() => void syncEdits()} syncing={syncing} />
+        )}
       </div>
       <aside className="panel-right" aria-label="Adjustments">
         <Histogram
@@ -325,7 +374,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
             <StatsPanel editor={editor} />
           </PanelSection>
         </div>
-        <PanelFooter editor={editor} edited={recipe !== null && !isIdentity(recipe)} copy={copyEdits} paste={pasteEdits} />
+        <PanelFooter editor={editor} edited={recipe !== null && !isIdentity(recipe)} copy={copyEdits} paste={() => void pasteEdits()} />
       </aside>
     </div>
   );

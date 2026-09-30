@@ -118,6 +118,14 @@ export const RefreshIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** The design's Sync edits: two arrows chasing round. */
+export const SyncIcon = (p: IconProps) => (
+  <Icon size={13} {...p}>
+    <path d="M13.5 6A5.5 5.5 0 0 0 3.2 4.8M2.5 10a5.5 5.5 0 0 0 10.3 1.2" />
+    <path d="M3 2v3h3M13 14v-3h-3" />
+  </Icon>
+);
+
 export const CheckIcon = (p: IconProps) => (
   <Icon size={14} {...p}>
     <path d="M3.5 8.5l3 3 6-7" />

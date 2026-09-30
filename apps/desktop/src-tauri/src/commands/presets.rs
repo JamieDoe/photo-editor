@@ -11,7 +11,7 @@ use tauri_plugin_dialog::DialogExt;
 use super::IpcResult;
 use crate::AppState;
 use crate::ipc::{
-    ImportedPresetDto, IpcError, PresetDto, PresetImportDto, PresetImportFailureDto, preset_ref,
+    FileFailureDto, ImportedPresetDto, IpcError, PresetDto, PresetImportDto, preset_ref,
 };
 
 /// Runs `f` with the catalogue on the blocking pool.
@@ -184,7 +184,7 @@ pub async fn import_presets(
                 }),
                 Err(e) => {
                     log::warn!("preset import: {}", e.detail);
-                    result.failed.push(PresetImportFailureDto {
+                    result.failed.push(FileFailureDto {
                         file: file
                             .file_name()
                             .map_or_else(String::new, |f| f.to_string_lossy().into_owned()),

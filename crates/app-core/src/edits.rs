@@ -56,6 +56,30 @@ pub fn load_edit(catalogue: &Catalogue, photo: PhotoId) -> Result<SavedEdit, Eng
     Ok(SavedEdit::from_stored(catalogue.edit_of(photo)?.as_ref()))
 }
 
+/// Sets the settings of `groups` from `source` on `photo`'s saved edit (ADR 0049):
+/// pasting or syncing onto a photo that is not open. Returns whether the photo is now
+/// edited. A photo edited in a newer version is left alone.
+pub fn paste_onto(
+    catalogue: &Catalogue,
+    photo: PhotoId,
+    source: &EditRecipe,
+    groups: &[String],
+) -> Result<bool, EngineError> {
+    let base = match load_edit(catalogue, photo)? {
+        SavedEdit::Recipe(r) => *r,
+        SavedEdit::None => EditRecipe::default(),
+        SavedEdit::TooNew { version } => {
+            return Err(EngineError::new(
+                ErrorKind::Unsupported,
+                "It was edited in a newer version of the app.",
+                format!("stored recipe version {version} > supported {RECIPE_VERSION}"),
+            ));
+        }
+    };
+    let next = renderer::settings::paste_groups(&base, source, groups);
+    save_edit(catalogue, photo, &next)
+}
+
 /// Saves `recipe` as `photo`'s edit; an identity recipe removes the edit. Returns
 /// whether the photo is now edited. Refuses to overwrite an edit from a newer version.
 pub fn save_edit(
@@ -136,6 +160,58 @@ mod tests {
         assert_eq!(
             SavedEdit::from_stored(Some(&stored(1, "not json"))),
             SavedEdit::None
+        );
+    }
+
+    #[test]
+    fn pasting_onto_a_saved_photo_keeps_what_was_not_chosen() {
+        let dir = fixtures::TempDir::new("paste-onto");
+        let root = dir.path().canonicalize().unwrap();
+        let cat = Catalogue::open_in_memory().unwrap();
+        let folder = cat.add_folder(&root).unwrap();
+        let photo = |name: &str| {
+            let file = root.join(name);
+            std::fs::write(&file, name.as_bytes()).unwrap();
+            let identity = catalogue::SourceIdentity::from_path(&file).unwrap();
+            cat.record_file(folder, &identity, cat.begin_scan().unwrap())
+                .unwrap()
+                .0
+        };
+        let (edited, plain, newer) = (photo("a.nef"), photo("b.nef"), photo("c.nef"));
+        let own = EditRecipe {
+            contrast: -10.0,
+            geometry: Some(renderer::Geometry {
+                straighten: 3.0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        save_edit(&cat, edited, &own).unwrap();
+        cat.set_edit(newer, Some((RECIPE_VERSION + 1, "{}")))
+            .unwrap();
+
+        let source = EditRecipe {
+            contrast: 30.0,
+            exposure: 1.0,
+            ..Default::default()
+        };
+        let groups: Vec<String> = ["exposure", "light"].map(String::from).to_vec();
+        assert!(paste_onto(&cat, edited, &source, &groups).unwrap());
+        let got = load_edit(&cat, edited).unwrap().recipe().unwrap();
+        assert_eq!((got.contrast, got.exposure), (30.0, 1.0));
+        assert_eq!(got.geometry, own.geometry);
+        // An unedited photo takes the pasted settings on the default look.
+        assert!(paste_onto(&cat, plain, &source, &groups).unwrap());
+        assert_eq!(
+            load_edit(&cat, plain).unwrap().recipe().unwrap().contrast,
+            30.0
+        );
+        // A photo edited in a newer version is left as it was.
+        let e = paste_onto(&cat, newer, &source, &groups).unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Unsupported);
+        assert_eq!(
+            cat.edit_of(newer).unwrap().unwrap().recipe_version,
+            RECIPE_VERSION + 1
         );
     }
 }

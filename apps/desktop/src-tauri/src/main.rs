@@ -88,6 +88,7 @@ fn main() {
             commands::marks::set_photo_marks,
             commands::marks::library_collection,
             commands::edits::save_edit,
+            commands::edits::paste_edits_to,
             commands::presets::list_presets,
             commands::presets::create_preset,
             commands::presets::rename_preset,

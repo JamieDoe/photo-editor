@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
-import { applyChange, flagClick, markChangeForKey, starClick, starsText, stepFrom, visiblePhotos } from "./marks";
+import { applyChange, flagClick, markChangeForKey, rangeToTick, starClick, starsText, stepFrom, visiblePhotos } from "./marks";
 
 describe("keyboard shortcuts", () => {
   it("maps digits to ratings and letters to flags", () => {
@@ -76,5 +76,15 @@ describe("stepFrom", () => {
     expect(stepFrom(all, rejected, "/p/b", 1)?.name).toBe("c");
     expect(stepFrom(all, rejected, "/p/b", -1)?.name).toBe("a");
     expect(stepFrom(all, rejected, "/p/zzz", 1)).toBeNull();
+  });
+
+  it("ticks a range from the last photo ticked, either way round", () => {
+    const shown = ["a", "b", "c", "d", "e"];
+    expect(rangeToTick(shown, "b", "d")).toEqual(["b", "c", "d"]);
+    expect(rangeToTick(shown, "d", "b")).toEqual(["b", "c", "d"]);
+    expect(rangeToTick(shown, null, "c")).toEqual(["c"]);
+    // The anchor filtered out of view: just the photo clicked.
+    expect(rangeToTick(shown, "z", "c")).toEqual(["c"]);
+    expect(rangeToTick(shown, "a", "z")).toEqual([]);
   });
 });

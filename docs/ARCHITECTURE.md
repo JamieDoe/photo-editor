@@ -261,7 +261,7 @@ See `PERFORMANCE.md` for measured consequences.
   not saved.
 - Library: folders are listed from the filesystem, one level at a time, joined with
   details and marks from the catalogue. The library-wide Picks / Rated / Rejected
-  collections come from the catalogue. There is no sort, search or multi-select yet.
+  collections come from the catalogue. Photos can be ticked for batch edits in Edit's filmstrip (ADR 0049); there is no sort or search yet.
 - Ratings, flags and edits cannot be rebuilt from the files. They are protected by
   automatic backups on the same disk (ADR 0021); copying backups elsewhere is not
   available yet.

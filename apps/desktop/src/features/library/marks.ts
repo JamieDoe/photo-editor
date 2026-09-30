@@ -101,3 +101,14 @@ export function stepFrom(
   }
   return null;
 }
+
+/**
+ * The photos a ⇧-click ticks (ADR 0049): every shown photo from `anchor` (the last one
+ * ticked) to `path`, either way round; just `path` without an anchor on show.
+ */
+export function rangeToTick(shown: readonly string[], anchor: string | null, path: string): string[] {
+  const to = shown.indexOf(path);
+  if (to < 0) return [];
+  const from = anchor === null ? -1 : shown.indexOf(anchor);
+  return from < 0 ? [path] : shown.slice(Math.min(from, to), Math.max(from, to) + 1);
+}

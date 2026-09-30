@@ -80,10 +80,85 @@ pub fn setting_groups() -> Vec<SettingGroup> {
     ]
 }
 
+/// `target` with the settings of the groups named in `groups` taken from `source`
+/// (ADR 0048): a field `source` does not have (no crop, no masks) is removed from
+/// `target` too. Unknown group ids are ignored. The editor's `pasteEdits` does the same
+/// for the open photo.
+pub fn paste_groups(
+    target: &crate::EditRecipe,
+    source: &crate::EditRecipe,
+    groups: &[String],
+) -> crate::EditRecipe {
+    let as_map =
+        |r: &crate::EditRecipe| match serde_json::from_str::<serde_json::Value>(&r.to_json()) {
+            Ok(serde_json::Value::Object(m)) => m,
+            _ => serde_json::Map::new(),
+        };
+    let (mut next, from) = (as_map(target), as_map(source));
+    for group in setting_groups()
+        .iter()
+        .filter(|g| groups.iter().any(|id| id == g.id))
+    {
+        for field in &group.fields {
+            match from.get(*field) {
+                Some(v) => next.insert((*field).to_owned(), v.clone()),
+                None => next.remove(*field),
+            };
+        }
+    }
+    crate::EditRecipe::from_json(&serde_json::Value::Object(next).to_string())
+        .map(|r| r.sanitized())
+        .unwrap_or_else(|_| target.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::EditRecipe;
+
+    #[test]
+    fn pasting_takes_only_the_chosen_groups() {
+        let source = EditRecipe {
+            exposure: 0.8,
+            contrast: 25.0,
+            temperature: 12.0,
+            masks: vec![crate::masks::Mask::new(
+                1,
+                crate::masks::MaskShape::Brush {
+                    strokes: Vec::new(),
+                },
+                Default::default(),
+            )],
+            ..Default::default()
+        };
+        let target = EditRecipe {
+            exposure: -0.3,
+            tint: 7.0,
+            geometry: Some(crate::Geometry {
+                straighten: 2.0,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let ids = |ids: &[&str]| ids.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let r = paste_groups(
+            &target,
+            &source,
+            &ids(&["exposure", "light", "whiteBalance", "nonsense"]),
+        );
+        assert_eq!(
+            (r.exposure, r.contrast, r.temperature, r.tint),
+            (0.8, 25.0, 12.0, 0.0)
+        );
+        // Not chosen: the target keeps its crop and gets no masks.
+        assert_eq!(r.geometry, target.geometry);
+        assert!(r.masks.is_empty());
+        // Chosen but absent from the source: removed from the target.
+        let r = paste_groups(&target, &source, &ids(&["geometry", "masks"]));
+        assert!(r.geometry.is_none());
+        assert_eq!(r.masks, source.masks);
+        assert_eq!(r.exposure, -0.3);
+    }
 
     #[test]
     fn every_setting_is_in_exactly_one_group() {

@@ -18,6 +18,7 @@ import type { ExportEvent } from "./generated/ExportEvent";
 import type { ExportRequestDto } from "./generated/ExportRequestDto";
 import type { ExportStartedDto } from "./generated/ExportStartedDto";
 import type { FolderListingDto } from "./generated/FolderListingDto";
+import type { PastedEditsDto } from "./generated/PastedEditsDto";
 import type { PresetDto } from "./generated/PresetDto";
 import type { PresetImportDto } from "./generated/PresetImportDto";
 import type { ImageSummaryDto } from "./generated/ImageSummaryDto";
@@ -88,6 +89,10 @@ export const setPhotoMarks = (paths: string[], change: MarkChangeDto) =>
 
 /** Saves a library photo's edit (a default recipe removes it). */
 export const saveEdit = (path: string, recipe: EditRecipe) => invoke<EditSavedDto>("save_edit", { path, recipe });
+/** Sets the settings of `groups` from `source` on each library photo in `paths` (ADR
+ *  0049): pasting or syncing onto photos that are not open. */
+export const pasteEditsTo = (paths: string[], source: EditRecipe, groups: string[]) =>
+  invoke<PastedEditsDto>("paste_edits_to", { paths, source, groups });
 
 /** Presets (ADR 0046): the built-in looks, then the photographer's own. */
 export const listPresets = () => invoke<PresetDto[]>("list_presets");
