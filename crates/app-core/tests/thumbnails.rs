@@ -274,7 +274,7 @@ fn edited_photos_get_their_own_rendered_thumbnail() {
     };
     let edited = s
         .engine
-        .thumbnail(path.clone(), Some(brighter))
+        .thumbnail(path.clone(), Some(brighter.clone()))
         .wait()
         .unwrap();
     assert_eq!(
@@ -287,7 +287,7 @@ fn edited_photos_get_their_own_rendered_thumbnail() {
     // Both are cached, under different keys.
     assert_eq!(
         s.engine
-            .thumbnail(path.clone(), Some(brighter))
+            .thumbnail(path.clone(), Some(brighter.clone()))
             .wait()
             .unwrap()
             .source,

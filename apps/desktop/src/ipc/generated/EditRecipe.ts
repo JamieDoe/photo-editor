@@ -4,6 +4,7 @@ import type { ChromaticAberration } from "./ChromaticAberration";
 import type { ColourMixer } from "./ColourMixer";
 import type { Geometry } from "./Geometry";
 import type { Look } from "./Look";
+import type { Mask } from "./Mask";
 
 /**
  * A non-destructive edit: parameters only, never pixels.
@@ -109,6 +110,11 @@ pointCurve?: Array<[number, number]>,
  * the JSON) while all three are the diagonal.
  */
 channelCurves?: ChannelCurves, 
+/**
+ * Masks: adjustments to part of the photo (ADR 0040), in the order made. Empty
+ * (and omitted from the JSON) without any.
+ */
+masks?: Array<Mask>, 
 /**
  * The base look the adjustments start from.
  */

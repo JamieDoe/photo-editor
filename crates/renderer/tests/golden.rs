@@ -35,10 +35,10 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
             "sharpening_150",
             EditRecipe {
                 sharpening: 150.0,
-                ..r
+                ..r.clone()
             },
         ),
-        ("standard_identity", standard),
+        ("standard_identity", standard.clone()),
         (
             "standard_combined",
             EditRecipe {
@@ -46,72 +46,108 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                 contrast: 25.0,
                 temperature: 20.0,
                 saturation: 15.0,
-                ..standard
+                ..standard.clone()
             },
         ),
-        ("identity", r),
-        ("exposure_plus1", EditRecipe { exposure: 1.0, ..r }),
+        ("identity", r.clone()),
+        (
+            "exposure_plus1",
+            EditRecipe {
+                exposure: 1.0,
+                ..r.clone()
+            },
+        ),
         (
             "exposure_minus1",
             EditRecipe {
                 exposure: -1.0,
-                ..r
+                ..r.clone()
             },
         ),
         (
             "contrast_plus60",
             EditRecipe {
                 contrast: 60.0,
-                ..r
+                ..r.clone()
             },
         ),
         (
             "contrast_minus60",
             EditRecipe {
                 contrast: -60.0,
-                ..r
+                ..r.clone()
             },
         ),
         (
             "temperature_warm60",
             EditRecipe {
                 temperature: 60.0,
-                ..r
+                ..r.clone()
             },
         ),
         (
             "temperature_cool60",
             EditRecipe {
                 temperature: -60.0,
-                ..r
+                ..r.clone()
             },
         ),
-        ("tint_plus60", EditRecipe { tint: 60.0, ..r }),
+        (
+            "tint_plus60",
+            EditRecipe {
+                tint: 60.0,
+                ..r.clone()
+            },
+        ),
         (
             "vibrance_plus80",
             EditRecipe {
                 vibrance: 80.0,
-                ..r
+                ..r.clone()
             },
         ),
-        ("dehaze_plus60", EditRecipe { dehaze: 60.0, ..r }),
-        ("dehaze_minus60", EditRecipe { dehaze: -60.0, ..r }),
-        ("texture_plus80", EditRecipe { texture: 80.0, ..r }),
+        (
+            "dehaze_plus60",
+            EditRecipe {
+                dehaze: 60.0,
+                ..r.clone()
+            },
+        ),
+        (
+            "dehaze_minus60",
+            EditRecipe {
+                dehaze: -60.0,
+                ..r.clone()
+            },
+        ),
+        (
+            "texture_plus80",
+            EditRecipe {
+                texture: 80.0,
+                ..r.clone()
+            },
+        ),
         (
             "vignette_minus70",
             EditRecipe {
                 vignette: -70.0,
-                ..r
+                ..r.clone()
             },
         ),
         (
             "vignette_plus70",
             EditRecipe {
                 vignette: 70.0,
-                ..r
+                ..r.clone()
             },
         ),
-        ("grain_80", EditRecipe { grain: 80.0, ..r }),
+        (
+            "grain_80",
+            EditRecipe {
+                grain: 80.0,
+                ..r.clone()
+            },
+        ),
         (
             "crop_straighten",
             EditRecipe {
@@ -126,7 +162,7 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                     aspect: renderer::AspectRatio::Square,
                     ..Default::default()
                 }),
-                ..r
+                ..r.clone()
             },
         ),
         (
@@ -138,7 +174,7 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                     [0.75, 0.85],
                     [1.0, 0.97],
                 ])),
-                ..r
+                ..r.clone()
             },
         ),
         (
@@ -149,7 +185,25 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                     flip: true,
                     ..Default::default()
                 }),
-                ..r
+                ..r.clone()
+            },
+        ),
+        (
+            "mask_linear_sky",
+            EditRecipe {
+                masks: vec![renderer::masks::Mask {
+                    id: 1,
+                    shape: renderer::masks::MaskShape::Linear {
+                        start: [0.5, 0.0],
+                        end: [0.5, 0.55],
+                    },
+                    adjustments: renderer::masks::LocalAdjustments {
+                        exposure: -1.0,
+                        warmth: -30.0,
+                        clarity: 40.0,
+                    },
+                }],
+                ..r.clone()
             },
         ),
         (
@@ -168,7 +222,7 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                     ])),
                     ..Default::default()
                 }),
-                ..r
+                ..r.clone()
             },
         ),
         (
@@ -178,7 +232,7 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                     red: [0.003, 0.0],
                     blue: [-0.002, 0.001],
                 }),
-                ..r
+                ..r.clone()
             },
         ),
         (
@@ -200,22 +254,28 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                         ..g
                     }
                 }),
-                ..r
+                ..r.clone()
             },
         ),
         (
             "noise_reduction_80",
             EditRecipe {
                 noise_reduction: 80.0,
-                ..r
+                ..r.clone()
             },
         ),
-        ("clarity_plus80", EditRecipe { clarity: 80.0, ..r }),
+        (
+            "clarity_plus80",
+            EditRecipe {
+                clarity: 80.0,
+                ..r.clone()
+            },
+        ),
         (
             "clarity_minus80",
             EditRecipe {
                 clarity: -80.0,
-                ..r
+                ..r.clone()
             },
         ),
         (
@@ -238,44 +298,50 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                     },
                     ..Default::default()
                 }),
-                ..r
+                ..r.clone()
             },
         ),
         (
             "vibrance_minus80",
             EditRecipe {
                 vibrance: -80.0,
-                ..r
+                ..r.clone()
             },
         ),
         (
             "saturation_minus100",
             EditRecipe {
                 saturation: -100.0,
-                ..r
+                ..r.clone()
             },
         ),
         (
             "saturation_plus60",
             EditRecipe {
                 saturation: 60.0,
-                ..r
+                ..r.clone()
             },
         ),
         (
             "highlights_minus60",
             EditRecipe {
                 highlights: -60.0,
-                ..r
+                ..r.clone()
             },
         ),
-        ("shadows_plus60", EditRecipe { shadows: 60.0, ..r }),
+        (
+            "shadows_plus60",
+            EditRecipe {
+                shadows: 60.0,
+                ..r.clone()
+            },
+        ),
         (
             "whites_plus50_blacks_minus50",
             EditRecipe {
                 whites: 50.0,
                 blacks: -50.0,
-                ..r
+                ..r.clone()
             },
         ),
         (
@@ -285,7 +351,7 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                 contrast: 25.0,
                 temperature: 20.0,
                 saturation: 15.0,
-                ..r
+                ..r.clone()
             },
         ),
     ]

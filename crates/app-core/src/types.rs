@@ -47,7 +47,7 @@ pub struct EmbeddedFrame {
     pub extract_ms: f64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct PreviewRequest {
     pub image: ImageId,
     pub recipe: EditRecipe,
@@ -122,4 +122,5 @@ pub struct EngineInfo {
     pub mixer: MixerSpec,
     pub straighten: AdjustmentSpec,
     pub perspective: Vec<AdjustmentSpec>,
+    pub mask: Vec<AdjustmentSpec>,
 }

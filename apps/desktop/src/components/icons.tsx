@@ -144,6 +144,33 @@ export const PickIcon = ({ size = 15, filled = false }: IconProps & { filled?: b
   </svg>
 );
 
+/** The design's masks icon: a half-filled circle. */
+export const MaskIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="8" cy="8" r="6" />
+    <path d="M8 2a6 6 0 0 1 0 12z" fill="currentColor" />
+  </Icon>
+);
+
+export const EyeIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
+    <circle cx="8" cy="8" r="2" />
+  </Icon>
+);
+
+export const CloseIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 4l8 8M12 4l-8 8" />
+  </Icon>
+);
+
+export const PlusIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M8 3v10M3 8h10" />
+  </Icon>
+);
+
 export const RejectIcon = (p: IconProps) => (
   <Icon size={15} {...p}>
     <circle cx="8" cy="8" r="6" />

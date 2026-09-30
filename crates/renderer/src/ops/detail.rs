@@ -406,14 +406,15 @@ pub fn sharpen_stops(p: &DetailParams, log_y: f32, sharp: f32) -> f32 {
 /// `chroma` is the colour noise map (built from the source like `log_y`), when noise
 /// reduction is on.
 #[allow(clippy::needless_range_loop)] // x indexes several planes and maps
+#[allow(clippy::too_many_arguments)] // the reference takes each input explicitly
 pub fn apply_reference(
     rgb: &mut [f32],
     log_y: &[f32],
     chroma: Option<&noise::ChromaMap>,
-    width: usize,
-    height: usize,
+    (width, height): (usize, usize),
     base: Option<&ToneBase>,
     p: &DetailParams,
+    local_clarity: Option<&dyn Fn(usize, usize) -> f32>,
 ) {
     let np = p.noise();
     let mut gs = GuidedScratch::default();
@@ -451,6 +452,10 @@ pub fn apply_reference(
                 // following edges, it leaves them out of the clarity band.
                 Some(b) => -b.stops_at(x, y, width, height, small[i]),
                 None => small[i],
+            };
+            let p = &DetailParams {
+                clarity: p.clarity + local_clarity.map_or(0.0, |f| f(x, y)),
+                ..*p
             };
             let stops = ((measured[i] - log_y[i])
                 + gain_stops(p, measured[i], small[i], base_log, sharp[i]))
@@ -490,7 +495,7 @@ mod tests {
         let base = p
             .needs_base()
             .then(|| ToneBase::from_log_luminance(w, h, plane));
-        apply_reference(&mut rgb, plane, None, w, h, base.as_ref(), &p);
+        apply_reference(&mut rgb, plane, None, (w, h), base.as_ref(), &p, None);
         rgb.chunks(3).map(|px| px[1].log2()).collect()
     }
 

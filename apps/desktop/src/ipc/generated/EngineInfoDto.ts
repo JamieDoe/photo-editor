@@ -14,4 +14,8 @@ straighten: AdjustmentSpec,
 /**
  * The Geometry section's Vertical and Horizontal sliders (ADR 0034).
  */
-perspective: Array<AdjustmentSpec>, };
+perspective: Array<AdjustmentSpec>, 
+/**
+ * A mask's Exposure, Warmth and Clarity (ADR 0040).
+ */
+mask: Array<AdjustmentSpec>, };

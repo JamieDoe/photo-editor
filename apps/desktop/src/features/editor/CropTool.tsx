@@ -32,6 +32,7 @@ import {
   type ViewShape,
 } from "./cropGeometry";
 import { GroupSliders } from "./AdjustmentPanel";
+import { flipMasks, masksOf, turnMasks, withMasks } from "./masks";
 import { Slider } from "./Slider";
 import { formatSliderValue } from "./sliderTrack";
 
@@ -154,9 +155,14 @@ export function useCropTool(opts: {
     },
     setOverlay: (o: CropRect) => update({ ...g, crop: fromView(o, view) }),
     /** A quarter turn clockwise (1) or anticlockwise (-1), keeping the edit (ADR 0039). */
-    turn: (dir: 1 | -1) => update(turnGeometry(g, dir)),
+    turn: (dir: 1 | -1) => {
+      // Masks are in the same frame as the crop: they turn with it.
+      if (recipe) onChange(withMasks({ ...recipe, geometry: turnGeometry(g, dir) }, turnMasks(masksOf(recipe), dir)));
+    },
     /** Mirrors the picture left to right, keeping the edit. */
-    flip: () => update(flipGeometry(g)),
+    flip: () => {
+      if (recipe) onChange(withMasks({ ...recipe, geometry: flipGeometry(g) }, flipMasks(masksOf(recipe))));
+    },
   };
 }
 

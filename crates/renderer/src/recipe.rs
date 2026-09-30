@@ -37,14 +37,16 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   older recipes have none.
 /// - 16: adds quarter turns and a flip to the geometry (ADR 0039); older geometry is
 ///   upright.
-pub const RECIPE_VERSION: u32 = 16;
+/// - 17: adds masks (ADR 0040), written only when there are some; older recipes have
+///   none.
+pub const RECIPE_VERSION: u32 = 17;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
 /// Serialised form is the persisted edit and the input to cache keys, so it must stay
 /// deterministic and free of UI state. Unknown/missing fields take defaults so older
 /// recipes remain readable.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct EditRecipe {
@@ -108,6 +110,11 @@ pub struct EditRecipe {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub channel_curves: Option<crate::ops::point_curve::ChannelCurves>,
+    /// Masks: adjustments to part of the photo (ADR 0040), in the order made. Empty
+    /// (and omitted from the JSON) without any.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::masks::Mask>>", optional))]
+    pub masks: Vec<crate::masks::Mask>,
     /// The base look the adjustments start from.
     pub look: Look,
 }
@@ -138,6 +145,7 @@ impl Default for EditRecipe {
             chromatic_aberration: None,
             point_curve: None,
             channel_curves: None,
+            masks: Vec::new(),
             look: Look::Standard,
         }
     }
@@ -190,7 +198,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=16 => Ok(Self {
+            7..=17 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -237,6 +245,11 @@ impl EditRecipe {
                 .channel_curves
                 .map(|c| c.sanitized())
                 .filter(|c| !c.is_identity()),
+            masks: self
+                .masks
+                .iter()
+                .map(crate::masks::Mask::sanitized)
+                .collect(),
             look: self.look,
         }
     }
@@ -289,6 +302,7 @@ impl EditRecipe {
             && s.chromatic_aberration.is_none()
             && s.point_curve.is_none()
             && s.channel_curves.is_none()
+            && s.masks.is_empty()
             && s.look == Look::default()
     }
 }
@@ -332,7 +346,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":16,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":17,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -442,6 +456,32 @@ mod tests {
             EditRecipe::from_json(r#"{"version":10}"#).unwrap().geometry,
             None
         );
+        // Version 16 recipes have no masks; masks round-trip in order.
+        assert!(
+            EditRecipe::from_json(r#"{"version":16}"#)
+                .unwrap()
+                .masks
+                .is_empty()
+        );
+        let masked = EditRecipe {
+            masks: vec![crate::masks::Mask {
+                id: 7,
+                shape: crate::masks::MaskShape::Linear {
+                    start: [0.5, 0.1],
+                    end: [0.5, 0.5],
+                },
+                adjustments: crate::masks::LocalAdjustments {
+                    exposure: -0.7,
+                    warmth: 12.0,
+                    clarity: 0.0,
+                },
+            }],
+            ..Default::default()
+        };
+        let back = EditRecipe::from_json(&masked.to_json()).unwrap();
+        assert_eq!(back.masks, masked.masks);
+        assert!(!back.is_identity());
+        assert!(!EditRecipe::default().to_json().contains("masks"));
         // Version 14 recipes have no channel curves; a red curve round-trips, all
         // diagonals are dropped.
         assert_eq!(

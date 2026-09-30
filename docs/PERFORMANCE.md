@@ -587,3 +587,20 @@ rounds, machine load about 9:
 - Without channel curves the single shared table is kept.
 - These RGB figures are higher than §26's (2.6–2.9 ms) because the machine was
   busier.
+
+## 28. Masks (ADR 0040)
+
+A full render of a 1516×1010 frame (default look), median of 40, three rounds, machine
+load about 8:
+
+| Case | ms |
+|---|---|
+| No masks | 2.93–3.79 |
+| One linear gradient: Exposure and Warmth | 5.06–5.19 |
+| Three linear gradients: Exposure and Warmth | 5.56–5.81 |
+| One linear gradient: Clarity | 5.23–5.63 |
+
+- Most of a gain mask's cost is three `exp2` per pixel.
+- Coverage (a dot product and a smoothstep per mask) is cheap. A lookup-table `exp2`
+  would halve the cost if it matters.
+- Release self-test, Nikon Z 6: a render with a mask took 6.3–6.8 ms.

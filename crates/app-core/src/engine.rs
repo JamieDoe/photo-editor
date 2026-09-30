@@ -88,6 +88,7 @@ impl Engine {
             mixer: renderer::adjustments::mixer_spec(),
             straighten: renderer::adjustments::STRAIGHTEN,
             perspective: renderer::adjustments::PERSPECTIVE.to_vec(),
+            mask: renderer::adjustments::mask_specs(),
         }
     }
 

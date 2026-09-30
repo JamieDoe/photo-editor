@@ -328,56 +328,55 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       return sum / count;
     };
     const meanLuma = (f: RenderedFrame) => meanOf(f, "luma");
+    /** Sets `recipe` and waits for a frame requested after it (the size of `like`,
+     *  when given: quick and detail renders differ). Frames still in flight for the
+     *  recipe before are never taken for it. */
+    const show = (recipe: EditRecipe, what: string, like?: RenderedFrame | null) => {
+      const mark = driver.editor().schedulerStats().requested;
+      driver.editor().setRecipe(recipe);
+      if (like === null) return Promise.resolve(null);
+      return waitFor(
+        () =>
+          frames.find(
+            (f) =>
+              f.info.seq > mark &&
+              (like === undefined || (f.frame.width === like.frame.width && f.frame.height === like.frame.height)),
+          ) ?? null,
+        10_000,
+        what,
+      ).catch(() => null);
+    };
     const beforeCurve = driver.editor().recipe!;
-    const baseline = frames.at(-1);
-    const framesBeforeCurve = frames.length;
-    driver.editor().setRecipe({
-      ...beforeCurve,
-      pointCurve: [
-        [0, 0],
-        [0.5, 0.75],
-        [1, 1],
-      ],
-    });
-    const curved = await waitFor(
-      () => frames.slice(framesBeforeCurve).find((f) => !f.frame.cacheHit) ?? null,
-      10_000,
-      "tone curve frame",
-    ).catch(() => null);
-    // A red curve (ADR 0038) lifts red, not green. The colour controls (which run
-    // after the curve and mix channels) are neutral for this check.
-    const colourNeutral = { ...beforeCurve, saturation: 0, vibrance: 0, mixer: undefined };
-    const framesBeforeRed = frames.length;
-    driver.editor().setRecipe({
-      ...colourNeutral,
-      channelCurves: {
-        red: [
+    const curved = await show(
+      {
+        ...beforeCurve,
+        pointCurve: [
           [0, 0],
           [0.5, 0.75],
           [1, 1],
         ],
       },
-    });
-    const reddened = await waitFor(
-      () => frames.slice(framesBeforeRed).find((f) => !f.frame.cacheHit) ?? null,
-      10_000,
+      "tone curve frame",
+    );
+    // Against the recipe without the curve, at the same size.
+    const baseline = await show(beforeCurve, "uncurved frame", curved);
+    // A red curve (ADR 0038) lifts red, not green. The colour controls (which run
+    // after the curve and mix channels) are neutral for this check.
+    const colourNeutral = { ...beforeCurve, saturation: 0, vibrance: 0, mixer: undefined };
+    const reddened = await show(
+      {
+        ...colourNeutral,
+        channelCurves: {
+          red: [
+            [0, 0],
+            [0.5, 0.75],
+            [1, 1],
+          ],
+        },
+      },
       "red curve frame",
-    ).catch(() => null);
-    // Against the recipe without it, rendered at the same size (quick and detail
-    // renders differ).
-    const framesAfterRed = frames.length;
-    driver.editor().setRecipe(colourNeutral);
-    const restored = reddened
-      ? await waitFor(
-          () =>
-            frames
-              .slice(framesAfterRed)
-              .find((f) => f.frame.width === reddened.frame.width && f.frame.height === reddened.frame.height) ??
-            null,
-          10_000,
-          "restored frame",
-        ).catch(() => null)
-      : null;
+    );
+    const restored = await show(colourNeutral, "restored frame", reddened);
     driver.editor().setRecipe(beforeCurve);
     const lift = (f: RenderedFrame | null, plane: "red" | "green") =>
       f && restored ? Math.round((meanOf(f, plane) - meanOf(restored, plane)) * 10) / 10 : null;
@@ -430,6 +429,45 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       cropped !== null &&
       cropped.frame.fullHeight === Math.round(fullH / 2) &&
       Math.abs(cropped.frame.width / cropped.frame.height - fullW / fullH) < 0.02;
+
+    // A mask (ADR 0040): -1 EV over the top, fading out by the middle. Compared with
+    // the same frame without it, rendered at the same size: the top rows darker, the
+    // bottom rows unchanged.
+    const maskedRecipe = {
+      ...beforeCrop,
+      masks: [
+        {
+          id: 1,
+          shape: { kind: "linear" as const, start: [0.5, 0] as [number, number], end: [0.5, 0.5] as [number, number] },
+          adjustments: { exposure: -1, warmth: 0, clarity: 0 },
+        },
+      ],
+    };
+    const maskedFrame = await show(maskedRecipe, "masked frame");
+    const unmaskedFrame = await show(beforeCrop, "unmasked frame", maskedFrame);
+    // Mean of rows [from, to) as fractions of the height (RGB, 0..255).
+    const rowsMean = (f: RenderedFrame, from: number, to: number) => {
+      const { width, height, pixels } = f.frame;
+      let sum = 0;
+      let n = 0;
+      for (let y = Math.floor(from * height); y < Math.floor(to * height); y++) {
+        for (let x = 0; x < width; x++) {
+          const i = (y * width + x) * 4;
+          sum += pixels[i]! + pixels[i + 1]! + pixels[i + 2]!;
+          n += 3;
+        }
+      }
+      return sum / n;
+    };
+    const mask =
+      maskedFrame && unmaskedFrame
+        ? {
+            topDarker: Math.round((rowsMean(unmaskedFrame, 0, 0.1) - rowsMean(maskedFrame, 0, 0.1)) * 10) / 10,
+            bottomChange: Math.round((rowsMean(maskedFrame, 0.6, 1) - rowsMean(unmaskedFrame, 0.6, 1)) * 100) / 100,
+            renderMs: maskedFrame.frame.renderMs,
+          }
+        : null;
+    const maskOk = mask !== null && mask.topDarker > 5 && Math.abs(mask.bottomChange) < 0.5;
 
     // A quarter turn (ADR 0039): the frame is the photo on its side.
     const framesBeforeTurn = frames.length;
@@ -535,6 +573,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       crop: cropOk,
       perspective: perspectiveOk,
       turn: turnOk,
+      mask: maskOk,
       chromaticAberration: chromaticAberrationOk,
       histogram: histogramOk,
       autoLevel: autoLevelOk,
@@ -559,6 +598,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       crop,
       perspective,
       turn,
+      mask,
       chromaticAberration,
       histogram,
       autoLevel,

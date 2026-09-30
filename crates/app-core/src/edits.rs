@@ -45,7 +45,7 @@ impl SavedEdit {
     /// The recipe to render, if the photo is edited (and readable).
     pub fn recipe(&self) -> Option<EditRecipe> {
         match self {
-            Self::Recipe(r) => Some(**r),
+            Self::Recipe(r) => Some((**r).clone()),
             Self::None | Self::TooNew { .. } => None,
         }
     }

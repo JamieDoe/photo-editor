@@ -13,6 +13,7 @@ pub mod chromatic;
 pub mod cpu;
 pub mod geometry;
 pub mod histogram;
+pub mod masks;
 pub mod ops;
 mod plan;
 mod quality;
