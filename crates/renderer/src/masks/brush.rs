@@ -443,6 +443,50 @@ mod tests {
     }
 
     #[test]
+    fn erasing_while_painting_takes_paint_away() {
+        // As the editor paints: the paint stroke, then an erase stroke growing point
+        // by point over the cached map of the paint.
+        let paint = stroke(&[[0.1, 0.5], [0.9, 0.5]], 0.05, 0.0, 100.0, false);
+        let before = coverage(std::slice::from_ref(&paint), 900.0, 600.0);
+        assert!((at(&before, 0.5, 0.5) - 1.0).abs() < 1e-3);
+        let mut erase = stroke(&[[0.5, 0.3]], 0.05, 0.0, 100.0, true);
+        for y in [0.4, 0.5, 0.6, 0.7] {
+            erase.points.push([0.5, y]);
+            let map = coverage(&[paint.clone(), erase.clone()], 900.0, 600.0);
+            if y >= 0.5 {
+                assert_eq!(at(&map, 0.5, 0.5), 0.0, "erased at {y}");
+            }
+            assert!((at(&map, 0.2, 0.5) - 1.0).abs() < 1e-3);
+        }
+    }
+
+    #[test]
+    fn a_painting_session_matches_rasterising_from_scratch() {
+        // Several strokes, erases among them, each painted point by point through the
+        // cache as the editor does; the result must equal a fresh rasterisation.
+        let plan: [(bool, [f32; 2], [f32; 2]); 5] = [
+            (false, [0.1, 0.3], [0.9, 0.35]),
+            (false, [0.2, 0.6], [0.8, 0.55]),
+            (true, [0.5, 0.1], [0.5, 0.9]),
+            (false, [0.45, 0.2], [0.55, 0.7]),
+            (true, [0.1, 0.5], [0.9, 0.5]),
+        ];
+        let mut strokes: Vec<Stroke> = Vec::new();
+        for (erase, a, b) in plan {
+            strokes.push(stroke(&[a], 0.03, 50.0, 90.0, erase));
+            for k in 1..=12 {
+                let t = k as f32 / 12.0;
+                let p = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+                strokes.last_mut().unwrap().points.push(p);
+                let _ = coverage(&strokes, 1200.0, 800.0);
+            }
+        }
+        let cached = coverage(&strokes, 1200.0, 800.0);
+        let fresh = rasterize(&strokes, raster_size(1200.0, 800.0));
+        assert_eq!(cached.data, fresh.data);
+    }
+
+    #[test]
     fn simplifying_keeps_the_shape() {
         // Many points on a line, one corner: three points remain.
         let mut pts: Vec<[f32; 2]> = (0..50).map(|i| [i as f32, 0.0]).collect();

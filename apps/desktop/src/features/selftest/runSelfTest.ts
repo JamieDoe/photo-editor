@@ -527,14 +527,118 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       "brush mask frame",
     );
     const unbrushedFrame = await show(beforeCrop, "frame without the brush mask", brushedFrame);
+    // The same stroke with its middle erased: the middle of the band as without the
+    // mask, its left still darker.
+    const erasedFrame = await show(
+      {
+        ...beforeCrop,
+        masks: [
+          {
+            id: 1,
+            shape: {
+              kind: "brush",
+              strokes: [
+                { size: 0.05, feather: 40, flow: 100, points: [[0.05, 0.5], [0.5, 0.52], [0.95, 0.5]] },
+                { erase: true, size: 0.08, feather: 20, flow: 100, points: [[0.5, 0.3], [0.5, 0.7]] },
+              ],
+            },
+            adjustments: { exposure: -1, warmth: 0, clarity: 0 },
+          },
+        ],
+      },
+      "erased brush frame",
+      brushedFrame,
+    );
     const brush =
       brushedFrame && unbrushedFrame
         ? {
             bandDarker: Math.round((patchMean(unbrushedFrame, 0.48, 0.53, 0.1, 0.9) - patchMean(brushedFrame, 0.48, 0.53, 0.1, 0.9)) * 10) / 10,
             topChange: Math.round((patchMean(brushedFrame, 0, 0.2, 0, 1) - patchMean(unbrushedFrame, 0, 0.2, 0, 1)) * 100) / 100,
+            erasedMiddleChange: erasedFrame
+              ? Math.round((patchMean(erasedFrame, 0.48, 0.53, 0.48, 0.52) - patchMean(unbrushedFrame, 0.48, 0.53, 0.48, 0.52)) * 100) / 100
+              : null,
+            erasedLeftDarker: erasedFrame
+              ? Math.round((patchMean(unbrushedFrame, 0.48, 0.53, 0.1, 0.3) - patchMean(erasedFrame, 0.48, 0.53, 0.1, 0.3)) * 10) / 10
+              : null,
             renderMs: brushedFrame.frame.renderMs,
           }
         : null;
+    // Painting and erasing through the mask UI itself (ADR 0042): the Edit view, the
+    // Masks button, Add Brush, and pointer events on the photo, as the photographer
+    // paints. Records how long each stroke's frames take and what the final render
+    // shows where the erase went.
+    const uiBrush = await (async () => {
+      const byText = (sel: string, text: string) =>
+        [...document.querySelectorAll<HTMLElement>(sel)].find((e) => e.textContent?.trim() === text);
+      driver.editor().setRecipe({ ...beforeCrop, masks: undefined });
+      byText("button", "Edit")?.click();
+      await nextFrame();
+      await nextFrame();
+      document.querySelector<HTMLElement>('button[title="Masks"]')?.click();
+      await nextFrame();
+      byText(".mask-toolbar button", "Brush")?.click();
+      await nextFrame();
+      await nextFrame();
+      const added = driver.editor().recipe!;
+      driver.editor().setRecipe({
+        ...added,
+        masks: added.masks?.map((m) => ({ ...m, adjustments: { ...m.adjustments, exposure: -1 } })),
+      });
+      await nextFrame();
+      const surface = document.querySelector<HTMLElement>(".brush-surface");
+      if (!surface) return { error: "no brush surface" };
+      const box = surface.getBoundingClientRect();
+      const fire = (type: string, u: number, v: number, alt: boolean) =>
+        surface.dispatchEvent(
+          new PointerEvent(type, {
+            bubbles: true,
+            clientX: box.left + u * box.width,
+            clientY: box.top + v * box.height,
+            pointerId: 1,
+            isPrimary: true,
+            button: 0,
+            buttons: type === "pointerup" ? 0 : 1,
+            pointerType: "mouse",
+            altKey: alt,
+          }),
+        );
+      const stroke = async (from: [number, number], to: [number, number], alt: boolean) => {
+        const framesBefore = frames.length;
+        const gaps: number[] = [];
+        let last = await nextFrame();
+        fire("pointerdown", from[0], from[1], alt);
+        for (let i = 1; i <= 40; i++) {
+          const t = i / 40;
+          fire("pointermove", from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t, alt);
+          const now = await nextFrame();
+          gaps.push(now - last);
+          last = now;
+        }
+        fire("pointerup", to[0], to[1], alt);
+        return { uiFrameGapMs: summarise(gaps), framesShown: frames.length - framesBefore };
+      };
+      const paint = await stroke([0.05, 0.5], [0.95, 0.5], false);
+      const erase = await stroke([0.5, 0.2], [0.5, 0.8], true);
+      // Let the last change settle (the detail render follows 180 ms after it).
+      await new Promise((r) => setTimeout(r, 1200));
+      const painted = driver.editor().recipe!;
+      const mask = painted.masks?.[0];
+      const strokes = mask?.shape.kind === "brush" ? mask.shape.strokes : [];
+      const final = frames.at(-1) ?? null;
+      byText(".mask-toolbar button", "Done")?.click();
+      const plain = await show({ ...painted, masks: undefined }, "frame without the painted mask", final);
+      const middle = (f: RenderedFrame) => patchMean(f, 0.48, 0.53, 0.47, 0.53);
+      const left = (f: RenderedFrame) => patchMean(f, 0.48, 0.53, 0.1, 0.3);
+      driver.editor().setRecipe(beforeCrop);
+      return {
+        strokes: strokes.map((s) => ({ erase: s.erase ?? false, points: s.points.length })),
+        paint,
+        erase,
+        erasedMiddleChange: final && plain ? Math.round((middle(final) - middle(plain)) * 100) / 100 : null,
+        paintedLeftDarker: final && plain ? Math.round((left(plain) - left(final)) * 10) / 10 : null,
+      };
+    })();
+
     const maskOk =
       linearMaskOk &&
       radial !== null &&
@@ -542,7 +646,14 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       Math.abs(radial.middleChange) < 0.5 &&
       brush !== null &&
       brush.bandDarker > 5 &&
-      Math.abs(brush.topChange) < 0.5;
+      Math.abs(brush.topChange) < 0.5 &&
+      brush.erasedMiddleChange !== null &&
+      Math.abs(brush.erasedMiddleChange) < 0.5 &&
+      (brush.erasedLeftDarker ?? 0) > 5 &&
+      !("error" in uiBrush) &&
+      uiBrush.erasedMiddleChange !== null &&
+      Math.abs(uiBrush.erasedMiddleChange) < 1 &&
+      (uiBrush.paintedLeftDarker ?? 0) > 5;
 
     // A quarter turn (ADR 0039): the frame is the photo on its side.
     const framesBeforeTurn = frames.length;
@@ -676,6 +787,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       mask,
       radial,
       brush,
+      uiBrush,
       chromaticAberration,
       histogram,
       autoLevel,
