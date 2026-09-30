@@ -651,18 +651,22 @@ button.preset-more .icon { stroke-width: 2.4; }
 
 /* A floating panel (components/Popover.tsx), styled as the floating bars. */
 .popover {
-  position: fixed; z-index: 50; padding: 6px; border-radius: 12px;
-  background: var(--raised); border: 1px solid var(--hairline-strong); box-shadow: 0 16px 40px -12px rgb(0 0 0 / 60%);
-  animation: fade-in 0.12s ease;
+  position: fixed; z-index: 50; border-radius: 14px; overflow: hidden;
+  background: var(--raised); border: 1px solid var(--hairline-strong); box-shadow: 0 24px 60px -16px rgb(0 0 0 / 70%);
+  animation: pop 0.16s var(--ease);
 }
-.popover-section { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
-.popover-section + .popover-section { border-top: 1px solid var(--hairline); }
-.popover-label { font-size: 11.5px; color: var(--text-3); }
-.popover-row { display: flex; gap: 6px; }
-.popover-row .text-input { flex: 1 1 auto; }
-.popover-actions { display: flex; justify-content: flex-end; gap: 6px; }
-button.popover-item { height: auto; min-height: 30px; padding: 6px 8px; margin: 0 -4px; border-radius: 7px; background: transparent; border: 0; flex-direction: column; align-items: flex-start; gap: 1px; font-size: 12.5px; font-weight: 400; color: var(--text); text-align: left; }
+.popover-header { padding: 14px 14px 12px; display: flex; align-items: center; gap: 12px; }
+.popover-thumb { flex-shrink: 0; width: 60px; height: 40px; border-radius: 5px; object-fit: cover; background: var(--fill-quiet); box-shadow: 0 0 0 1px var(--hairline); }
+.popover-heading { min-width: 0; flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px; }
+.popover-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popover-sub { font-size: 11.5px; line-height: 1.35; color: var(--text-3); }
+.popover-heading .text-input.popover-name-input { width: 100%; height: 26px; margin: -3px 0 -2px -8px; padding: 0 7px; font-size: 14px; font-weight: 600; }
+.popover-body { padding: 12px 14px 14px; border-top: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 12px; }
+.popover-body .text-input { height: 32px; font-size: 13px; }
+.popover-text { margin: 0; font-size: 12.5px; line-height: 1.45; color: var(--text-2); }
+.popover-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.popover-menu { padding: 6px; border-top: 1px solid var(--hairline); display: flex; flex-direction: column; }
+button.popover-item { height: 32px; padding: 0 10px; border-radius: 8px; background: transparent; border: 0; justify-content: flex-start; gap: 10px; font-size: 13px; font-weight: 400; color: var(--text); }
+button.popover-item .icon { color: var(--text-2); }
 button.popover-item:hover:not(:disabled) { background: var(--hover-strong); }
-button.popover-item.danger { color: var(--danger); }
-.popover-item-sub { font-size: 11px; color: var(--text-3); }
-.popover-confirm { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--text-2); }
+button.popover-item.danger, button.popover-item.danger .icon { color: var(--danger); }

@@ -61,13 +61,19 @@ everything else.
      is the preset last chosen on the photo this session (applied, saved or updated).
      Otherwise it is a saved preset with that look before a built-in one, which also
      covers reopening.
-   - **Save…** in the strip's header opens a popover to name and save the current
-     look.
-   - A saved preset shows ⋯ on hover. It opens a popover with its details: its name
-     (Rename), **Update to this photo's look** (off when the photo already has it),
-     and **Delete preset…**, which asks first.
-   - The popover floats over the panel, so the scrolling strip does not clip it. It
-     closes on a click elsewhere, Escape, or scrolling.
+   - The popovers follow the design's dialogs: a header with a 60×40 thumbnail, a
+     title and a line under it, then the content.
+   - **Save…** in the strip's header opens a popover with the photo's thumbnail, "Save
+     as preset", a note on what is kept, and a name field with Cancel and Save.
+   - A saved preset shows ⋯ on hover. It opens a popover with the preset's preview and
+     name, then a menu:
+     - **Rename** turns the title into a field with the name selected; Enter or leaving
+       it saves, Escape goes back.
+     - **Update to this photo's look** is off while the photo already has it.
+     - **Delete…** swaps the menu for a confirmation.
+   - Popovers float over the panel, so the scrolling strip does not clip them. They
+     follow their button when something scrolls, and close on a click elsewhere or
+     Escape.
 7. **Not yet:**
    - importing and exporting presets as files (the next milestone);
    - the design's **Auto** button (an automatic starting point), which is a separate

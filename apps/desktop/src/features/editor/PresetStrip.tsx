@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { MoreIcon } from "../../components/icons";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { MoreIcon, PencilIcon, RefreshIcon, TrashIcon } from "../../components/icons";
 import { Popover } from "../../components/Popover";
 import * as ipc from "../../ipc/client";
 import type { PreviewFrame } from "../../ipc/frame";
@@ -98,7 +98,7 @@ function usePresetPreviews(editor: Editor, recipe: EditRecipe | null, presets: P
   };
 }
 
-function PresetPreview({ frame }: { frame: PreviewFrame | null }) {
+function PresetPreview({ frame, className = "preset-image" }: { frame: PreviewFrame | null; className?: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -107,7 +107,7 @@ function PresetPreview({ frame }: { frame: PreviewFrame | null }) {
     canvas.height = frame.height;
     canvas.getContext("2d")?.putImageData(new ImageData(frame.pixels, frame.width, frame.height), 0, 0);
   }, [frame]);
-  return <canvas ref={ref} className={frame ? "preset-image" : "preset-image empty"} aria-hidden="true" />;
+  return <canvas ref={ref} className={frame ? className : `${className} empty`} aria-hidden="true" />;
 }
 
 /** The popover open: saving the current look, or editing a saved preset. */
@@ -187,12 +187,10 @@ export function PresetStrip({ editor, recipe, disabled }: { editor: Editor; reci
         })}
       </div>
       {open?.kind === "save" && recipe && (
-        <Popover anchor={open.anchor} label="Save preset" onClose={close}>
-          <NameForm
-            title="Save this look as a preset"
-            initial=""
-            action="Save"
-            onSubmit={async (name) => {
+        <Popover anchor={open.anchor} label="Save as preset" onClose={close}>
+          <SavePreset
+            frame={editor.displayed?.frame ?? null}
+            onSave={async (name) => {
               const saved = await create(name, recipe);
               if (saved) {
                 choose(saved.id);
@@ -208,6 +206,7 @@ export function PresetStrip({ editor, recipe, disabled }: { editor: Editor; reci
           <PresetDetails
             key={editing.id}
             preset={editing}
+            frame={previewOf(editing.id)}
             canUpdate={recipe !== null && !hasLook(recipe, editing)}
             onRename={(name) => rename(editing.id, name)}
             onUpdate={async () => {
@@ -224,102 +223,155 @@ export function PresetStrip({ editor, recipe, disabled }: { editor: Editor; reci
   );
 }
 
-/** A name field with its button: Enter or the button submits, Escape closes. */
-function NameForm({
-  title,
-  initial,
-  action,
-  onSubmit,
-  onCancel,
-}: {
-  title: string;
-  initial: string;
-  action: string;
-  onSubmit: (name: string) => void;
-  onCancel?: () => void;
-}) {
-  const [name, setName] = useState(initial);
-  const changed = name.trim() !== "" && name.trim() !== initial.trim();
+/** The popover's header, as the design's dialogs have it: a small picture, a title
+ *  (or, while renaming, a field in its place) and a line under it. */
+function PopoverHeader({ frame, title, sub }: { frame: PreviewFrame | null; title: ReactNode; sub: string }) {
+  return (
+    <div className="popover-header">
+      <PresetPreview frame={frame} className="popover-thumb" />
+      <div className="popover-heading">
+        {title}
+        <span className="popover-sub">{sub}</span>
+      </div>
+    </div>
+  );
+}
+
+/** Save… : names the photo's current look and saves it as a preset. */
+function SavePreset({ frame, onSave, onCancel }: { frame: PreviewFrame | null; onSave: (name: string) => void; onCancel: () => void }) {
+  const [name, setName] = useState("");
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (changed) onSubmit(name);
+    if (name.trim()) onSave(name);
   };
   return (
-    <form className="popover-section" onSubmit={submit}>
-      <label className="popover-label" htmlFor="preset-name">
-        {title}
-      </label>
-      <div className="popover-row">
+    <form onSubmit={submit}>
+      <PopoverHeader
+        frame={frame}
+        title={<span className="popover-title">Save as preset</span>}
+        sub="Keeps the look, not the exposure, crop or masks"
+      />
+      <div className="popover-body">
         <input
-          id="preset-name"
           className="text-input"
           autoFocus
           maxLength={60}
-          placeholder="Preset name"
+          placeholder="Name"
+          aria-label="Preset name"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <button className="primary small" type="submit" disabled={!changed}>
-          {action}
-        </button>
-      </div>
-      {onCancel && (
         <div className="popover-actions">
           <button className="ghost small" type="button" onClick={onCancel}>
             Cancel
           </button>
+          <button className="primary small" type="submit" disabled={!name.trim()}>
+            Save
+          </button>
         </div>
-      )}
+      </div>
     </form>
   );
 }
 
-/** A saved preset's details: rename it, update it to the photo's look, delete it. */
+/** A saved preset's details: rename it in place, update it to the photo's look, or
+ *  delete it (after asking). */
 function PresetDetails({
   preset,
+  frame,
   canUpdate,
   onRename,
   onUpdate,
   onDelete,
 }: {
   preset: PresetDto;
+  frame: PreviewFrame | null;
   canUpdate: boolean;
-  onRename: (name: string) => void;
+  onRename: (name: string) => Promise<boolean>;
   onUpdate: () => void;
   onDelete: () => void;
 }) {
-  const [confirming, setConfirming] = useState(false);
+  const [mode, setMode] = useState<"menu" | "rename" | "delete">("menu");
+  const [name, setName] = useState(preset.name);
+  // Renaming starts with the name selected, so typing replaces it.
+  const nameRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (mode === "rename") nameRef.current?.select();
+  }, [mode]);
+  const finishRename = async () => {
+    const trimmed = name.trim();
+    if (trimmed && trimmed !== preset.name && !(await onRename(trimmed))) return;
+    setName(trimmed || preset.name);
+    setMode("menu");
+  };
+  const title =
+    mode === "rename" ? (
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void finishRename();
+        }}
+      >
+        <input
+          ref={nameRef}
+          className="text-input popover-name-input"
+          maxLength={60}
+          aria-label="Preset name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onBlur={() => void finishRename()}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") {
+              // Back to the menu, not closing the popover.
+              e.stopPropagation();
+              setName(preset.name);
+              setMode("menu");
+            }
+          }}
+        />
+      </form>
+    ) : (
+      <span className="popover-title">{preset.name}</span>
+    );
   return (
     <>
-      <NameForm title="Name" initial={preset.name} action="Rename" onSubmit={onRename} />
-      <div className="popover-section">
-        <button
-          className="popover-item"
-          disabled={!canUpdate}
-          title={canUpdate ? undefined : "The photo already has this look"}
-          onClick={onUpdate}
-        >
-          <span>Update to this photo’s look</span>
-          <span className="popover-item-sub">Replaces the preset’s settings</span>
-        </button>
-        {confirming ? (
-          <div className="popover-confirm">
-            <span>Delete “{preset.name}”? Photos keep their edits.</span>
-            <div className="popover-actions">
-              <button className="ghost small" onClick={() => setConfirming(false)}>
-                Cancel
-              </button>
-              <button className="danger small" autoFocus onClick={onDelete}>
-                Delete
-              </button>
-            </div>
+      <PopoverHeader frame={frame} title={title} sub="Your preset" />
+      {mode === "delete" ? (
+        <div className="popover-body">
+          <p className="popover-text">
+            Delete “{preset.name}”? Photos you applied it to keep their edits.
+          </p>
+          <div className="popover-actions">
+            <button className="ghost small" onClick={() => setMode("menu")}>
+              Cancel
+            </button>
+            <button className="danger small" autoFocus onClick={onDelete}>
+              Delete
+            </button>
           </div>
-        ) : (
-          <button className="popover-item danger" onClick={() => setConfirming(true)}>
-            <span>Delete preset…</span>
+        </div>
+      ) : (
+        <div className="popover-menu" role="menu">
+          <button className="popover-item" role="menuitem" onClick={() => setMode("rename")}>
+            <PencilIcon />
+            Rename
           </button>
-        )}
-      </div>
+          <button
+            className="popover-item"
+            role="menuitem"
+            disabled={!canUpdate}
+            title={canUpdate ? "Replace this preset’s settings with this photo’s look" : "The photo already has this look"}
+            onClick={onUpdate}
+          >
+            <RefreshIcon />
+            Update to this photo’s look
+          </button>
+          <button className="popover-item danger" role="menuitem" onClick={() => setMode("delete")}>
+            <TrashIcon />
+            Delete…
+          </button>
+        </div>
+      )}
     </>
   );
 }

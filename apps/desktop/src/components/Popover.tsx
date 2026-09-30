@@ -1,14 +1,14 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-const WIDTH = 248;
+const WIDTH = 272;
 /** Space kept between the popover and the window's edges, and its anchor. */
 const MARGIN = 8;
 
 /**
  * A small floating panel under `anchor`, drawn over everything (so a scrolling strip
- * does not clip it). Closes on a click elsewhere, Escape, or when the page scrolls or
- * resizes (the anchor would move away from it).
+ * does not clip it). Follows the anchor when something scrolls or the window resizes;
+ * closes on a click elsewhere, Escape, or when the anchor goes away.
  */
 export function Popover({
   anchor,
@@ -24,41 +24,41 @@ export function Popover({
   const ref = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ left: number; top: number } | null>(null);
 
-  useLayoutEffect(() => {
+  /** Right edges aligned, inside the window; above the anchor if there is no room below. */
+  const place = useCallback(() => {
     const a = anchor.getBoundingClientRect();
     const height = ref.current?.offsetHeight ?? 0;
-    // Right edges aligned, inside the window; above the anchor if there is no room below.
     const left = Math.min(Math.max(MARGIN, a.right - WIDTH), window.innerWidth - WIDTH - MARGIN);
     const below = a.bottom + MARGIN;
     const top = below + height > window.innerHeight - MARGIN ? Math.max(MARGIN, a.top - MARGIN - height) : below;
     setAt({ left, top });
   }, [anchor]);
+  useLayoutEffect(place, [place]);
 
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
       if (!ref.current?.contains(t) && !anchor.contains(t)) onClose();
     };
+    // After the popover's own controls, which may use Escape themselves (and stop it).
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
+      if (e.key === "Escape") onClose();
     };
-    const onMove = (e: Event) => {
-      if (!(e.target instanceof Node && ref.current?.contains(e.target))) onClose();
+    const onMove = () => {
+      if (anchor.isConnected) place();
+      else onClose();
     };
     window.addEventListener("pointerdown", onDown, true);
-    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("keydown", onKey);
     window.addEventListener("scroll", onMove, true);
     window.addEventListener("resize", onMove);
     return () => {
       window.removeEventListener("pointerdown", onDown, true);
-      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keydown", onKey);
       window.removeEventListener("scroll", onMove, true);
       window.removeEventListener("resize", onMove);
     };
-  }, [anchor, onClose]);
+  }, [anchor, onClose, place]);
 
   return createPortal(
     <div
