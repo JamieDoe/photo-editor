@@ -90,6 +90,7 @@ impl Engine {
             perspective: renderer::adjustments::PERSPECTIVE.to_vec(),
             mask: renderer::adjustments::mask_specs(),
             mask_feather: renderer::adjustments::MASK_FEATHER,
+            mask_density: renderer::adjustments::MASK_DENSITY,
         }
     }
 

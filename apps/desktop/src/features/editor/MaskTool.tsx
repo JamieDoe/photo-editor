@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { EyeIcon } from "../../components/icons";
+import type { Combine } from "../../ipc/generated/Combine";
 import type { CropRect } from "../../ipc/generated/CropRect";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { LocalAdjustments } from "../../ipc/generated/LocalAdjustments";
@@ -7,20 +8,27 @@ import type { Mask } from "../../ipc/generated/Mask";
 import type { MaskShape } from "../../ipc/generated/MaskShape";
 import type { Stroke } from "../../ipc/generated/Stroke";
 import { BrushGuides } from "./BrushOverlay";
+import { MaskTintCanvas } from "./MaskTintCanvas";
 import { isTextEntry } from "../../lib/keyboard";
 import {
   ADDABLE_KINDS,
   DEFAULT_BRUSH,
   FULL_CROP,
   MASK_KINDS,
+  addShape,
   maskName,
   masksOf,
   newMask,
+  newShape,
   normaliseAngle,
+  removeShape,
   setAdjustment,
+  setShapeMode,
+  shapesOf,
   toShown,
   updateMask,
   withMasks,
+  withShapeAt,
   type BrushSettings,
   type MaskKind,
   type Point,
@@ -30,9 +38,9 @@ type Radial = Extract<MaskShape, { kind: "radial" }>;
 type Linear = Extract<MaskShape, { kind: "linear" }>;
 
 /**
- * Mask mode (ADRs 0040, 0041): which mask is being edited, whether its coverage is
- * shown, and the edits the toolbar, the overlay and the Selective section make. The
- * masks themselves live in the recipe.
+ * Mask mode (ADRs 0040–0043): which mask is being edited and which of its shapes,
+ * whether its coverage is shown, and the edits the toolbar, the overlay and the
+ * Selective section make. The masks themselves live in the recipe.
  */
 export function useMaskTool(opts: {
   recipe: EditRecipe | null;
@@ -42,10 +50,15 @@ export function useMaskTool(opts: {
   const { recipe, imageId, onChange } = opts;
   const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [shapeAt, setShapeAt] = useState(0);
   const [overlay, setOverlay] = useState(true);
   const [brush, setBrushSettings] = useState<BrushSettings>(DEFAULT_BRUSH);
   const masks = recipe ? masksOf(recipe) : [];
   const active = masks.find((m) => m.id === activeId) ?? null;
+  // The shape being edited: the one picked, or the last if it was removed.
+  const shapes = active ? shapesOf(active) : [];
+  const shapeIndex = Math.max(0, Math.min(shapeAt, shapes.length - 1));
+  const shape = shapes[shapeIndex]?.shape ?? null;
   const crop: CropRect = recipe?.geometry?.crop ?? FULL_CROP;
 
   // Another photo: leave mask mode.
@@ -67,6 +80,14 @@ export function useMaskTool(opts: {
   const changeActive = (change: (m: Mask) => Mask) => {
     if (active) commit(updateMask(masks, active.id, change));
   };
+  /** Changes the shape being edited. */
+  const changeShape = (change: (s: MaskShape) => MaskShape) => {
+    if (shape) changeActive((m) => withShapeAt(m, shapeIndex, change(shape)));
+  };
+  const pickMask = (id: number) => {
+    if (id !== activeId) setShapeAt(0);
+    setActiveId(id);
+  };
 
   return {
     open,
@@ -80,48 +101,59 @@ export function useMaskTool(opts: {
     },
     done: () => setOpen(false),
     pick: (id: number) => {
-      setActiveId(id);
+      pickMask(id);
       setOpen(true);
     },
     add: (kind: MaskKind) => {
       const m = newMask(kind, masks, crop);
       commit([...masks, m]);
-      setActiveId(m.id);
+      pickMask(m.id);
       setOpen(true);
     },
     remove: (id: number) => commit(masks.filter((m) => m.id !== id)),
+    /** The active mask's shapes (ADR 0043), and which is being edited. */
+    shapes,
+    shapeIndex,
+    shape,
+    pickShape: (i: number) => {
+      setShapeAt(i);
+      setOpen(true);
+    },
+    /** Another shape of `kind` in the active mask, combined as `mode`; edited next. */
+    addShape: (mode: Combine, kind: MaskKind) => {
+      if (!active) return;
+      changeActive((m) => addShape(m, mode, newShape(kind, crop)));
+      setShapeAt(shapes.length);
+      setOpen(true);
+    },
+    removeShape: (i: number) => {
+      changeActive((m) => removeShape(m, i));
+      if (i < shapeIndex) setShapeAt(shapeIndex - 1);
+    },
+    setShapeMode: (i: number, mode: Combine) => changeActive((m) => setShapeMode(m, i, mode)),
+    /** How strongly the active mask applies, 0..100. */
+    setDensity: (density: number) => changeActive((m) => ({ ...m, density: density === 100 ? undefined : density })),
     /** Hides a mask's effect, or shows it again; it stays in the list either way. */
     toggleHidden: (id: number) => commit(updateMask(masks, id, (m) => ({ ...m, hidden: m.hidden ? undefined : true }))),
-    setShape: (id: number, shape: MaskShape) => commit(updateMask(masks, id, (m) => ({ ...m, shape }))),
+    /** Replaces the shape being edited. */
+    setShape: (next: MaskShape) => changeShape(() => next),
     setAdjustment: (key: keyof LocalAdjustments, value: number) => {
       if (active) commit(setAdjustment(masks, active.id, key, value));
     },
     /** Adjust outside the shape instead (ADR 0041). */
     setInvert: (invert: boolean) => changeActive((m) => ({ ...m, invert: invert || undefined })),
-    /** A radial mask's Feather. */
-    setFeather: (feather: number) =>
-      changeActive((m) => (m.shape.kind === "radial" ? { ...m, shape: { ...m.shape, feather } } : m)),
+    /** A radial shape's Feather. */
+    setFeather: (feather: number) => changeShape((s) => (s.kind === "radial" ? { ...s, feather } : s)),
     toggleOverlay: () => setOverlay((o) => !o),
     /** The brush the next stroke is painted with (ADR 0042). */
     brush,
     setBrush: (change: Partial<BrushSettings>) => setBrushSettings((b) => ({ ...b, ...change })),
-    /** The active brush mask's strokes (while painting, the last is in progress). */
-    setStrokes: (strokes: Stroke[]) =>
-      changeActive((m) => (m.shape.kind === "brush" ? { ...m, shape: { kind: "brush", strokes } } : m)),
+    /** The brush shape's strokes (while painting, the last is in progress). */
+    setStrokes: (strokes: Stroke[]) => changeShape((s) => (s.kind === "brush" ? { kind: "brush", strokes } : s)),
   };
 }
 
 export type MaskTool = ReturnType<typeof useMaskTool>;
-
-/** Coverage stops: `1 - smoothstep`, as the renderer fades, over `from`..1 of the
- *  gradient; flipped for an inverted mask. The tint is the accent at 42 %. */
-function tintStops(from: number, invert: boolean): Array<{ offset: number; opacity: number }> {
-  const fade = [0, 0.25, 0.5, 0.75, 1].map((t) => {
-    const a = 1 - t * t * (3 - 2 * t);
-    return { offset: from + t * (1 - from), opacity: 0.42 * (invert ? 1 - a : a) };
-  });
-  return from > 0 ? [{ offset: 0, opacity: fade[0]!.opacity }, ...fade] : fade;
-}
 
 /** Where the overlay draws: the shown picture's pixels, and the frame's diagonal in
  *  them (radial radii are fractions of it). */
@@ -134,12 +166,14 @@ interface Space {
 
 /**
  * The active mask on the photo, as in the design: its coverage tinted in the accent
- * colour (when the overlay is on) and the shape's guides and handles.
+ * colour (when the overlay is on), and the guides and handles of the shape being
+ * edited.
  */
 export function MaskOverlay({ tool, size }: { tool: MaskTool; size: { width: number; height: number } }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const mask = tool.active;
-  if (!mask) return <div className="mask-overlay" />;
+  const shape = tool.shape;
+  if (!mask || !shape) return <div className="mask-overlay" />;
   const crop = tool.crop;
   const space: Space = {
     w: size.width,
@@ -147,15 +181,18 @@ export function MaskOverlay({ tool, size }: { tool: MaskTool; size: { width: num
     diagonal: Math.hypot(size.width / crop.w, size.height / crop.h),
     crop,
   };
-  const props = { tool, mask, space, boxRef };
+  const props = { tool, space, boxRef };
+  // Another shape starts its guides afresh.
+  const key = `${mask.id}:${tool.shapeIndex}`;
   return (
     <div className="mask-overlay" ref={boxRef}>
-      {mask.shape.kind === "linear" ? (
-        <LinearGuides {...props} shape={mask.shape} />
-      ) : mask.shape.kind === "radial" ? (
-        <RadialGuides {...props} shape={mask.shape} />
+      {tool.overlay && !mask.hidden && <MaskTintCanvas mask={mask} crop={crop} boxRef={boxRef} />}
+      {shape.kind === "linear" ? (
+        <LinearGuides key={key} {...props} shape={shape} />
+      ) : shape.kind === "radial" ? (
+        <RadialGuides key={key} {...props} shape={shape} />
       ) : (
-        <BrushGuides {...props} shape={mask.shape} />
+        <BrushGuides key={key} {...props} shape={shape} />
       )}
     </div>
   );
@@ -163,7 +200,6 @@ export function MaskOverlay({ tool, size }: { tool: MaskTool; size: { width: num
 
 interface GuideProps<S> {
   tool: MaskTool;
-  mask: Mask;
   space: Space;
   boxRef: RefObject<HTMLDivElement | null>;
   shape: S;
@@ -224,7 +260,7 @@ function HandleDot({
 
 /** A linear gradient: the dashed start and end lines and the solid centre line. Drag
  *  the centre to move it, the start or end points to turn it or change its fade. */
-function LinearGuides({ tool, mask, space, boxRef, shape }: GuideProps<Linear>) {
+function LinearGuides({ tool, space, boxRef, shape }: GuideProps<Linear>) {
   const { begin, handlers } = useHandleDrag(boxRef, space);
   const { w: W, h: H } = space;
   const toPx = (p: Point): Point => {
@@ -237,11 +273,10 @@ function LinearGuides({ tool, mask, space, boxRef, shape }: GuideProps<Linear>) 
   const len = Math.hypot(e[0] - s[0], e[1] - s[1]) || 1;
   const n = [(-(e[1] - s[1]) / len) * (W + H), ((e[0] - s[0]) / len) * (W + H)];
   const line = (p: Point) => ({ x1: p[0] - n[0]!, y1: p[1] - n[1]!, x2: p[0] + n[0]!, y2: p[1] + n[1]! });
-  const gradientId = `mask-coverage-${mask.id}`;
   const shift = (p: Point, d: Point): Point => [p[0] + d[0], p[1] + d[1]];
   const moveBy = (which: "start" | "end" | "both") =>
     begin((_, d) =>
-      tool.setShape(mask.id, {
+      tool.setShape({
         kind: "linear",
         start: which === "end" ? shape.start : shift(shape.start, d),
         end: which === "start" ? shape.end : shift(shape.end, d),
@@ -250,14 +285,6 @@ function LinearGuides({ tool, mask, space, boxRef, shape }: GuideProps<Linear>) 
   return (
     <>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1={s[0]} y1={s[1]} x2={e[0]} y2={e[1]}>
-            {tintStops(0, mask.invert ?? false).map(({ offset, opacity }) => (
-              <stop key={offset} offset={offset} className="mask-tint-stop" stopOpacity={opacity} />
-            ))}
-          </linearGradient>
-        </defs>
-        {tool.overlay && !mask.hidden && <rect width={W} height={H} fill={`url(#${gradientId})`} />}
         <line className="mask-line dashed" {...line(s)} />
         <line className="mask-line" {...line(c)} />
         <line className="mask-line dashed" {...line(e)} />
@@ -272,7 +299,7 @@ function LinearGuides({ tool, mask, space, boxRef, shape }: GuideProps<Linear>) 
 /** A radial gradient: its dashed ellipse and, fainter, where the fade starts. Drag the
  *  centre to move it, a side handle to stretch and turn it, the top or bottom handle
  *  for its other radius. */
-function RadialGuides({ tool, mask, space, boxRef, shape }: GuideProps<Radial>) {
+function RadialGuides({ tool, space, boxRef, shape }: GuideProps<Radial>) {
   const { begin, handlers } = useHandleDrag(boxRef, space);
   const { w: W, h: H, diagonal } = space;
   const shown = toShown(shape.centre, space.crop);
@@ -283,8 +310,7 @@ function RadialGuides({ tool, mask, space, boxRef, shape }: GuideProps<Radial>) 
   const along = (k: number): Point => [c[0] + k * a * cos, c[1] + k * a * sin];
   const across = (k: number): Point => [c[0] - k * b * sin, c[1] + k * b * cos];
   const inner = 1 - shape.feather / 100;
-  const gradientId = `mask-coverage-${mask.id}`;
-  const set = (change: Partial<Radial>) => tool.setShape(mask.id, { ...shape, ...change });
+  const set = (change: Partial<Radial>) => tool.setShape({ ...shape, ...change });
   const round = (v: number) => Math.round(v * 1e5) / 1e5;
   const side = (k: 1 | -1) =>
     begin((p) => {
@@ -310,21 +336,6 @@ function RadialGuides({ tool, mask, space, boxRef, shape }: GuideProps<Radial>) 
   return (
     <>
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          <radialGradient
-            id={gradientId}
-            gradientUnits="userSpaceOnUse"
-            cx={0}
-            cy={0}
-            r={1}
-            gradientTransform={`translate(${c[0]} ${c[1]}) rotate(${shape.angle}) scale(${a} ${b})`}
-          >
-            {tintStops(Math.min(inner, 0.999), mask.invert ?? false).map(({ offset, opacity }) => (
-              <stop key={offset} offset={offset} className="mask-tint-stop" stopOpacity={opacity} />
-            ))}
-          </radialGradient>
-        </defs>
-        {tool.overlay && !mask.hidden && <rect width={W} height={H} fill={`url(#${gradientId})`} />}
         {inner > 0.02 && <ellipse className="mask-line faint" {...ellipse(inner)} />}
         <ellipse className="mask-line dashed" {...ellipse(1)} />
       </svg>
@@ -345,13 +356,15 @@ export function MaskToolbar({ tool }: { tool: MaskTool }) {
       if (isTextEntry(e.target) || e.target instanceof HTMLInputElement) return;
       if (e.key === "Enter" || e.key === "Escape") tool.done();
       // [ and ] resize the brush, as in other editors.
-      if ((e.key === "[" || e.key === "]") && tool.active?.shape.kind === "brush") {
+      if ((e.key === "[" || e.key === "]") && tool.shape?.kind === "brush") {
         const size = e.key === "[" ? tool.brush.size / 1.15 : tool.brush.size * 1.15;
         tool.setBrush({ size: Math.min(0.25, Math.max(0.0025, size)) });
         e.preventDefault();
       }
+      // Delete removes the shape being edited, or the mask when it is its only one.
       if ((e.key === "Delete" || e.key === "Backspace") && tool.active) {
-        tool.remove(tool.active.id);
+        if (tool.shapes.length > 1) tool.removeShape(tool.shapeIndex);
+        else tool.remove(tool.active.id);
         e.preventDefault();
       }
     };

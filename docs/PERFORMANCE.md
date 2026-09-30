@@ -650,3 +650,25 @@ three rounds, machine load about 7. Strokes are wavy, 200 points each:
   Each erase stroke nested everything before it in another SVG mask, which the web view
   redraws on every update. The canvas cuts erases out directly (`destination-out`) and
   keeps finished strokes in a cached layer, so the cost no longer grows with the strokes.
+
+## 31. Masks of several shapes (ADR 0043)
+
+A full render of a 1516×1010 frame (default look), median of 40, three rounds, machine
+load about 6–7, on battery. The mask has Exposure and Warmth:
+
+| Case | ms |
+|---|---|
+| No masks | 3.05–3.29 |
+| A linear gradient | 5.32–5.48 |
+| The linear, minus a radial | 6.18–6.35 |
+| The same at density 50 | 6.18–6.31 |
+| The linear, intersected with a radial, plus a brush stroke | 7.34–7.55 |
+
+- Each further shape adds about 0.7–1.2 ms; density is one multiply per pixel.
+- Release self-test, Nikon Z 6: the combined mask (a linear minus a hard radial)
+  rendered in 6.7–7.5 ms. The photo inside the circle is unchanged and beside it 42.2
+  levels darker.
+- Painting through the UI now draws the tint through the mask's combined canvas. In
+  Low Power Mode the web view ran at 30 fps (idle frame gap p50 33 ms), and painting
+  matched it: p50 33 ms, p95 34–35 ms for all nine large strokes, erases included.
+  Photo round trip p50 16 ms, render p50 11 ms.

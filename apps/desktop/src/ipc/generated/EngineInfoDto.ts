@@ -22,4 +22,8 @@ mask: Array<AdjustmentSpec>,
 /**
  * A radial mask's Feather (ADR 0041).
  */
-maskFeather: AdjustmentSpec, };
+maskFeather: AdjustmentSpec, 
+/**
+ * A mask's Density (ADR 0043).
+ */
+maskDensity: AdjustmentSpec, };

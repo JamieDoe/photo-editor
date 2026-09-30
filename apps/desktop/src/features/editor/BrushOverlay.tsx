@@ -1,9 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
-import type { Mask } from "../../ipc/generated/Mask";
 import type { MaskShape } from "../../ipc/generated/MaskShape";
 import type { Stroke } from "../../ipc/generated/Stroke";
 import type { MaskTool } from "./MaskTool";
-import { BrushTint } from "./brushTint";
 import { fromShown, type Point } from "./masks";
 
 type Brush = Extract<MaskShape, { kind: "brush" }>;
@@ -24,57 +22,22 @@ const round = (v: number) => Math.round(v * 10_000) / 10_000;
 /**
  * A brush mask on the photo (ADR 0042): paint by dragging (holding Option, or with
  * Erase chosen, takes paint away). The design's two rings follow the pointer: the
- * brush's size and, dashed, where its soft edge starts. The tint is drawn on a canvas
- * from the strokes themselves, as the renderer composes them (see `BrushTint`).
+ * brush's size and, dashed, where its soft edge starts. The tint is the mask's (see
+ * `MaskTint`).
  */
 export function BrushGuides({
   tool,
-  mask,
   space,
   boxRef,
   shape,
 }: {
   tool: MaskTool;
-  mask: Mask;
   space: Space;
   boxRef: RefObject<HTMLDivElement | null>;
   shape: Brush;
 }) {
   const { w: W, h: H, diagonal: D } = space;
   const [pointer, setPointer] = useState<Point | null>(null);
-  const tintRef = useRef<HTMLCanvasElement>(null);
-  const tint = useRef<BrushTint | null>(null);
-  // The canvas matches the photo's box on screen, in device pixels.
-  const [boxSize, setBoxSize] = useState({ width: 0, height: 0 });
-  useEffect(() => {
-    const el = boxRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(([entry]) => {
-      if (!entry) return;
-      const dpr = window.devicePixelRatio;
-      setBoxSize({
-        width: Math.round(entry.contentRect.width * dpr),
-        height: Math.round(entry.contentRect.height * dpr),
-      });
-    });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [boxRef]);
-  const showTint = tool.overlay && !mask.hidden;
-  const { x: cx, y: cy, w: cw, h: ch } = space.crop;
-  useEffect(() => {
-    const canvas = tintRef.current;
-    if (!canvas || !showTint || boxSize.width === 0) return;
-    tint.current ??= new BrushTint();
-    const colour = getComputedStyle(canvas).getPropertyValue("--accent").trim() || "#f0b45e";
-    tint.current.draw(
-      canvas,
-      shape.strokes,
-      { width: boxSize.width, height: boxSize.height, crop: { x: cx, y: cy, w: cw, h: ch } },
-      colour,
-      mask.invert ?? false,
-    );
-  }, [shape.strokes, showTint, boxSize, cx, cy, cw, ch, mask.invert]);
   const [alt, setAlt] = useState(false);
   const drawing = useRef<{ base: Stroke[]; stroke: Stroke; last: [number, number]; frame: number | null } | null>(null);
   useEffect(
@@ -149,7 +112,6 @@ export function BrushGuides({
       onPointerCancel={onPointerUp}
       onPointerLeave={() => setPointer(null)}
     >
-      {showTint && <canvas ref={tintRef} className="brush-tint-canvas" aria-hidden="true" />}
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
         {pointer && (
           <g className={erasing ? "brush-cursor erase" : "brush-cursor"}>

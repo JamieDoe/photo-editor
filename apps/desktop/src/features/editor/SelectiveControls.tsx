@@ -2,7 +2,8 @@ import { CloseIcon, EyeIcon, EyeOffIcon, PlusIcon } from "../../components/icons
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { LocalAdjustments } from "../../ipc/generated/LocalAdjustments";
 import type { MaskTool } from "./MaskTool";
-import { ADDABLE_KINDS, MASK_KINDS, brushSizeFromSlider, maskName, sliderFromBrushSize } from "./masks";
+import type { Combine } from "../../ipc/generated/Combine";
+import { ADDABLE_KINDS, COMBINE_MODES, MASK_KINDS, brushSizeFromSlider, maskName, sliderFromBrushSize } from "./masks";
 import { Slider } from "./Slider";
 import { formatSliderValue } from "./sliderTrack";
 import { WHITE_BALANCE_TRACKS } from "./whiteBalance";
@@ -17,25 +18,31 @@ const BRUSH_SPECS: Record<"size" | "feather" | "flow", AdjustmentSpec> = {
   flow: { key: "flow", label: "Flow", group: "Brush", min: 1, max: 100, step: 1, default: 100, more: false, unit: "" },
 };
 const isLocalKey = (k: string): k is keyof LocalAdjustments => (LOCAL_KEYS as readonly string[]).includes(k);
+const MODES: readonly Combine[] = ["add", "subtract", "intersect"];
 
 /**
  * The panel's Selective section (ADR 0040), as in the design: the masks (picking one
  * edits it on the photo), the active mask's Exposure, Warmth and Clarity, and the
- * masks to add. Only built kinds are offered.
+ * masks to add. Only built kinds are offered. The card also holds the mask's Density
+ * and its shapes (ADR 0043): more can be added to it or subtracted from it.
  */
 export function SelectiveControls({
   tool,
   specs,
   feather,
+  density,
   disabled,
 }: {
   tool: MaskTool;
   specs: AdjustmentSpec[];
   /** A radial mask's Feather (ADR 0041). */
   feather: AdjustmentSpec;
+  /** A mask's Density (ADR 0043). */
+  density: AdjustmentSpec;
   disabled: boolean;
 }) {
   const active = tool.active;
+  const shape = tool.shape;
   return (
     <div className="selective">
       <div className="mask-list">
@@ -49,7 +56,10 @@ export function SelectiveControls({
                 </span>
                 <span className="mask-row-text">
                   <span className="mask-row-name">{maskName(tool.masks, m)}</span>
-                  <span className="mask-row-kind">{MASK_KINDS[m.shape.kind].label}</span>
+                  <span className="mask-row-kind">
+                    {MASK_KINDS[m.shape.kind].label}
+                    {m.parts?.length ? ` + ${m.parts.length} more` : ""}
+                  </span>
                 </span>
               </button>
               <button
@@ -95,8 +105,75 @@ export function SelectiveControls({
                 />
               );
             })}
+          <Slider
+            id="mask-density"
+            spec={density}
+            value={active.density ?? 100}
+            shown={formatSliderValue(active.density ?? 100, density.min, density.step, density.unit)}
+            zeroMark={false}
+            disabled={disabled}
+            onChange={tool.setDensity}
+          />
+          <div className="mask-shapes">
+            {tool.shapes.length > 1 && (
+              <div className="mask-shape-list">
+                {tool.shapes.map(({ shape: s, mode }, i) => {
+                  const on = i === tool.shapeIndex;
+                  return (
+                    <div key={i} className={on ? "mask-shape-row active" : "mask-shape-row"}>
+                      <button className="mask-shape-pick" aria-pressed={on} disabled={disabled} onClick={() => tool.pickShape(i)}>
+                        <span className="mask-dot" style={{ background: MASK_KINDS[s.kind].dot }} />
+                        {MASK_KINDS[s.kind].label}
+                      </button>
+                      {mode && (
+                        <select
+                          className="mask-shape-mode"
+                          aria-label={`How the ${MASK_KINDS[s.kind].label.toLowerCase()} combines`}
+                          title={COMBINE_MODES[mode].hint}
+                          value={mode}
+                          disabled={disabled}
+                          onChange={(e) => tool.setShapeMode(i, e.target.value as Combine)}
+                        >
+                          {MODES.map((m) => (
+                            <option key={m} value={m}>
+                              {COMBINE_MODES[m].label}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                      <button
+                        className="mask-row-icon"
+                        aria-label="Remove shape"
+                        title="Remove shape"
+                        disabled={disabled}
+                        onClick={() => tool.removeShape(i)}
+                      >
+                        <CloseIcon size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {(["add", "subtract"] as const).map((mode) => (
+              <div key={mode} className="mask-combine" role="group" aria-label={`${COMBINE_MODES[mode].label} a shape`}>
+                <span className="mask-combine-label">{COMBINE_MODES[mode].label}</span>
+                {ADDABLE_KINDS.map((k) => (
+                  <button
+                    key={k}
+                    className="ghost small"
+                    title={`${COMBINE_MODES[mode].hint}: ${MASK_KINDS[k].hint.toLowerCase()}`}
+                    disabled={disabled}
+                    onClick={() => tool.addShape(mode, k)}
+                  >
+                    {MASK_KINDS[k].add}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
           <div className="mask-shape-controls">
-            {active.shape.kind === "brush" && (
+            {shape?.kind === "brush" && (
               <>
                 <div className="brush-mode">
                   <div className="segmented small" role="radiogroup" aria-label="Brush">
@@ -116,8 +193,8 @@ export function SelectiveControls({
                   </div>
                   <button
                     className="ghost small"
-                    disabled={disabled || active.shape.strokes.length === 0}
-                    title="Remove everything painted in this mask"
+                    disabled={disabled || shape.strokes.length === 0}
+                    title="Remove everything painted with this brush"
                     onClick={() => tool.setStrokes([])}
                   >
                     Clear
@@ -153,12 +230,12 @@ export function SelectiveControls({
                 <p className="brush-hint">Paint on the photo. Hold Option to erase; [ and ] change the size.</p>
               </>
             )}
-            {active.shape.kind === "radial" && (
+            {shape?.kind === "radial" && (
               <Slider
                 id="mask-feather"
                 spec={feather}
-                value={active.shape.feather}
-                shown={formatSliderValue(active.shape.feather, feather.min, feather.step, feather.unit)}
+                value={shape.feather}
+                shown={formatSliderValue(shape.feather, feather.min, feather.step, feather.unit)}
                 zeroMark={false}
                 disabled={disabled}
                 onChange={tool.setFeather}

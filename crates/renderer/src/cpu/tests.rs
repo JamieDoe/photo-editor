@@ -201,6 +201,14 @@ fn matches_scalar_reference_for_all_stages() {
             crate::masks::Mask {
                 id: 3,
                 hidden: false,
+                parts: vec![crate::masks::MaskPart {
+                    mode: crate::masks::Combine::Subtract,
+                    shape: crate::masks::MaskShape::Linear {
+                        start: [0.0, 0.2],
+                        end: [0.3, 0.4],
+                    },
+                }],
+                density: 70.0,
                 shape: crate::masks::MaskShape::Radial {
                     centre: [0.4, 0.6],
                     radius: [0.3, 0.15],
@@ -217,6 +225,8 @@ fn matches_scalar_reference_for_all_stages() {
             crate::masks::Mask {
                 id: 4,
                 hidden: false,
+                parts: Vec::new(),
+                density: 100.0,
                 shape: crate::masks::MaskShape::Brush {
                     strokes: vec![
                         crate::masks::Stroke {
@@ -473,6 +483,8 @@ fn linear_mask(
     crate::masks::Mask {
         id,
         hidden: false,
+        parts: Vec::new(),
+        density: 100.0,
         shape: crate::masks::MaskShape::Linear { start, end },
         invert: false,
         adjustments: crate::masks::LocalAdjustments {
@@ -546,6 +558,71 @@ fn masks_change_only_what_they_cover() {
         RenderPlan::from_recipe(&idle, None),
         RenderPlan::from_recipe(&plain, None)
     );
+}
+
+#[test]
+fn combined_masks_render_their_combination() {
+    let img = chart();
+    let w = img.width() as usize;
+    let plain = EditRecipe {
+        sharpening: 0.0,
+        ..Default::default()
+    };
+    let render = |r: &EditRecipe| {
+        let plan = RenderPlan::from_recipe(r, None);
+        CpuRenderer
+            .render(&plan, &img, PixelFormat::Rgb8, &NeverCancel)
+            .unwrap()
+    };
+    // Darker across the top 40 %, less the left half (a hard-edged linear gradient
+    // there: fully on left of x = 0.49, off right of 0.5).
+    let darker = linear_mask(1, [0.5, 0.0], [0.5, 0.4], -1.0, 0.0, 0.0);
+    let left = crate::masks::MaskShape::Linear {
+        start: [0.49, 0.5],
+        end: [0.5, 0.5],
+    };
+    let combined = |mode, density| EditRecipe {
+        masks: vec![crate::masks::Mask {
+            parts: vec![crate::masks::MaskPart {
+                mode,
+                shape: left.clone(),
+            }],
+            density,
+            ..darker.clone()
+        }],
+        ..plain.clone()
+    };
+    let (a, only) = (
+        render(&plain),
+        render(&EditRecipe {
+            masks: vec![darker.clone()],
+            ..plain.clone()
+        }),
+    );
+    let subtracted = render(&combined(crate::masks::Combine::Subtract, 100.0));
+    let intersected = render(&combined(crate::masks::Combine::Intersect, 100.0));
+    let half = render(&combined(crate::masks::Combine::Subtract, 50.0));
+    // Mean of the top row's left or right quarter.
+    let quarter = |img: &image_core::OutputImage, right: bool| {
+        let row = &img.data()[..w * 3];
+        let q = if right {
+            &row[w * 9 / 4..]
+        } else {
+            &row[..w * 3 / 4]
+        };
+        q.iter().map(|&v| f64::from(v)).sum::<f64>() / q.len() as f64
+    };
+    let (plain_l, plain_r) = (quarter(&a, false), quarter(&a, true));
+    // Subtracting the left leaves it alone and darkens the right as the mask alone.
+    assert_eq!(quarter(&subtracted, false), plain_l);
+    assert_eq!(quarter(&subtracted, true), quarter(&only, true));
+    assert!(quarter(&subtracted, true) < plain_r - 10.0);
+    // Intersecting is the other way round.
+    assert_eq!(quarter(&intersected, true), plain_r);
+    assert_eq!(quarter(&intersected, false), quarter(&only, false));
+    // Half the density darkens half as much (in stops: between the two).
+    let (h, full) = (quarter(&half, true), quarter(&subtracted, true));
+    assert!(h < plain_r - 3.0 && h > full + 3.0, "{plain_r} {h} {full}");
 }
 
 #[test]
