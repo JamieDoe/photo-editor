@@ -29,6 +29,15 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
     let mut base = None;
     let mut detail_gains = None;
     let mut dehaze: Option<ops::dehaze::DehazeModel> = None;
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    // Masks, over the whole image (no geometry in these plans).
+    let masks = plan.stages.iter().find_map(|s| match s {
+        Stage::Local { masks } => Some(crate::masks::LocalField::new(
+            masks,
+            crate::masks::Frame::whole(w as u32, h as u32),
+        )),
+        _ => None,
+    });
     for stage in &plan.stages {
         let scene = || ops::scene::SceneMap::build(img, gains);
         match *stage {
@@ -41,7 +50,7 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                 base = Some(ops::tone::ToneBase::from_scene(&scene(), dehaze.as_ref()));
             }
             Stage::Detail { params } => {
-                if params.needs_base() {
+                if params.needs_base() || masks.as_ref().is_some_and(|m| m.has_clarity()) {
                     base = Some(ops::tone::ToneBase::from_scene(&scene(), dehaze.as_ref()));
                 }
                 detail_gains = Some(gains);
@@ -49,7 +58,6 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
             _ => {}
         }
     }
-    let (w, h) = (img.width() as usize, img.height() as usize);
     let mut image: Vec<f32> = img.data().iter().map(|&v| f32::from(v) / 65535.0).collect();
     for stage in &plan.stages {
         if let Stage::Detail { params } = *stage {
@@ -74,14 +82,17 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                 let unit = ops::scene::SceneMap::unit_sized(img, ops::noise::CHROMA_MAP_LONG_EDGE);
                 ops::noise::ChromaMap::build(&unit, g, dehaze.as_ref(), &params.noise())
             });
+            let clarity = masks
+                .as_ref()
+                .map(|m| move |x: usize, y: usize| m.clarity(x, y, w, h));
             ops::detail::apply_reference(
                 &mut image,
                 &log_y,
                 chroma.as_ref(),
-                w,
-                h,
+                (w, h),
                 base.as_ref(),
                 &params,
+                clarity.as_ref().map(|f| f as &dyn Fn(usize, usize) -> f32),
             );
             continue;
         }
@@ -107,15 +118,25 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                 Stage::Tone { params } => {
                     let [wr, wg, wb] = image_core::color::REC709_LUMA;
                     let log_y = (rgb[0] * wr + rgb[1] * wg + rgb[2] * wb).max(1e-6).log2();
+                    // Masks' Exposure is left out of the surroundings, as in the kernel.
+                    let s = masks.as_ref().map_or(0.0, |m| m.stops(k % w, k / w, w, h));
                     let d = base
                         .as_ref()
-                        .map_or(0.0, |b| b.stops_at(k % w, k / w, w, h, log_y));
+                        .map_or(0.0, |b| b.stops_at(k % w, k / w, w, h, log_y - s) - s);
                     ops::tone::apply(rgb, d, &params)
                 }
                 Stage::WhiteBalance { gains } => {
                     [rgb[0] * gains[0], rgb[1] * gains[1], rgb[2] * gains[2]]
                 }
                 Stage::Exposure { multiplier } => rgb.map(|c| c * multiplier),
+                Stage::Local { .. } => {
+                    let g = masks.as_ref().unwrap().log2_gains(k % w, k / w, w, h);
+                    [
+                        rgb[0] * g[0].exp2(),
+                        rgb[1] * g[1].exp2(),
+                        rgb[2] * g[2].exp2(),
+                    ]
+                }
                 Stage::Contrast { gamma } => rgb.map(|c| ops::contrast::apply(c, gamma)),
                 Stage::BaseCurve => rgb.map(ops::look::standard),
                 Stage::PointCurve {
@@ -174,6 +195,10 @@ fn matches_scalar_reference_for_all_stages() {
             ])),
             ..Default::default()
         }),
+        masks: vec![
+            linear_mask(1, [0.5, 0.0], [0.5, 0.6], -0.8, 30.0, 40.0),
+            linear_mask(2, [0.0, 0.5], [0.7, 0.5], 0.5, -20.0, -30.0),
+        ],
         ..Default::default()
     };
     let plan = RenderPlan::from_recipe(&recipe, None);
@@ -393,6 +418,126 @@ fn chromatic_aberration_alone_frames_the_source_first() {
     );
 }
 
+fn linear_mask(
+    id: u32,
+    start: [f32; 2],
+    end: [f32; 2],
+    exposure: f32,
+    warmth: f32,
+    clarity: f32,
+) -> crate::masks::Mask {
+    crate::masks::Mask {
+        id,
+        shape: crate::masks::MaskShape::Linear { start, end },
+        adjustments: crate::masks::LocalAdjustments {
+            exposure,
+            warmth,
+            clarity,
+        },
+    }
+}
+
+#[test]
+fn masks_change_only_what_they_cover() {
+    let img = chart();
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let plain = EditRecipe {
+        sharpening: 0.0,
+        ..Default::default()
+    };
+    // Darker at the top, fading out by 40 % of the height.
+    let masked = EditRecipe {
+        masks: vec![linear_mask(1, [0.5, 0.0], [0.5, 0.4], -1.0, 0.0, 0.0)],
+        ..plain.clone()
+    };
+    let render = |r: &EditRecipe| {
+        let plan = RenderPlan::from_recipe(r, None);
+        CpuRenderer
+            .render(&plan, &img, PixelFormat::Rgb8, &NeverCancel)
+            .unwrap()
+    };
+    let (a, b) = (render(&plain), render(&masked));
+    let row_mean = |img: &image_core::OutputImage, y: usize| {
+        let row = &img.data()[y * w * 3..(y + 1) * w * 3];
+        row.iter().map(|&v| f64::from(v)).sum::<f64>() / row.len() as f64
+    };
+    // The chart's top rows are a grey ramp: darker under the mask...
+    assert!(row_mean(&b, 2) < row_mean(&a, 2) - 20.0);
+    // ...and the bottom half untouched, to the byte.
+    let half = h / 2 * w * 3;
+    assert_eq!(&a.data()[half..], &b.data()[half..]);
+    // Clarity alone still runs the detail stage.
+    let clarity = EditRecipe {
+        masks: vec![linear_mask(1, [0.5, 0.0], [0.5, 0.4], 0.0, 0.0, 80.0)],
+        ..plain.clone()
+    };
+    let plan = RenderPlan::from_recipe(&clarity, None);
+    assert!(
+        plan.stages
+            .iter()
+            .any(|s| matches!(s, Stage::Detail { .. }))
+    );
+    assert_ne!(render(&clarity).data(), a.data());
+    // A mask without adjustments renders nothing.
+    let idle = EditRecipe {
+        masks: vec![linear_mask(1, [0.5, 0.0], [0.5, 0.4], 0.0, 0.0, 0.0)],
+        ..plain.clone()
+    };
+    assert_eq!(
+        RenderPlan::from_recipe(&idle, None),
+        RenderPlan::from_recipe(&plain, None)
+    );
+}
+
+#[test]
+fn masks_stay_on_the_picture_when_cropped() {
+    use crate::geometry::{AspectRatio, CropRect, Geometry};
+    let img = chart();
+    let mask = vec![linear_mask(1, [0.5, 0.0], [0.5, 0.5], -1.0, 25.0, 0.0)];
+    let crop = CropRect {
+        x: 0.0,
+        y: 0.25,
+        w: 1.0,
+        h: 0.5,
+    };
+    let geometry = Geometry {
+        crop,
+        aspect: AspectRatio::Free,
+        ..Default::default()
+    };
+    let recipe = |masks: Vec<crate::masks::Mask>, geometry: Option<Geometry>| EditRecipe {
+        sharpening: 0.0,
+        masks,
+        geometry,
+        ..Default::default()
+    };
+    let render = |r: &EditRecipe| {
+        CpuRenderer
+            .render(
+                &RenderPlan::from_recipe(r, None),
+                &img,
+                PixelFormat::Rgb8,
+                &NeverCancel,
+            )
+            .unwrap()
+    };
+    // The cropped render equals the middle of the whole render.
+    let whole = render(&recipe(mask.clone(), None));
+    let cropped = render(&recipe(mask, Some(geometry)));
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let top = h / 4;
+    let rows = cropped.height() as usize;
+    assert_eq!(cropped.width() as usize, w);
+    let expected = &whole.data()[top * w * 3..(top + rows) * w * 3];
+    let diff = expected
+        .iter()
+        .zip(cropped.data())
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap();
+    assert!(diff <= 1, "{diff}");
+}
+
 #[test]
 fn consecutive_gains_are_fused() {
     let plan = RenderPlan::new(vec![
@@ -402,7 +547,7 @@ fn consecutive_gains_are_fused() {
         Stage::Exposure { multiplier: 2.0 },
         Stage::Saturation { factor: 1.0 },
     ]);
-    let kernels = kernels::compile(&plan, &chart());
+    let kernels = kernels::compile(&plan, &chart(), crate::masks::Frame::whole(1, 1));
     assert_eq!(kernels.len(), 2);
     assert!(matches!(kernels[0], kernels::Kernel::Gain([4.0, 2.0, 1.0])));
 }

@@ -75,7 +75,7 @@ fn file(path: &Path) -> Value {
     for _ in 0..3 {
         let engine = Engine::new(EngineConfig::default());
         let t = Instant::now();
-        let _ = engine.thumbnail(path.clone(), Some(edited)).wait();
+        let _ = engine.thumbnail(path.clone(), Some(edited.clone())).wait();
         edited_ms.push(ms(t));
     }
     json!({

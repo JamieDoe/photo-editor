@@ -34,7 +34,7 @@ fn raw_pipeline_matches_golden() {
         ..EditRecipe::default()
     };
     for (name, recipe) in [
-        ("dng_identity", flat),
+        ("dng_identity", flat.clone()),
         (
             "dng_edited",
             EditRecipe {
@@ -42,7 +42,7 @@ fn raw_pipeline_matches_golden() {
                 contrast: 30.0,
                 temperature: 25.0,
                 saturation: 20.0,
-                ..flat
+                ..flat.clone()
             },
         ),
         (

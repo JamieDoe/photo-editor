@@ -248,7 +248,7 @@ impl Shared {
                 if let Err(e) = other {
                     log::debug!("no display preview for {}: {e}", path.display());
                 }
-                let recipe = recipe.copied().unwrap_or_default();
+                let recipe = recipe.cloned().unwrap_or_default();
                 (
                     self.render_thumbnail(path, &recipe, token)?,
                     ThumbnailSource::Rendered,

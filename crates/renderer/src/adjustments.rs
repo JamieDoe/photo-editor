@@ -221,6 +221,38 @@ pub const STRAIGHTEN: AdjustmentSpec = AdjustmentSpec {
 
 /// The Geometry section's perspective sliders (ADR 0034), behind "More controls":
 /// stored in the recipe's `geometry` under the same keys.
+pub const MASK_EXPOSURE: AdjustmentSpec = AdjustmentSpec {
+    key: "exposure",
+    label: "Exposure",
+    group: "Mask",
+    min: -2.0,
+    max: 2.0,
+    step: 0.01,
+    default: 0.0,
+    more: false,
+    unit: "EV",
+};
+pub const MASK_WARMTH: AdjustmentSpec = AdjustmentSpec {
+    key: "warmth",
+    label: "Warmth",
+    min: -100.0,
+    max: 100.0,
+    step: 1.0,
+    unit: "",
+    ..MASK_EXPOSURE
+};
+pub const MASK_CLARITY: AdjustmentSpec = AdjustmentSpec {
+    key: "clarity",
+    label: "Clarity",
+    ..MASK_WARMTH
+};
+
+/// A mask's controls (ADR 0040), as the design has them. Keys are
+/// `LocalAdjustments` fields.
+pub fn mask_specs() -> Vec<AdjustmentSpec> {
+    vec![MASK_EXPOSURE, MASK_WARMTH, MASK_CLARITY]
+}
+
 pub const PERSPECTIVE: [AdjustmentSpec; 2] = [
     AdjustmentSpec {
         key: "vertical",

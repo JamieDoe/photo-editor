@@ -6,6 +6,7 @@ use image_core::color::{REC709_LUMA, linear_to_srgb, srgb_to_linear};
 use super::lut::CurveLut;
 use crate::chromatic::ChromaticAberration;
 use crate::geometry::Geometry;
+use crate::masks::{Frame, LocalField};
 use crate::ops::colour_mixer::{self, MixerTable};
 use crate::ops::dehaze::DehazeModel;
 use crate::ops::detail::{self, DetailParams};
@@ -31,6 +32,8 @@ pub(super) struct RowSpan<'a> {
 pub(super) enum Kernel {
     Gain([f32; 3]),
     Curve(Box<CurveLut>),
+    /// Masks' Exposure and Warmth: per-pixel gains.
+    Local(Arc<LocalField>),
     /// A curve per channel (red, green, blue).
     ChannelCurves(Box<[CurveLut; 3]>),
     Saturation(f32),
@@ -64,6 +67,9 @@ pub(super) struct ToneKernel {
     base: Option<BaseWithColumns>,
     local: StopsLut,
     endpoints: StopsLut,
+    /// Masks' Exposure: the surroundings are measured without it, so it is taken
+    /// out of each pixel before the map is read and added back after.
+    masks: Option<Arc<LocalField>>,
 }
 
 /// `2^f(d)` for d in stops below white, tabulated every 1/64 stop over 0..24.
@@ -322,6 +328,10 @@ struct DehazeBefore {
 
 pub(super) struct DetailKernel {
     params: DetailParams,
+    /// Masks' Clarity, added to the global amount per pixel.
+    masks: Option<Arc<LocalField>>,
+    /// Texture or Clarity (global or a mask's) is on: the small blur is measured.
+    small_blur: bool,
     /// Gains before the stage: the neighbourhoods are measured on the source after
     /// them (as the tone stage's map is).
     gains: [f32; 3],
@@ -404,8 +414,19 @@ impl DetailKernel {
         gains: [f32; 3],
         params: DetailParams,
         dehaze: Option<DehazeBefore>,
+        masks: Option<Arc<LocalField>>,
     ) -> Self {
-        let base = params.needs_base().then(|| {
+        let masks = masks.filter(|m| m.has_clarity());
+        // What the stage measures: masks' Clarity needs what global Clarity does.
+        let measured = DetailParams {
+            clarity: if masks.is_some() && params.clarity == 0.0 {
+                1.0
+            } else {
+                params.clarity
+            },
+            ..params
+        };
+        let base = measured.needs_base().then(|| {
             let base = cached_base(
                 source,
                 gains,
@@ -430,7 +451,9 @@ impl DetailKernel {
                 let cols = map.columns(w);
                 (map, cols)
             }),
-            reach: params.reach(w, h),
+            reach: measured.reach(w, h),
+            small_blur: measured.uses_small_blur(),
+            masks,
             base,
             dehaze,
             exp2: SignedStopsLut::new(),
@@ -477,7 +500,7 @@ impl DetailKernel {
                 s.denoised.clear();
                 s.denoised.extend_from_slice(&s.log_y);
             }
-            let small_blur = self.params.uses_small_blur();
+            let small_blur = self.small_blur;
             if small_blur {
                 s.small.clear();
                 s.small.extend_from_slice(&s.denoised);
@@ -529,7 +552,14 @@ impl DetailKernel {
                         None => small,
                     };
                     let stops = if small_blur {
-                        detail::gain_stops(&self.params, log_y, small, base_log, sharp)
+                        let p = match &self.masks {
+                            Some(m) => DetailParams {
+                                clarity: self.params.clarity + m.clarity(x, y, w, span.height),
+                                ..self.params
+                            },
+                            None => self.params,
+                        };
+                        detail::gain_stops(&p, log_y, small, base_log, sharp)
                     } else {
                         detail::sharpen_stops(&self.params, log_y, sharp)
                     };
@@ -553,6 +583,7 @@ impl ToneKernel {
         gains: [f32; 3],
         params: ToneParams,
         dehaze: Option<&DehazeBefore>,
+        masks: Option<Arc<LocalField>>,
     ) -> Self {
         let base = params.is_local().then(|| {
             let base = cached_base(source, gains, dehaze.map(|d| (d.amount, &*d.model)));
@@ -563,6 +594,7 @@ impl ToneKernel {
             base,
             local: StopsLut::build(|d| tone::local_stops(d, &params)),
             endpoints: StopsLut::build(|d| tone::endpoint_stops(d, &params)),
+            masks: masks.filter(|m| m.has_exposure()),
         }
     }
 
@@ -581,7 +613,10 @@ impl ToneKernel {
                     let (x0, x1) = (x0 as usize, x1 as usize);
                     let a = a_row[x0] + (a_row[x1] - a_row[x0]) * t;
                     let b = b_row[x0] + (b_row[x1] - b_row[x0]) * t;
-                    gain *= self.local.eval(-(a * log_y + b));
+                    let s = self.masks.as_ref().map_or(0.0, |m| {
+                        m.stops(x, span.first_row + r, span.width, span.height)
+                    });
+                    gain *= self.local.eval(-(a * (log_y - s) + b + s));
                 }
                 px[0] *= gain;
                 px[1] *= gain;
@@ -614,6 +649,17 @@ impl Kernel {
                 }
             }
             Self::Tone(k) => k.apply(rgb, span),
+            Self::Local(field) => {
+                for (r, row) in rgb.chunks_mut(span.width * 3).enumerate() {
+                    let y = span.first_row + r;
+                    for (x, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+                        let g = field.log2_gains(x, y, span.width, span.height);
+                        for (v, s) in px.iter_mut().zip(g) {
+                            *v *= s.exp2();
+                        }
+                    }
+                }
+            }
             Self::Detail(k) => k.apply(rgb, span, scratch),
             Self::Dehaze(k) => k.apply(rgb, span, &mut scratch.row_model),
             Self::Vignette(k) => {
@@ -682,8 +728,9 @@ pub(super) fn min_chunk_rows(kernels: &[Kernel]) -> usize {
 /// Compiles plan stages into kernels, merging consecutive channel gains. Stages that
 /// need a view of the whole image (tone) prepare it here, from `source` and the gains
 /// before them.
-pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
+pub(super) fn compile(plan: &RenderPlan, source: &LinearImage, frame: Frame) -> Vec<Kernel> {
     let mut out: Vec<Kernel> = Vec::with_capacity(plan.stages.len());
+    let mut masks: Option<Arc<LocalField>> = None;
     let mut gains_so_far = [1.0f32; 3];
     let mut dehaze_so_far: Option<DehazeBefore> = None;
     for stage in &plan.stages {
@@ -755,7 +802,15 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
                 gains_so_far,
                 params,
                 dehaze_so_far.as_ref(),
+                masks.clone(),
             )))),
+            Stage::Local { masks: ref local } => {
+                let field = Arc::new(LocalField::new(local, frame));
+                if field.has_gains() {
+                    out.push(Kernel::Local(Arc::clone(&field)));
+                }
+                masks = Some(field);
+            }
             Stage::Saturation { factor } => out.push(Kernel::Saturation(factor)),
             Stage::Vibrance { amount } => out.push(Kernel::Vibrance(amount)),
             Stage::Vignette { amount } => out.push(Kernel::Vignette(Box::new(VignetteKernel {
@@ -773,6 +828,7 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
                 gains_so_far,
                 params,
                 dehaze_so_far.clone(),
+                masks.clone(),
             )))),
             Stage::ColourMixer { bands } => {
                 out.push(Kernel::Mixer(Box::new(MixerTable::new(&bands))))

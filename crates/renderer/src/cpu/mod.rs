@@ -12,6 +12,7 @@ mod lut;
 use image_core::{Cancellation, LinearImage, OutputImage, PixelFormat};
 use rayon::prelude::*;
 
+use crate::masks::Frame;
 use crate::{RenderBackend, RenderError, RenderPlan};
 use kernels::{Kernel, KernelScratch, RowSpan, compile, min_chunk_rows};
 use lut::output_lut;
@@ -35,20 +36,29 @@ impl CpuRenderer {
         out: &mut OutputImage,
         cancel: &dyn Cancellation,
     ) -> Result<(), RenderError> {
+        let (sw, sh) = (source.width(), source.height());
         if plan.geometry.is_none() && plan.chromatic_aberration.is_none() {
-            return self.render_frame(plan, source, out, cancel);
+            return self.render_frame(plan, source, Frame::whole(sw, sh), out, cancel);
         }
         // Framing first (crop, straighten, perspective, chromatic aberration); the
         // stages run on the framed image, which is cached while other controls change.
         let g = plan.geometry.unwrap_or_default();
-        let frame = kernels::cached_frame(source, &g, plan.chromatic_aberration.as_ref());
-        self.render_frame(plan, &frame, out, cancel)
+        let (fw, fh) = g.oriented_size(sw as f32, sh as f32);
+        let where_in_frame = Frame {
+            crop: g.effective_crop(sw as f32, sh as f32),
+            width: fw,
+            height: fh,
+        };
+        let framed = kernels::cached_frame(source, &g, plan.chromatic_aberration.as_ref());
+        self.render_frame(plan, &framed, where_in_frame, out, cancel)
     }
 
+    /// Renders `source`, which is `frame`'s crop of the frame masks are drawn in.
     fn render_frame(
         &self,
         plan: &RenderPlan,
         source: &LinearImage,
+        frame: Frame,
         out: &mut OutputImage,
         cancel: &dyn Cancellation,
     ) -> Result<(), RenderError> {
@@ -57,7 +67,7 @@ impl CpuRenderer {
                 "output size does not match source".into(),
             ));
         }
-        let kernels = compile(plan, source);
+        let kernels = compile(plan, source, frame);
         let width = source.width() as usize;
         let height = source.height() as usize;
         let channels = out.format().channels();

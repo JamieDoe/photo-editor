@@ -20,7 +20,7 @@ pub const PERCENTILES: [f32; 11] = [
 ];
 
 pub fn run(files: &[PathBuf], recipe: EditRecipe) -> Value {
-    let rows: Vec<Value> = files.iter().map(|f| compare(f, recipe)).collect();
+    let rows: Vec<Value> = files.iter().map(|f| compare(f, recipe.clone())).collect();
     json!({ "percentiles": PERCENTILES, "files": rows })
 }
 

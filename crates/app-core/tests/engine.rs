@@ -108,15 +108,18 @@ fn repeated_request_is_a_cache_hit_and_edits_miss() {
         exposure: 0.5,
         ..Default::default()
     };
-    let first = preview(&engine, id, r, PreviewQuality::Interactive);
-    let second = preview(&engine, id, r, PreviewQuality::Interactive);
+    let first = preview(&engine, id, r.clone(), PreviewQuality::Interactive);
+    let second = preview(&engine, id, r.clone(), PreviewQuality::Interactive);
     assert!(!first.cache_hit);
     assert!(second.cache_hit);
     assert_eq!(first.image.data(), second.image.data());
     let edited = preview(
         &engine,
         id,
-        EditRecipe { exposure: 0.6, ..r },
+        EditRecipe {
+            exposure: 0.6,
+            ..r.clone()
+        },
         PreviewQuality::Interactive,
     );
     assert!(!edited.cache_hit);
@@ -384,7 +387,7 @@ fn long_drag_does_not_evict_settled_renders() {
     };
     assert!(
         !engine
-            .render_preview(detail(settled))
+            .render_preview(detail(settled.clone()))
             .wait()
             .unwrap()
             .cache_hit
@@ -405,7 +408,7 @@ fn long_drag_does_not_evict_settled_renders() {
     }
     assert!(
         engine
-            .render_preview(detail(settled))
+            .render_preview(detail(settled.clone()))
             .wait()
             .unwrap()
             .cache_hit,

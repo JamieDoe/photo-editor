@@ -2,6 +2,7 @@ use crate::EditRecipe;
 use crate::Look;
 use crate::chromatic::ChromaticAberration;
 use crate::geometry::Geometry;
+use crate::masks::LocalMask;
 use crate::ops::colour_mixer::HslShift;
 use crate::ops::detail::DetailParams;
 use crate::ops::point_curve::PointCurve;
@@ -22,6 +23,9 @@ pub enum Stage {
     WhiteBalance { gains: [f32; 3] },
     /// Scene-linear multiplier (2^EV).
     Exposure { multiplier: f32 },
+    /// Masks' adjustments (ADR 0040): Exposure and Warmth as gains here, and read by
+    /// the tone stage (its surroundings) and the detail stage (Clarity).
+    Local { masks: Box<[LocalMask]> },
     /// Removes or adds haze (ADR 0028), -100..100. Estimated on the scene map from
     /// the source after the gains before it; stages after it measure the dehazed
     /// scene.
@@ -61,6 +65,7 @@ impl Stage {
         match self {
             Self::WhiteBalance { .. } => "white_balance",
             Self::Exposure { .. } => "exposure",
+            Self::Local { .. } => "local",
             Self::Dehaze { .. } => "dehaze",
             Self::Tone { .. } => "tone",
             Self::Detail { .. } => "detail",
@@ -137,6 +142,31 @@ impl RenderPlan {
                 multiplier: r.exposure.exp2(),
             });
         }
+        let local: Vec<LocalMask> = r
+            .masks
+            .iter()
+            .filter(|m| !m.adjustments.is_identity())
+            .map(|m| {
+                let a = m.adjustments;
+                let warmth = if a.warmth == 0.0 {
+                    [0.0; 3]
+                } else {
+                    white_balance::gains(as_shot_white, a.warmth, 0.0).map(f32::log2)
+                };
+                LocalMask {
+                    shape: m.shape,
+                    stops: a.exposure,
+                    warmth,
+                    clarity: a.clarity,
+                }
+            })
+            .collect();
+        let local_clarity = local.iter().any(|m| m.clarity != 0.0);
+        if !local.is_empty() {
+            stages.push(Stage::Local {
+                masks: local.into_boxed_slice(),
+            });
+        }
         if r.dehaze != 0.0 {
             stages.push(Stage::Dehaze { amount: r.dehaze });
         }
@@ -145,7 +175,8 @@ impl RenderPlan {
             stages.push(Stage::Tone { params: tone });
         }
         let detail = r.detail();
-        if !detail.is_identity() {
+        // Masks' Clarity runs in the detail stage, even without global detail.
+        if !detail.is_identity() || local_clarity {
             stages.push(Stage::Detail { params: detail });
         }
         if r.vignette != 0.0 {

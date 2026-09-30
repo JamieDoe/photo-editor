@@ -17,20 +17,20 @@ fn gpu_matches_cpu_within_quantisation() {
         ..Default::default()
     };
     for recipe in [
-        base,
+        base.clone(),
         EditRecipe {
             exposure: 0.7,
             contrast: 40.0,
             temperature: -30.0,
             saturation: 35.0,
-            ..base
+            ..base.clone()
         },
         EditRecipe {
             exposure: -1.0,
             contrast: -60.0,
             temperature: 80.0,
             saturation: -100.0,
-            ..base
+            ..base.clone()
         },
     ] {
         let plan = RenderPlan::from_recipe(&recipe, None);

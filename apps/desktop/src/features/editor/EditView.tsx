@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import { CropIcon, DiagnosticsIcon, OpenIcon } from "../../components/icons";
+import { CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../../ipc/generated/MarksDto";
@@ -13,6 +13,8 @@ import { AdjustmentPanel } from "./AdjustmentPanel";
 import { CropOverlay, CropToolbar, GeometryControls, useCropTool } from "./CropTool";
 import { ChromaticAberrationToggle } from "./LensControls";
 import { Histogram } from "./Histogram";
+import { MaskOverlay, MaskToolbar, useMaskTool } from "./MaskTool";
+import { SelectiveControls } from "./SelectiveControls";
 import { PanelSection } from "./PanelSection";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
@@ -46,6 +48,21 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
     onChange: editor.setRecipe,
     setViewTransform: editor.setViewTransform,
   });
+  const masks = useMaskTool({ recipe, imageId: image?.id ?? null, onChange: editor.setRecipe });
+  // One tool at a time: cropping or masking.
+  const enterCrop = () => {
+    masks.done();
+    crop.enter();
+  };
+  const enterMasks = () => {
+    crop.done();
+    masks.enter();
+  };
+  const pickMask = (id: number) => {
+    crop.done();
+    masks.pick(id);
+  };
+  const frame = editor.displayed?.frame;
 
   // Keyboard: 0–5 / P / X / U mark the photo, ← → move through the Library's photos.
   // Ignored while a control (such as a slider) has focus, so its own keys still work.
@@ -116,19 +133,31 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
           loading={busy}
           onResize={editor.setTargetLongEdge}
           placeholder="Open a photo from the Library, or use “Open photo…”."
-          overlay={crop.open ? <CropOverlay tool={crop} /> : undefined}
+          overlay={
+            crop.open ? (
+              <CropOverlay tool={crop} />
+            ) : masks.open && frame ? (
+              <MaskOverlay tool={masks} size={{ width: frame.fullWidth, height: frame.fullHeight }} />
+            ) : undefined
+          }
         />
         {/* The design's floating toolbar under the photo (zoom, masks and compare join
             it as they are built); while cropping, the crop toolbar takes its place. */}
         <div className="photo-toolbar-strip">
           {crop.open && info ? (
             <CropToolbar tool={crop} straighten={info.straighten} />
+          ) : masks.open ? (
+            <MaskToolbar tool={masks} />
           ) : (
             image && (
               <div className="photo-toolbar" role="toolbar" aria-label="Photo tools">
-                <button className="tool-button" title="Crop & straighten" onClick={crop.enter}>
+                <button className="tool-button" title="Crop & straighten" onClick={enterCrop}>
                   <CropIcon size={15} />
                   Crop
+                </button>
+                <button className="tool-button" title="Masks" onClick={enterMasks}>
+                  <MaskIcon size={15} />
+                  Masks
                 </button>
                 {marks && (
                   <>
@@ -181,6 +210,21 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
                     />
                   ),
                 }}
+                disabled={!image}
+              />
+            </PanelSection>
+          )}
+          {info && recipe && (
+            <PanelSection
+              title="Selective"
+              icon={<MaskIcon />}
+              count={masks.masks.length > 0 ? String(masks.masks.length) : undefined}
+              edited={masks.masks.length > 0}
+              defaultOpen={false}
+            >
+              <SelectiveControls
+                tool={{ ...masks, pick: pickMask }}
+                specs={info.mask}
                 disabled={!image}
               />
             </PanelSection>

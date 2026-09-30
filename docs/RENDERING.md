@@ -45,6 +45,8 @@ Turn/flip, crop, straighten,   the source resampled into the output frame, cache
 White balance (temperature,    per-channel gains, relative to the as-shot light
                tint)           (ADR 0024)
 Exposure                       multiply by 2^EV
+Masks (Exposure, Warmth)       per-pixel gains from each mask's coverage (ADR 0040);
+                               Highlights/Shadows and Clarity read the masks too
 Dehaze                         dark-channel haze removal on the scene map (ADR 0028)
 Tone (highlights, shadows,     local gains from an edge-aware surroundings map, and
       whites, blacks)          end-point gains (ADR 0023)

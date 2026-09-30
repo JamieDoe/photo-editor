@@ -70,7 +70,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Library header filter "All / Picks / ★ 3+" | as designed |
 | Sidebar Picks / Rated / Rejected with counts | as designed |
 | Edit header: name, mono file details, "● Edited", "N of M" counter | as designed |
-| Floating photo toolbar under the photo: rating stars, pick, reject | as designed (zoom, crop, masks and compare to follow) |
+| Floating photo toolbar under the photo: rating stars, pick, reject | as designed (zoom and compare to follow) |
 | Panel: exposure strip, collapsible sections, sliders with reset-on-hover | as designed |
 | Histogram above the exposure details: red, green and blue filled, luminance line, clipping triangles | as designed (ADR 0036), and draggable as in Lightroom |
 | Light section: Exposure (in EV), Contrast, Highlights, Shadows; "More controls" with the tone curve graph, then Whites, Blacks and Dehaze | as designed; the curve is editable (ADR 0037) |
@@ -97,6 +97,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Crop mode | Handles sit just inside the rectangle (design: 3 px outside); the crop view is the largest straightened area in the photo's shape | Handles stay whole at the photo's edge; no empty corners can be chosen (ADR 0032) |
 | Auto level | A status line under the button / above the crop toolbar | The design shows a toast; the app has no toast system yet (ADR 0033) |
 | Crop toolbar | Rotate left, Rotate right and Flip icon buttons after the ratios; on narrow stages the Straighten label goes, then the ratios (still in the Geometry panel) | The design has no rotation (ADR 0039); the toolbar must fit the 800 px minimum window |
+| Masks (ADR 0040): Masks button, mask toolbar (chips, Add, overlay switch, Done), accent tint with a gradient's three lines, Selective section (rows, Exposure / Warmth / Clarity card, Add tiles) | Only Linear offered for now; start and end handles on the dashed lines besides the centre one; empty-state text without detected skies and subjects | Radial and Brush follow, Subject and Sky need on-device AI; the ends set angle and fade directly |
 | Tone curve | The photographer's own point curve: points to add, drag and remove, a readout and Reset in the title row, the histogram behind. It does not bend with the sliders as the mock-up's does. An RGB · Red · Green · Blue switch above the graph (ADR 0038) | Requested (a true curve, as in Lightroom); a curve that both follows the sliders and takes points would be ambiguous |
 | Histogram | Dragging adjusts Blacks, Shadows, Exposure, Highlights or Whites by zone; hovering tints the zone and shows its name and value in place of the exposure details; multiply blending on the light theme | Requested (Lightroom's behaviour); the readout says what a drag will change; the design is dark only |
 | Remove chromatic aberration | The switch's subtitle says "Measuring…" and then the result, for three seconds | Turning it on measures the photo; the design has no in-progress state |
@@ -104,7 +105,7 @@ existing screens to the design now, and to match it for every screen built from 
 
 ### Not built yet (and so not shown)
 
-Search, Recently imported, albums, presets and Auto, masks, compare, zoom,
+Search, Recently imported, albums, presets and Auto, Radial / Brush / Subject / Sky masks, compare, zoom,
 the filmstrip, batch selection, the Export dialog, and the Lens correction switch.
 
 ## Consequences
