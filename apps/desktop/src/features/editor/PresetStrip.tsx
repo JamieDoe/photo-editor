@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { MoreIcon, PencilIcon, RefreshIcon, TrashIcon } from "../../components/icons";
+import { ExportIcon, ImportIcon, MoreIcon, PencilIcon, RefreshIcon, TrashIcon } from "../../components/icons";
 import { Popover } from "../../components/Popover";
 import * as ipc from "../../ipc/client";
 import type { PreviewFrame } from "../../ipc/frame";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { PresetDto } from "../../ipc/generated/PresetDto";
+import type { PresetImportDto } from "../../ipc/generated/PresetImportDto";
 import { applyPreset, appliedPreset, hasLook, photoKey, stableStringify } from "./presets";
 import type { Editor } from "./useEditor";
 
@@ -51,6 +52,22 @@ function usePresets(onError: (e: unknown) => void) {
         (look) => setPresets((all) => all.map((p) => (p.id === id ? { ...p, recipe: look } : p))),
       ),
     remove: (id: string) => run(() => ipc.deletePreset(id), () => setPresets((all) => all.filter((p) => p.id !== id))),
+    /** Saves a preset as a file (ADR 0047); true once written, false if cancelled. */
+    exportFile: async (id: string) => {
+      let written = false;
+      await run(() => ipc.exportPreset(id), (path) => (written = path !== null));
+      return written;
+    },
+    /** Imports preset files the photographer picks; null if they picked none. */
+    importFiles: async () => {
+      let result: PresetImportDto | null = null;
+      await run(ipc.importPresets, (r) => {
+        result = r;
+        setPresets((all) => [...all, ...r.imported.map((i) => i.preset)]);
+      });
+      const got = result as PresetImportDto | null;
+      return got && got.imported.length + got.failed.length > 0 ? got : null;
+    },
   };
 }
 
@@ -110,8 +127,13 @@ function PresetPreview({ frame, className = "preset-image" }: { frame: PreviewFr
   return <canvas ref={ref} className={frame ? className : `${className} empty`} aria-hidden="true" />;
 }
 
-/** The popover open: saving the current look, or editing a saved preset. */
-type Open = { kind: "save"; anchor: HTMLElement } | { kind: "edit"; id: string; anchor: HTMLElement } | null;
+/** The popover open: saving the current look, editing a saved preset, or what an
+ *  import brought in. */
+type Open =
+  | { kind: "save"; anchor: HTMLElement }
+  | { kind: "edit"; id: string; anchor: HTMLElement }
+  | { kind: "imported"; anchor: HTMLElement; result: PresetImportDto }
+  | null;
 
 /**
  * The design's preset strip (ADR 0046): the built-in looks and the photographer's own
@@ -120,7 +142,7 @@ type Open = { kind: "save"; anchor: HTMLElement } | { kind: "edit"; id: string; 
  * name, updating it to the current look, and deleting it.
  */
 export function PresetStrip({ editor, recipe, disabled }: { editor: Editor; recipe: EditRecipe | null; disabled: boolean }) {
-  const { presets, create, rename, update, remove } = usePresets(editor.reportError);
+  const { presets, create, rename, update, remove, exportFile, importFiles } = usePresets(editor.reportError);
   const previewOf = usePresetPreviews(editor, recipe, presets);
   const [open, setOpen] = useState<Open>(null);
   const close = useCallback(() => setOpen(null), []);
@@ -136,6 +158,19 @@ export function PresetStrip({ editor, recipe, disabled }: { editor: Editor; reci
     <div className="presets">
       <div className="presets-header">
         <span className="presets-title">Presets</span>
+        <button
+          className="ghost small"
+          disabled={disabled}
+          title="Add presets from files: this app’s, or Lightroom .xmp presets"
+          onClick={async (e) => {
+            const anchor = e.currentTarget;
+            setOpen(null);
+            const result = await importFiles();
+            if (result) setOpen({ kind: "imported", anchor, result });
+          }}
+        >
+          Import…
+        </button>
         <button
           className="ghost small"
           disabled={disabled || !recipe}
@@ -216,7 +251,13 @@ export function PresetStrip({ editor, recipe, disabled }: { editor: Editor; reci
               }
             }}
             onDelete={async () => (await remove(editing.id)) && close()}
+            onExport={async () => (await exportFile(editing.id)) && close()}
           />
+        </Popover>
+      )}
+      {open?.kind === "imported" && (
+        <Popover anchor={open.anchor} label="Imported presets" onClose={close}>
+          <ImportResult result={open.result} onDone={close} />
         </Popover>
       )}
     </div>
@@ -225,10 +266,10 @@ export function PresetStrip({ editor, recipe, disabled }: { editor: Editor; reci
 
 /** The popover's header, as the design's dialogs have it: a small picture, a title
  *  (or, while renaming, a field in its place) and a line under it. */
-function PopoverHeader({ frame, title, sub }: { frame: PreviewFrame | null; title: ReactNode; sub: string }) {
+function PopoverHeader({ frame, icon, title, sub }: { frame?: PreviewFrame | null; icon?: ReactNode; title: ReactNode; sub: string }) {
   return (
     <div className="popover-header">
-      <PresetPreview frame={frame} className="popover-thumb" />
+      {icon ? <span className="popover-thumb popover-icon">{icon}</span> : <PresetPreview frame={frame ?? null} className="popover-thumb" />}
       <div className="popover-heading">
         {title}
         <span className="popover-sub">{sub}</span>
@@ -283,6 +324,7 @@ function PresetDetails({
   onRename,
   onUpdate,
   onDelete,
+  onExport,
 }: {
   preset: PresetDto;
   frame: PreviewFrame | null;
@@ -290,6 +332,7 @@ function PresetDetails({
   onRename: (name: string) => Promise<boolean>;
   onUpdate: () => void;
   onDelete: () => void;
+  onExport: () => void;
 }) {
   const [mode, setMode] = useState<"menu" | "rename" | "delete">("menu");
   const [name, setName] = useState(preset.name);
@@ -366,12 +409,63 @@ function PresetDetails({
             <RefreshIcon />
             Update to this photo’s look
           </button>
+          <button className="popover-item" role="menuitem" title="Save this preset as a file, to back it up or share it" onClick={onExport}>
+            <ExportIcon size={14} />
+            Export…
+          </button>
           <button className="popover-item danger" role="menuitem" onClick={() => setMode("delete")}>
             <TrashIcon />
             Delete…
           </button>
         </div>
       )}
+    </>
+  );
+}
+
+/** What an import brought in: each preset (and, from Lightroom, what was left out),
+ *  and each file that could not be read, with why. */
+function ImportResult({ result, onDone }: { result: PresetImportDto; onDone: () => void }) {
+  const { imported, failed } = result;
+  const lightroom = imported.some((i) => i.fromLightroom);
+  const count = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+  const title = imported.length > 0 ? `Imported ${count(imported.length, "preset")}` : "Nothing imported";
+  const sub =
+    failed.length > 0 ? `${count(failed.length, "file")} couldn’t be imported` : "Added to the end of your presets";
+  return (
+    <>
+      <PopoverHeader icon={<ImportIcon size={16} />} title={<span className="popover-title">{title}</span>} sub={sub} />
+      <div className="popover-body">
+        <ul className="import-list">
+          {imported.map((i) => (
+            <li key={i.preset.id}>
+              <span className="import-name">{i.preset.name}</span>
+              {i.fromLightroom && (
+                <span className="import-note">
+                  From Lightroom{i.leftOut.length > 0 ? ` · left out: ${i.leftOut.join(", ")}` : ""}
+                </span>
+              )}
+            </li>
+          ))}
+          {failed.map((f) => (
+            <li key={f.file} className="failed">
+              <span className="import-name">{f.file}</span>
+              <span className="import-note">{f.message}</span>
+            </li>
+          ))}
+        </ul>
+        {lightroom && (
+          <p className="popover-text small">
+            Lightroom presets come close to their Lightroom look rather than matching it: the two apps process photos
+            differently.
+          </p>
+        )}
+        <div className="popover-actions">
+          <button className="primary small" autoFocus onClick={onDone}>
+            Done
+          </button>
+        </div>
+      </div>
     </>
   );
 }

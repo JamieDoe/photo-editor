@@ -89,6 +89,60 @@ pub fn builtin() -> Vec<BuiltinPreset> {
     ]
 }
 
+/// What a preset file says it is (ADR 0047).
+const FILE_FORMAT: &str = "photo-editor-preset";
+/// The preset file layout this version writes and reads.
+const FILE_VERSION: u32 = 1;
+
+/// Why a file is not a preset this version can read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PresetFileError {
+    /// Not a preset file at all.
+    NotAPreset,
+    /// Written by a newer version of the app.
+    TooNew,
+}
+
+/// A preset as a file: its name and look, as JSON the app reads back with
+/// [`from_file`]. The recipe keeps its own schema version, so older files are
+/// migrated like saved edits.
+pub fn to_file(name: &str, recipe: &EditRecipe) -> String {
+    let recipe: serde_json::Value =
+        serde_json::from_str(&recipe.look_only().to_json()).unwrap_or(serde_json::Value::Null);
+    let file = serde_json::json!({
+        "format": FILE_FORMAT,
+        "formatVersion": FILE_VERSION,
+        "name": name,
+        "recipe": recipe,
+    });
+    serde_json::to_string_pretty(&file).unwrap_or_default() + "\n"
+}
+
+/// Reads a preset file written by [`to_file`]: its name and look (sanitised).
+pub fn from_file(text: &str) -> Result<(String, EditRecipe), PresetFileError> {
+    let v: serde_json::Value = serde_json::from_str(text.trim_start_matches('\u{feff}'))
+        .map_err(|_| PresetFileError::NotAPreset)?;
+    if v.get("format").and_then(|f| f.as_str()) != Some(FILE_FORMAT) {
+        return Err(PresetFileError::NotAPreset);
+    }
+    match v.get("formatVersion").and_then(|n| n.as_u64()) {
+        Some(n) if n <= u64::from(FILE_VERSION) => {}
+        Some(_) => return Err(PresetFileError::TooNew),
+        None => return Err(PresetFileError::NotAPreset),
+    }
+    let name = v
+        .get("name")
+        .and_then(|n| n.as_str())
+        .unwrap_or_default()
+        .to_owned();
+    let recipe = v.get("recipe").ok_or(PresetFileError::NotAPreset)?;
+    let recipe = EditRecipe::from_json(&recipe.to_string()).map_err(|e| match e {
+        crate::RecipeError::UnsupportedVersion(_) => PresetFileError::TooNew,
+        _ => PresetFileError::NotAPreset,
+    })?;
+    Ok((name, recipe.sanitized().look_only()))
+}
+
 impl EditRecipe {
     /// This recipe's look alone, as a preset holds it: without the exposure,
     /// geometry, lens corrections and masks, which belong to the photo.
@@ -167,6 +221,29 @@ mod tests {
         assert_eq!(r.masks, photo().masks);
         // Applying twice changes nothing more.
         assert_eq!(r.with_look_of(&mono.recipe), r);
+    }
+
+    #[test]
+    fn preset_files_round_trip_the_look_only() {
+        let text = to_file("Warm & soft", &photo());
+        assert!(
+            text.contains(r#""format": "photo-editor-preset""#),
+            "{text}"
+        );
+        let (name, look) = from_file(&text).unwrap();
+        assert_eq!(name, "Warm & soft");
+        assert_eq!(look, photo().look_only());
+        // Anything else is refused, and newer files say so.
+        assert_eq!(from_file("{}"), Err(PresetFileError::NotAPreset));
+        assert_eq!(from_file("not json"), Err(PresetFileError::NotAPreset));
+        let newer = text.replace(r#""formatVersion": 1"#, r#""formatVersion": 2"#);
+        assert_eq!(from_file(&newer), Err(PresetFileError::TooNew));
+        let future_recipe = text.replace(
+            &format!(r#""version": {}"#, crate::RECIPE_VERSION),
+            &format!(r#""version": {}"#, crate::RECIPE_VERSION + 1),
+        );
+        assert_ne!(future_recipe, text);
+        assert_eq!(from_file(&future_recipe), Err(PresetFileError::TooNew));
     }
 
     #[test]

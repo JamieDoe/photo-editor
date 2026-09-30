@@ -61,6 +61,9 @@ fixtures = { path = "crates/fixtures" }
 rayon = "1.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# Reading Lightroom's .xmp presets (ADR 0047). MIT; already in the app through
+# tauri -> plist.
+quick-xml = "0.42"
 zune-jpeg = "0.5"
 jpeg-encoder = "0.7"
 png = "0.18"

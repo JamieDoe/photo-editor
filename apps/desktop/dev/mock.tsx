@@ -167,6 +167,16 @@ mockIPC((cmd, payload) => {
       mockPresets = mockPresets.map((p) => (p.id === id ? { ...p, recipe: lookOnly(recipe) } : p));
       return lookOnly(recipe);
     }
+    case "export_preset":
+      return new Promise((r) => setTimeout(() => r("/Users/me/Desktop/preset.preset"), 200));
+    case "import_presets": {
+      // Dev-only stand-in: a Lightroom preset with settings left out, and a bad file.
+      const p = { id: `user:${nextPresetId++}`, name: "Soft & Warm", builtIn: false, recipe: { ...neutral, contrast: 18, highlights: -42, shadows: 30, vibrance: 22 } };
+      mockPresets = [...mockPresets, p];
+      return new Promise((r) =>
+        setTimeout(() => r({ imported: [{ preset: p, fromLightroom: true, leftOut: ["Parametric curve", "Color Grading", "Masks and healing"] }], failed: [{ file: "notes.xmp", message: "“notes.xmp” isn’t a preset this app can read." }] }), 300),
+      );
+    }
     case "delete_preset":
       mockPresets = mockPresets.filter((p) => p.id !== (payload as { id: string }).id);
       return null;

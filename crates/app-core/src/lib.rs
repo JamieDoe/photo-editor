@@ -9,6 +9,7 @@ mod edits;
 mod engine;
 mod error;
 mod library;
+mod lightroom;
 mod presets;
 mod previews;
 mod session;
@@ -27,8 +28,9 @@ pub use engine::Engine;
 pub use error::{EngineError, ErrorKind};
 pub use library::{IndexProgress, IndexStage, IndexSummary};
 pub use presets::{
-    MAX_PRESET_NAME, Preset, PresetRef, create_preset, delete_preset, list_presets, rename_preset,
-    update_preset,
+    ImportedPreset, MAX_PRESET_NAME, PRESET_FILE_EXTENSION, Preset, PresetRef, create_preset,
+    delete_preset, export_preset_file, import_preset_file, list_presets, preset_file_name,
+    rename_preset, update_preset,
 };
 pub use thumbnails::{
     BatchSummary, Pregenerated, THUMBNAIL_LONG_EDGE, Thumbnail, ThumbnailBatch, ThumbnailSource,

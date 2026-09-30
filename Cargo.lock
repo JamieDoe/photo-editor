@@ -83,6 +83,7 @@ dependencies = [
  "jobs",
  "log",
  "png 0.18.1",
+ "quick-xml",
  "raw",
  "rayon",
  "renderer",
