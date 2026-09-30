@@ -190,11 +190,12 @@ export function useEditor() {
     [applyRecipe],
   );
 
-  /** The photographer changed the edit: a step in its history. */
+  /** The photographer changed the edit: a step in its history, named `label` when it
+   *  is one action with a name of its own (applying a preset). */
   const setRecipe = useCallback(
-    (r: EditRecipe) => {
+    (r: EditRecipe, label?: string) => {
       const before = recipeRef.current;
-      if (before && historyRef.current) historyRef.current.history.record(before, r, performance.now());
+      if (before && historyRef.current) historyRef.current.history.record(before, r, performance.now(), label);
       commitRecipe(r);
       syncHistoryLabels();
     },
@@ -295,6 +296,16 @@ export function useEditor() {
     [],
   );
 
+  /** Renders `r` small for the preset strip's previews (ADR 0046), in their own slot:
+   *  one at a time, behind the viewer's frames. */
+  const renderPresetPreview = useCallback(async (r: EditRecipe) => {
+    const img = imageRef.current;
+    if (!img) throw ipc.staleError();
+    const frame = await ipc.renderPreview({ imageId: img.id, recipe: r, quality: "thumbnail", targetLongEdge: 256, slot: "presets" });
+    if (imageRef.current?.id !== img.id) throw ipc.staleError();
+    return frame;
+  }, []);
+
   /** Renders `r` for the before/after comparison (ADR 0045), in its own slot so it
    *  and the edit's renders never cancel each other. Rejects with a cancellation if
    *  another photo was opened meanwhile. */
@@ -342,9 +353,12 @@ export function useEditor() {
     setViewTransform,
     subscribeFrames,
     renderCompare,
+    renderPresetPreview,
     schedulerStats: (): SchedulerStats =>
       schedulerRef.current?.stats() ?? { requested: 0, shown: 0, superseded: 0, stale: 0, errors: 0 },
     clearError: () => setError(null),
+    /** Shows an error from outside the editor's own work (such as saving a preset). */
+    reportError: fail,
   };
 }
 

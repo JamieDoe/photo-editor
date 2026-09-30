@@ -57,6 +57,9 @@ pub enum PreviewSlot {
     Viewer,
     /// The photo before editing, shown beside it; rendered after the edit's frames.
     Compare,
+    /// The preset strip's previews (ADR 0046), rendered one after another behind the
+    /// viewer's frames.
+    Presets,
 }
 
 #[derive(Debug, Clone)]

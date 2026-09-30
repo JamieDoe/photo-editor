@@ -12,6 +12,8 @@ pub enum ErrorKind {
     ImageNotOpen,
     InvalidDestination,
     ExportFailed,
+    /// The request itself was not acceptable (such as a preset with no name).
+    InvalidInput,
     /// Cancelled or superseded by a newer request. Not a failure from the user's view.
     Cancelled,
     Internal,

@@ -122,4 +122,16 @@ describe("edit history", () => {
     expect(describeChange(["masks"], labels)).toBe("Masks");
     expect(describeChange(["pointCurve", "channelCurves"], labels)).toBe("Tone curve");
   });
+
+  it("keeps a named action as its own step", () => {
+    const h = history();
+    const a = apply(h, base, [[{ contrast: 5 }, 0]]);
+    const b = set(a, { contrast: 30, saturation: -100 });
+    h.record(a, b, 10, "Mono");
+    expect(h.undoLabel).toBe("Mono");
+    // A quick change straight after is a new step.
+    const c = apply(h, b, [[{ contrast: 31 }, 20]]);
+    expect(h.undo(c)).toBe(b);
+    expect(h.undo(b)).toBe(a);
+  });
 });

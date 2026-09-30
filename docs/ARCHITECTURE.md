@@ -141,6 +141,8 @@ slider change ─► setRecipe ─► PreviewScheduler (≤ 1 request per animat
                slot "compare" (ADR 0045): the before image of before/after, with
                         its own key "compare-preview" and a lower priority, so it
                         and the edit's renders never cancel each other
+               slot "presets" (ADR 0046): the preset strip's thumbnails, key
+                        "preset-previews", behind both
   ◄─ binary frame: 28-byte header (incl. the full-resolution output size after crop,
      which the viewer's box follows) + the frame's histogram (4 KB, ADR 0036)
      + RGBA8 pixels
@@ -244,8 +246,8 @@ within half the machine.
 
 See `PERFORMANCE.md` for measured consequences.
 
-- Preview slots: the viewer and the before/after comparison each have a supersede key
-  (ADR 0045); further views need their own slots.
+- Preview slots: the viewer, the before/after comparison (ADR 0045) and the preset
+  previews (ADR 0046) each have a supersede key; further views need their own slots.
 - Full-resolution export holds the whole image in memory (no tiling).
 - LibRaw's OpenMP threads are capped per decode via `DecodeOptions::max_threads`
   on macOS/Linux; Windows has no cap yet.

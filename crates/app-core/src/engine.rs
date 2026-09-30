@@ -25,6 +25,8 @@ use crate::{
 const VIEWER_PREVIEW_KEY: &str = "viewer-preview";
 /// Supersede key for the comparison's before renders (ADR 0045).
 const COMPARE_PREVIEW_KEY: &str = "compare-preview";
+/// Supersede key for the preset strip's previews (ADR 0046).
+const PRESET_PREVIEW_KEY: &str = "preset-previews";
 const OPEN_KEY: &str = "open";
 const RGBA_FORMAT_TAG: u8 = 0;
 const INTERACTIVE_UNDERSAMPLE_PERCENT: u32 = 85;
@@ -223,15 +225,18 @@ impl Engine {
             RENDERER_VERSION,
         );
 
-        let (supersede_key, priority) = match req.quality {
-            PreviewQuality::Thumbnail => (
+        let (supersede_key, priority) = match (slot, req.quality) {
+            (PreviewSlot::Viewer, PreviewQuality::Thumbnail) => (
                 format!("thumbnail-{}", req.image.0),
                 Priority::VisibleThumbnail,
             ),
-            PreviewQuality::Interactive | PreviewQuality::Detail => match slot {
-                PreviewSlot::Viewer => (VIEWER_PREVIEW_KEY.to_owned(), Priority::Interactive),
-                PreviewSlot::Compare => (COMPARE_PREVIEW_KEY.to_owned(), Priority::VisiblePreview),
-            },
+            (PreviewSlot::Viewer, PreviewQuality::Interactive | PreviewQuality::Detail) => {
+                (VIEWER_PREVIEW_KEY.to_owned(), Priority::Interactive)
+            }
+            (PreviewSlot::Compare, _) => (COMPARE_PREVIEW_KEY.to_owned(), Priority::VisiblePreview),
+            (PreviewSlot::Presets, _) => {
+                (PRESET_PREVIEW_KEY.to_owned(), Priority::VisibleThumbnail)
+            }
         };
 
         if let Some(hit) = self

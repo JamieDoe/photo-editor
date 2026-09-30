@@ -118,6 +118,29 @@ export const RefreshIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const PencilIcon = (p: IconProps) => (
+  <Icon size={14} {...p}>
+    <path d="M10.5 2.5l3 3-7.5 7.5H3v-3z" />
+    <path d="M9 4l3 3" />
+  </Icon>
+);
+
+export const TrashIcon = (p: IconProps) => (
+  <Icon size={14} {...p}>
+    <path d="M2.5 4.5h11" />
+    <path d="M6 4.5V3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1.5" />
+    <path d="M4 4.5l.7 8.6a1 1 0 0 0 1 .9h4.6a1 1 0 0 0 1-.9l.7-8.6" />
+  </Icon>
+);
+
+export const MoreIcon = (p: IconProps) => (
+  <Icon size={14} {...p}>
+    <circle cx="3.5" cy="8" r="0.6" />
+    <circle cx="8" cy="8" r="0.6" />
+    <circle cx="12.5" cy="8" r="0.6" />
+  </Icon>
+);
+
 export const CompareIcon = (p: IconProps) => (
   <Icon size={15} {...p}>
     <rect x="2" y="3" width="12" height="10" rx="2" />

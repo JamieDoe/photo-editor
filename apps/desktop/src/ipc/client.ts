@@ -18,6 +18,7 @@ import type { ExportEvent } from "./generated/ExportEvent";
 import type { ExportRequestDto } from "./generated/ExportRequestDto";
 import type { ExportStartedDto } from "./generated/ExportStartedDto";
 import type { FolderListingDto } from "./generated/FolderListingDto";
+import type { PresetDto } from "./generated/PresetDto";
 import type { ImageSummaryDto } from "./generated/ImageSummaryDto";
 import type { IndexEvent } from "./generated/IndexEvent";
 import type { LibraryStatusDto } from "./generated/LibraryStatusDto";
@@ -86,6 +87,15 @@ export const setPhotoMarks = (paths: string[], change: MarkChangeDto) =>
 
 /** Saves a library photo's edit (a default recipe removes it). */
 export const saveEdit = (path: string, recipe: EditRecipe) => invoke<EditSavedDto>("save_edit", { path, recipe });
+
+/** Presets (ADR 0046): the built-in looks, then the photographer's own. */
+export const listPresets = () => invoke<PresetDto[]>("list_presets");
+/** Saves the look of `recipe` as a preset. */
+export const createPreset = (name: string, recipe: EditRecipe) => invoke<PresetDto>("create_preset", { name, recipe });
+export const renamePreset = (id: string, name: string) => invoke<null>("rename_preset", { id, name });
+/** Replaces a saved preset's look; resolves to the look stored. */
+export const updatePreset = (id: string, recipe: EditRecipe) => invoke<EditRecipe>("update_preset", { id, recipe });
+export const deletePreset = (id: string) => invoke<null>("delete_preset", { id });
 /** Auto level: the straighten angle that levels the open photo, or null (no clear horizon). */
 export const autoLevel = (imageId: number) => invoke<number | null>("auto_level", { imageId });
 /** Remove chromatic aberration: the correction measured on the open photo, or null (too

@@ -675,3 +675,11 @@ load about 6–7, on battery. The mask has Exposure and Warmth:
 - Out of Low Power Mode (two runs, load about 3–5): idle frame gap p50 17 ms; all nine
   large strokes p50 17 ms, p95 18–19 ms, max 21 ms (60 fps). Photo round trip p50
   14–15 ms, render p50 9.6–10.5 ms.
+
+## 32. Preset previews (ADR 0046)
+
+Release self-test, Nikon Z 6, machine load 6–8: each preset preview (thumbnail
+quality, 256 px, the `presets` render slot) takes 2–5 ms from request to frame. The six
+built-in presets take about 22 ms in all. Previews are redrawn only when the photo's
+own settings (exposure, geometry, masks) change, 300 ms after the change stops, and
+never while a look slider moves.
