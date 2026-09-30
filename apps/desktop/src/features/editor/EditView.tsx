@@ -8,9 +8,10 @@ import { hasCommandModifier, isTextEntry } from "../../lib/keyboard";
 import { markChangeForKey } from "../library/marks";
 import type { EditSavingDto } from "../../ipc/generated/EditSavingDto";
 import type { SaveState } from "./autosave";
-import { isIdentity } from "./recipe";
+import { geometryEdited, isIdentity } from "./recipe";
 import { AdjustmentPanel } from "./AdjustmentPanel";
-import { CropOverlay, CropToolbar, GeometryControls, geometryEdited, useCropTool } from "./CropTool";
+import { CropOverlay, CropToolbar, GeometryControls, useCropTool } from "./CropTool";
+import { ChromaticAberrationToggle } from "./LensControls";
 import { PanelSection } from "./PanelSection";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
@@ -157,7 +158,24 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
           )}
           {info && recipe && (
             <PanelSection title="Geometry" icon={<CropIcon />} edited={geometryEdited(recipe)} defaultOpen={false}>
-              <GeometryControls tool={crop} straighten={info.straighten} perspective={info.perspective} disabled={!image} />
+              <GeometryControls
+                tool={crop}
+                straighten={info.straighten}
+                perspective={info.perspective}
+                lens={{
+                  edited: recipe.chromaticAberration !== undefined,
+                  content: (
+                    <ChromaticAberrationToggle
+                      recipe={recipe}
+                      imageId={image?.id ?? null}
+                      size={fullSize}
+                      onChange={editor.setRecipe}
+                      disabled={!image}
+                    />
+                  ),
+                }}
+                disabled={!image}
+              />
             </PanelSection>
           )}
           <PanelSection title="Diagnostics" icon={<DiagnosticsIcon />} defaultOpen={false}>

@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 
 use image_core::LinearImage;
 
+use crate::chromatic::{ChromaticAberration, Radial};
+
 /// Largest straighten angle either way, in degrees (as in the design).
 pub const MAX_STRAIGHTEN: f32 = 15.0;
 /// Smallest crop side, as a fraction of the frame.
@@ -334,13 +336,27 @@ pub fn fit_crop(aspect: AspectRatio, straighten: f32, w: f32, h: f32) -> CropRec
 /// Without rotation, whole pixels are copied; with it, samples are bilinear, and
 /// points outside the photo (only possible within rounding of its edge) clamp to it.
 pub fn resample(source: &LinearImage, geometry: &Geometry) -> LinearImage {
+    resample_corrected(source, geometry, None)
+}
+
+/// [`resample`], also lining red and blue up with green where the lens spread them
+/// (ADR 0035). The scaling is about the source's centre (the lens's), before any
+/// crop, straighten or perspective.
+pub fn resample_corrected(
+    source: &LinearImage,
+    geometry: &Geometry,
+    ca: Option<&ChromaticAberration>,
+) -> LinearImage {
     let (w, h) = (source.width(), source.height());
     let (ow, oh) = geometry.output_size(w, h);
     let crop = geometry.effective_crop(w as f32, h as f32);
     let g = geometry.sanitized();
     let mut data = vec![0u16; ow as usize * oh as usize * 3];
     let row_len = ow as usize * 3;
-    if g.straighten == 0.0 && !g.has_perspective() {
+    let radial = ca
+        .filter(|c| !c.is_identity())
+        .map(|c| Radial::new(c, w as f32, h as f32));
+    if g.straighten == 0.0 && !g.has_perspective() && radial.is_none() {
         let x0 = ((crop.x * w as f32).round() as u32).min(w - ow);
         let y0 = ((crop.y * h as f32).round() as u32).min(h - oh);
         data.par_chunks_mut(row_len)
@@ -358,7 +374,17 @@ pub fn resample(source: &LinearImage, geometry: &Geometry) -> LinearImage {
                 for (i, px) in out.as_chunks_mut::<3>().0.iter_mut().enumerate() {
                     let vx = crop.x + (i as f32 + 0.5) / ow as f32 * crop.w;
                     let (sx, sy) = map.source(vx, vy);
-                    *px = bilinear(source, sx - 0.5, sy - 0.5);
+                    *px = match &radial {
+                        None => bilinear(source, sx - 0.5, sy - 0.5),
+                        Some(r) => {
+                            let [(rx, ry), (bx, by)] = r.sample_points(sx, sy);
+                            [
+                                bilinear_channel(source, rx - 0.5, ry - 0.5, 0),
+                                bilinear_channel(source, sx - 0.5, sy - 0.5, 1),
+                                bilinear_channel(source, bx - 0.5, by - 0.5, 2),
+                            ]
+                        }
+                    };
                 }
             });
     }
@@ -534,6 +560,22 @@ fn bilinear(source: &LinearImage, x: f32, y: f32) -> [u16; 3] {
         let bottom = at(x0, y1, c) + (at(x1, y1, c) - at(x0, y1, c)) * tx;
         (top + (bottom - top) * ty).round() as u16
     })
+}
+
+/// One channel of [`bilinear`].
+#[inline]
+fn bilinear_channel(source: &LinearImage, x: f32, y: f32, c: usize) -> u16 {
+    let (w, h) = (source.width() as usize, source.height() as usize);
+    let x = x.clamp(0.0, (w - 1) as f32);
+    let y = y.clamp(0.0, (h - 1) as f32);
+    let (x0, y0) = (x as usize, y as usize);
+    let (x1, y1) = ((x0 + 1).min(w - 1), (y0 + 1).min(h - 1));
+    let (tx, ty) = (x - x0 as f32, y - y0 as f32);
+    let data = source.data();
+    let at = |xx: usize, yy: usize| f32::from(data[(yy * w + xx) * 3 + c]);
+    let top = at(x0, y0) + (at(x1, y0) - at(x0, y0)) * tx;
+    let bottom = at(x0, y1) + (at(x1, y1) - at(x0, y1)) * tx;
+    (top + (bottom - top) * ty).round() as u16
 }
 
 #[cfg(test)]
@@ -864,5 +906,32 @@ mod tests {
             (c.w - 0.84362).abs() < 1e-4 && (c.h - 0.84362).abs() < 1e-4,
             "{c:?}"
         );
+    }
+
+    #[test]
+    fn chromatic_correction_moves_only_red_and_blue() {
+        let src = gradient(200, 100);
+        let ca = ChromaticAberration {
+            red: [0.004, 0.0],
+            blue: [0.0, 0.0],
+        };
+        let out = resample_corrected(&src, &Geometry::default(), Some(&ca));
+        assert_eq!((out.width(), out.height()), (200, 100));
+        let (o, s) = (out.data(), src.data());
+        for i in (0..o.len()).step_by(3) {
+            // Green and (unscaled) blue are exact copies.
+            assert_eq!((o[i + 1], o[i + 2]), (s[i + 1], s[i + 2]));
+        }
+        // Red at (150, 50) is sampled 0.2 px further out: 100 + 50.5 * 1.004 = 150.702.
+        let at = (50 * 200 + 150) * 3;
+        assert_eq!(s[at], 15_000);
+        assert!(o[at].abs_diff(15_020) <= 1, "{}", o[at]);
+        // Without a correction (or with nothing measured) it is a plain copy.
+        let none = resample_corrected(
+            &src,
+            &Geometry::default(),
+            Some(&ChromaticAberration::default()),
+        );
+        assert_eq!(none.data(), src.data());
     }
 }

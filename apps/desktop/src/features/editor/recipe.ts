@@ -5,7 +5,7 @@ import type { HslShift } from "../../ipc/generated/HslShift";
 
 /** Recipe fields set with sliders (the look is a choice, and the mixer has its own
  *  controls). */
-export type AdjustmentKey = Exclude<keyof EditRecipe, "version" | "look" | "mixer" | "geometry">;
+export type AdjustmentKey = Exclude<keyof EditRecipe, "version" | "look" | "mixer" | "geometry" | "chromaticAberration">;
 
 const MIXER_BANDS: readonly (keyof ColourMixer)[] = [
   "red",
@@ -66,10 +66,33 @@ export function isAdjustmentKey(key: string): key is AdjustmentKey {
   return (ADJUSTMENT_KEYS as readonly string[]).includes(key);
 }
 
-/** Whether `r` is the default: every adjustment at its default, on the default look. */
+/** Whether `r` is the default: every adjustment at its default, on the default look,
+ *  with the whole photo as shot. */
 export function isIdentity(r: EditRecipe): boolean {
   const defaults = neutralRecipe(r.version);
-  return ADJUSTMENT_KEYS.every((k) => r[k] === defaults[k]) && !mixerEdited(r) && r.look === "standard";
+  return (
+    ADJUSTMENT_KEYS.every((k) => r[k] === defaults[k]) &&
+    !mixerEdited(r) &&
+    !geometryEdited(r) &&
+    r.look === "standard"
+  );
+}
+
+/** Whether the photo is cropped, straightened, perspective- or lens-corrected. */
+export function geometryEdited(r: EditRecipe): boolean {
+  const g = r.geometry;
+  if (r.chromaticAberration !== undefined) return true;
+  if (!g) return false;
+  const { crop } = g;
+  return (
+    g.straighten !== 0 ||
+    g.vertical !== 0 ||
+    g.horizontal !== 0 ||
+    crop.x !== 0 ||
+    crop.y !== 0 ||
+    crop.w !== 1 ||
+    crop.h !== 1
+  );
 }
 
 /**

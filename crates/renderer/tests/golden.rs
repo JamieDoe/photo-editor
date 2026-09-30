@@ -130,6 +130,16 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
             },
         ),
         (
+            "chromatic_aberration",
+            EditRecipe {
+                chromatic_aberration: Some(renderer::ChromaticAberration {
+                    red: [0.003, 0.0],
+                    blue: [-0.002, 0.001],
+                }),
+                ..r
+            },
+        ),
+        (
             "perspective",
             EditRecipe {
                 geometry: Some({

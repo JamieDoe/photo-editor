@@ -130,6 +130,7 @@ export function GroupSliders({
   valueOf,
   format,
   extra,
+  after,
   disabled,
   onChange,
 }: {
@@ -139,12 +140,15 @@ export function GroupSliders({
   /** More controls that are not plain sliders: the colour mixer (after the sliders)
    *  or the tone curve graph (`before` them). */
   extra?: { content: ReactNode; edited: boolean; before: boolean };
+  /** More controls after everything else (the Geometry section's lens switch). */
+  after?: { content: ReactNode; edited: boolean };
   disabled: boolean;
   onChange: (key: string, v: number) => void;
 }) {
   const basic = specs.filter((s) => !s.more);
   const more = specs.filter((s) => s.more);
-  const moreEdited = more.some((s) => valueOf(s) !== s.default) || (extra?.edited ?? false);
+  const moreEdited =
+    more.some((s) => valueOf(s) !== s.default) || (extra?.edited ?? false) || (after?.edited ?? false);
   const [open, setOpen] = useState(false);
   const showMore = open || moreEdited;
   const slider = (spec: AdjustmentSpec) => (
@@ -170,6 +174,7 @@ export function GroupSliders({
               {extra?.before && extra.content}
               {more.map(slider)}
               {extra && !extra.before && extra.content}
+              {after?.content}
             </div>
           )}
           <button
