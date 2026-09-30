@@ -316,17 +316,18 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
 
     // Tone curve (ADR 0037) through the real renderer: a curve lifting the midtones
     // brightens the frame (its mean luminance, from the frame's histogram).
-    const meanLuma = (f: RenderedFrame) => {
+    const meanOf = (f: RenderedFrame, plane: "luma" | "red" | "green") => {
       const h = f.frame.histogram;
       if (!h) return NaN;
       let sum = 0;
       let count = 0;
-      h.luma.forEach((n, v) => {
+      h[plane].forEach((n, v) => {
         sum += n * v;
         count += n;
       });
       return sum / count;
     };
+    const meanLuma = (f: RenderedFrame) => meanOf(f, "luma");
     const beforeCurve = driver.editor().recipe!;
     const baseline = frames.at(-1);
     const framesBeforeCurve = frames.length;
@@ -343,16 +344,57 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       10_000,
       "tone curve frame",
     ).catch(() => null);
+    // A red curve (ADR 0038) lifts red, not green. The colour controls (which run
+    // after the curve and mix channels) are neutral for this check.
+    const colourNeutral = { ...beforeCurve, saturation: 0, vibrance: 0, mixer: undefined };
+    const framesBeforeRed = frames.length;
+    driver.editor().setRecipe({
+      ...colourNeutral,
+      channelCurves: {
+        red: [
+          [0, 0],
+          [0.5, 0.75],
+          [1, 1],
+        ],
+      },
+    });
+    const reddened = await waitFor(
+      () => frames.slice(framesBeforeRed).find((f) => !f.frame.cacheHit) ?? null,
+      10_000,
+      "red curve frame",
+    ).catch(() => null);
+    // Against the recipe without it, rendered at the same size (quick and detail
+    // renders differ).
+    const framesAfterRed = frames.length;
+    driver.editor().setRecipe(colourNeutral);
+    const restored = reddened
+      ? await waitFor(
+          () =>
+            frames
+              .slice(framesAfterRed)
+              .find((f) => f.frame.width === reddened.frame.width && f.frame.height === reddened.frame.height) ??
+            null,
+          10_000,
+          "restored frame",
+        ).catch(() => null)
+      : null;
     driver.editor().setRecipe(beforeCurve);
+    const lift = (f: RenderedFrame | null, plane: "red" | "green") =>
+      f && restored ? Math.round((meanOf(f, plane) - meanOf(restored, plane)) * 10) / 10 : null;
     const toneCurve = {
       baselineMeanLuma: baseline ? Math.round(meanLuma(baseline)) : null,
       curvedMeanLuma: curved ? Math.round(meanLuma(curved)) : null,
       renderMs: curved?.frame.renderMs ?? null,
+      redCurveLift: { red: lift(reddened, "red"), green: lift(reddened, "green") },
     };
     const toneCurveOk =
       toneCurve.baselineMeanLuma !== null &&
       toneCurve.curvedMeanLuma !== null &&
-      toneCurve.curvedMeanLuma > toneCurve.baselineMeanLuma + 10;
+      toneCurve.curvedMeanLuma > toneCurve.baselineMeanLuma + 10 &&
+      toneCurve.redCurveLift.red !== null &&
+      toneCurve.redCurveLift.green !== null &&
+      toneCurve.redCurveLift.red > 10 &&
+      Math.abs(toneCurve.redCurveLift.green) < 3;
 
     // Auto level through the real command (ADR 0033): an angle or null, quickly.
     const tLevel = performance.now();

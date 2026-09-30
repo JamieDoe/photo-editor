@@ -149,6 +149,46 @@ fn tangents(p: &[[f32; 2]]) -> [f32; MAX_POINTS] {
     m
 }
 
+/// Red, green and blue curves (ADR 0038), each applied to its channel after the RGB
+/// curve. `None` while a channel's curve is the diagonal.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default, deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct ChannelCurves {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional, type = "Array<[number, number]>"))]
+    pub red: Option<PointCurve>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional, type = "Array<[number, number]>"))]
+    pub green: Option<PointCurve>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional, type = "Array<[number, number]>"))]
+    pub blue: Option<PointCurve>,
+}
+
+impl ChannelCurves {
+    /// Diagonal channels dropped.
+    pub fn sanitized(self) -> Self {
+        let keep = |c: Option<PointCurve>| c.filter(|c| !c.is_identity());
+        Self {
+            red: keep(self.red),
+            green: keep(self.green),
+            blue: keep(self.blue),
+        }
+    }
+
+    /// Every channel is the diagonal.
+    pub fn is_identity(&self) -> bool {
+        let s = self.sanitized();
+        s.red.is_none() && s.green.is_none() && s.blue.is_none()
+    }
+
+    /// The red, green and blue curves, the diagonal where unset.
+    pub fn curves(&self) -> [PointCurve; 3] {
+        [self.red, self.green, self.blue].map(Option::unwrap_or_default)
+    }
+}
+
 impl Serialize for PointCurve {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         self.points().serialize(s)
@@ -243,6 +283,23 @@ mod tests {
             got.iter().zip(want).all(|(g, w)| (g - w).abs() < 1e-5),
             "{got:?}"
         );
+    }
+
+    #[test]
+    fn channel_curves_drop_their_diagonals() {
+        let lift = PointCurve::new(&[[0.0, 0.1], [1.0, 1.0]]);
+        let c = ChannelCurves {
+            red: Some(lift),
+            green: Some(PointCurve::default()),
+            blue: None,
+        };
+        assert_eq!(c.sanitized().green, None);
+        assert!(!c.is_identity());
+        assert_eq!(c.curves()[0], lift);
+        assert!(c.curves()[1].is_identity() && c.curves()[2].is_identity());
+        let json = serde_json::to_string(&c.sanitized()).unwrap();
+        assert_eq!(json, r#"{"red":[[0.0,0.1],[1.0,1.0]]}"#);
+        assert!(ChannelCurves::default().is_identity());
     }
 
     #[test]

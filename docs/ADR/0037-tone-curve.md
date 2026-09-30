@@ -56,8 +56,6 @@ on it and drag to reshape it.
 
 ## Consequences
 
-- Only the RGB (master) curve for now. Per-channel red, green and blue curves would
-  use the same points, stage and graph, with a channel switch the design does not
-  have.
+- Red, green and blue curves followed, with a channel switch (ADR 0038).
 - Lightroom's parametric curve (region sliders) is not built. Highlights, Shadows,
   Whites and Blacks already cover it.

@@ -570,3 +570,20 @@ rounds, machine load about 7:
   channel per pixel.
 - Release self-test, Nikon Z 6: a render with a curve took 5.6 ms. The frame's mean
   luminance rose from 155 to 192.
+
+## 27. Red, green and blue curves (ADR 0038)
+
+Full render of a 1516×1010 frame (default look, no sharpening), median of 40, three
+rounds, machine load about 9:
+
+| Case | ms |
+|---|---|
+| No curve | 1.68–1.88 |
+| RGB curve | 3.19–3.31 |
+| RGB curve and all three channel curves | 3.25–3.38 |
+
+- The channels compose with the RGB curve into one table per channel, about 0.1 ms
+  more.
+- Without channel curves the single shared table is kept.
+- These RGB figures are higher than §26's (2.6–2.9 ms) because the machine was
+  busier.

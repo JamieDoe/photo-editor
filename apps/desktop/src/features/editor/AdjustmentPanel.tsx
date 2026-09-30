@@ -10,6 +10,7 @@ import { PanelSection } from "./PanelSection";
 import { ColourMixerControls } from "./ColourMixerControls";
 import { isAdjustmentKey, mixerEdited, mixerOf } from "./recipe";
 import { Slider } from "./Slider";
+import { curvesEdited } from "./pointCurve";
 import { ToneCurve } from "./ToneCurve";
 import { formatSliderValue } from "./sliderTrack";
 import { formatKelvin, kelvinAt, WHITE_BALANCE_TRACKS } from "./whiteBalance";
@@ -81,7 +82,7 @@ export function AdjustmentPanel({ specs, mixerSpec, histogram, recipe, onChange,
         const curve =
           group === "Light"
             ? {
-                edited: recipe.pointCurve !== undefined,
+                edited: curvesEdited(recipe),
                 before: true,
                 content: <ToneCurve recipe={recipe} onChange={onChange} disabled={disabled} histogram={histogram} />,
               }

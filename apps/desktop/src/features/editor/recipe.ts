@@ -5,7 +5,7 @@ import type { HslShift } from "../../ipc/generated/HslShift";
 
 /** Recipe fields set with sliders (the look is a choice, and the mixer has its own
  *  controls). */
-export type AdjustmentKey = Exclude<keyof EditRecipe, "version" | "look" | "mixer" | "geometry" | "chromaticAberration" | "pointCurve">;
+export type AdjustmentKey = Exclude<keyof EditRecipe, "version" | "look" | "mixer" | "geometry" | "chromaticAberration" | "pointCurve" | "channelCurves">;
 
 const MIXER_BANDS: readonly (keyof ColourMixer)[] = [
   "red",
@@ -75,6 +75,7 @@ export function isIdentity(r: EditRecipe): boolean {
     !mixerEdited(r) &&
     !geometryEdited(r) &&
     r.pointCurve === undefined &&
+    r.channelCurves === undefined &&
     r.look === "standard"
   );
 }

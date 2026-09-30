@@ -54,7 +54,8 @@ Vignette                       gain towards the corners, by frame position (ADR 
 Contrast                       S-curve around mid grey (scene-referred)
 Base look (Standard)           camera-like tone curve: lift, toe, shoulder (ADR 0022)
 Tone curve                     the photographer's points, per channel on display
-                               tones, monotone cubic (ADR 0037)
+                               tones, monotone cubic (ADR 0037); then red, green and
+                               blue curves, one table per channel (ADR 0038)
 Colour mixer                   hue/saturation/luminance per colour band (ADR 0025)
 Colour (vibrance, saturation)  chroma scale around Rec.709 luminance
 Grain                          film grain in frame coordinates, midtones (ADR 0031)

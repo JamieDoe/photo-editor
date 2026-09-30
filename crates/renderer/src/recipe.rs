@@ -33,7 +33,9 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   recipes have none.
 /// - 14: adds the tone curve's points (ADR 0037), written only when shaped; older
 ///   recipes have none.
-pub const RECIPE_VERSION: u32 = 14;
+/// - 15: adds red, green and blue tone curves (ADR 0038), written only when shaped;
+///   older recipes have none.
+pub const RECIPE_VERSION: u32 = 15;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -99,6 +101,11 @@ pub struct EditRecipe {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional, type = "Array<[number, number]>"))]
     pub point_curve: Option<crate::ops::point_curve::PointCurve>,
+    /// Red, green and blue tone curves, after the RGB one. `None` (and omitted from
+    /// the JSON) while all three are the diagonal.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub channel_curves: Option<crate::ops::point_curve::ChannelCurves>,
     /// The base look the adjustments start from.
     pub look: Look,
 }
@@ -128,6 +135,7 @@ impl Default for EditRecipe {
             geometry: None,
             chromatic_aberration: None,
             point_curve: None,
+            channel_curves: None,
             look: Look::Standard,
         }
     }
@@ -180,7 +188,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=14 => Ok(Self {
+            7..=15 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -223,6 +231,10 @@ impl EditRecipe {
             // Kept while on, even if nothing was measured: the toggle stays on.
             chromatic_aberration: self.chromatic_aberration.map(|c| c.sanitized()),
             point_curve: self.point_curve.filter(|c| !c.is_identity()),
+            channel_curves: self
+                .channel_curves
+                .map(|c| c.sanitized())
+                .filter(|c| !c.is_identity()),
             look: self.look,
         }
     }
@@ -274,6 +286,7 @@ impl EditRecipe {
             && s.geometry.is_none()
             && s.chromatic_aberration.is_none()
             && s.point_curve.is_none()
+            && s.channel_curves.is_none()
             && s.look == Look::default()
     }
 }
@@ -317,7 +330,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":14,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":15,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -425,6 +438,43 @@ mod tests {
             EditRecipe::from_json(r#"{"version":10}"#).unwrap().geometry,
             None
         );
+        // Version 14 recipes have no channel curves; a red curve round-trips, all
+        // diagonals are dropped.
+        assert_eq!(
+            EditRecipe::from_json(r#"{"version":14}"#)
+                .unwrap()
+                .channel_curves,
+            None
+        );
+        let red = crate::ops::point_curve::ChannelCurves {
+            red: Some(crate::ops::point_curve::PointCurve::new(&[
+                [0.0, 0.0],
+                [0.5, 0.6],
+                [1.0, 1.0],
+            ])),
+            ..Default::default()
+        };
+        let tinted = EditRecipe {
+            channel_curves: Some(red),
+            ..Default::default()
+        };
+        assert!(
+            tinted
+                .to_json()
+                .contains(r#""channelCurves":{"red":[[0.0,0.0],[0.5,0.6],[1.0,1.0]]}"#)
+        );
+        assert_eq!(
+            EditRecipe::from_json(&tinted.to_json())
+                .unwrap()
+                .channel_curves,
+            Some(red)
+        );
+        assert!(!tinted.is_identity());
+        let flat = EditRecipe {
+            channel_curves: Some(Default::default()),
+            ..Default::default()
+        };
+        assert!(flat.is_identity() && !flat.to_json().contains("channelCurves"));
         // Version 13 recipes have no tone curve; a shaped one round-trips, the
         // diagonal is dropped.
         assert_eq!(

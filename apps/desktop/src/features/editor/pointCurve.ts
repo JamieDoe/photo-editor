@@ -5,7 +5,19 @@
  * sorted by input.
  */
 
+import type { EditRecipe } from "../../ipc/generated/EditRecipe";
+
 export type CurvePoint = [number, number];
+
+/** Which curve the graph edits: the RGB one or a channel's (ADR 0038). */
+export type CurveChannel = "rgb" | "red" | "green" | "blue";
+
+export const CURVE_CHANNELS: ReadonlyArray<{ id: CurveChannel; label: string }> = [
+  { id: "rgb", label: "RGB" },
+  { id: "red", label: "Red" },
+  { id: "green", label: "Green" },
+  { id: "blue", label: "Blue" },
+];
 
 export const DIAGONAL: readonly CurvePoint[] = [
   [0, 0],
@@ -140,4 +152,30 @@ export function resetEnd(points: readonly CurvePoint[], i: number): CurvePoint[]
 /** A display tone as the graph reads it out: 0..255. */
 export function toneValue(v: number): number {
   return Math.round(v * 255);
+}
+
+/** The points of `channel`'s curve in `r` (the diagonal while unset). */
+export function channelPoints(r: EditRecipe, channel: CurveChannel): CurvePoint[] {
+  const points = channel === "rgb" ? r.pointCurve : r.channelCurves?.[channel];
+  return points ? points.map(([x, y]): CurvePoint => [x, y]) : DIAGONAL.map(([x, y]): CurvePoint => [x, y]);
+}
+
+/** `r` with `channel`'s curve set to `points`. A diagonal is left out, as the renderer
+ *  stores it. */
+export function withChannelPoints(r: EditRecipe, channel: CurveChannel, points: CurvePoint[]): EditRecipe {
+  const value = isDiagonal(points) ? undefined : points;
+  if (channel === "rgb") return { ...r, pointCurve: value };
+  const channels = { ...r.channelCurves, [channel]: value };
+  const any = channels.red !== undefined || channels.green !== undefined || channels.blue !== undefined;
+  return { ...r, channelCurves: any ? channels : undefined };
+}
+
+/** Whether `channel`'s curve is shaped. */
+export function channelEdited(r: EditRecipe, channel: CurveChannel): boolean {
+  return !isDiagonal(channelPoints(r, channel));
+}
+
+/** Whether any of the tone curves is shaped. */
+export function curvesEdited(r: EditRecipe): boolean {
+  return CURVE_CHANNELS.some((c) => channelEdited(r, c.id));
 }

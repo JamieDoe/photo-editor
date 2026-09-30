@@ -31,6 +31,9 @@
   --hist-grid-strong: rgb(255 255 255 / 12%);
   --clip-shadows: #7fa8e8;
   --hist-backdrop: rgb(255 255 255 / 6%);
+  --curve-red: #ef6b62;
+  --curve-green: #5fcf85;
+  --curve-blue: #6f9cf5;
   --track-fill: rgb(236 236 239 / 60%);
   --primary-bg: #ededef;
   --primary-bg-hover: #ffffff;
@@ -56,7 +59,7 @@
     --switch-off: rgb(0 0 0 / 16%);
     --hist-red: rgb(220 60 50 / 45%); --hist-green: rgb(40 160 80 / 40%); --hist-blue: rgb(50 100 230 / 45%);
     --hist-luma: rgb(0 0 0 / 50%); --hist-blend: multiply; --hist-grid: rgb(0 0 0 / 5%); --hist-grid-strong: rgb(0 0 0 / 14%);
-    --clip-shadows: #3f6fc0; --hist-backdrop: rgb(0 0 0 / 6%);
+    --clip-shadows: #3f6fc0; --hist-backdrop: rgb(0 0 0 / 6%); --curve-red: #c9392f; --curve-green: #2f9a55; --curve-blue: #3767c9;
     --primary-bg: #16171b; --primary-bg-hover: #000000; --primary-fg: #f8f8f9; --thumb-ring: #ffffff;
     --segment-shadow: 0 1px 2px rgb(0 0 0 / 12%);
     --photo-shadow: 0 20px 60px -20px rgb(0 0 0 / 35%), 0 0 0 1px rgb(0 0 0 / 6%);
@@ -75,7 +78,7 @@
   --switch-off: rgb(0 0 0 / 16%);
   --hist-red: rgb(220 60 50 / 45%); --hist-green: rgb(40 160 80 / 40%); --hist-blue: rgb(50 100 230 / 45%);
   --hist-luma: rgb(0 0 0 / 50%); --hist-blend: multiply; --hist-grid: rgb(0 0 0 / 5%); --hist-grid-strong: rgb(0 0 0 / 14%);
-  --clip-shadows: #3f6fc0; --hist-backdrop: rgb(0 0 0 / 6%);
+  --clip-shadows: #3f6fc0; --hist-backdrop: rgb(0 0 0 / 6%); --curve-red: #c9392f; --curve-green: #2f9a55; --curve-blue: #3767c9;
   --primary-bg: #16171b; --primary-bg-hover: #000000; --primary-fg: #f8f8f9; --thumb-ring: #ffffff;
   --segment-shadow: 0 1px 2px rgb(0 0 0 / 12%);
   --photo-shadow: 0 20px 60px -20px rgb(0 0 0 / 35%), 0 0 0 1px rgb(0 0 0 / 6%);
@@ -434,6 +437,17 @@ button.tone-curve-reset:hover:not(:disabled) { background: transparent; color: v
 .tone-curve { position: relative; height: 120px; border-radius: 8px; background: var(--canvas); border: 1px solid var(--hairline); touch-action: none; }
 .tone-curve.editable { cursor: crosshair; }
 .tone-curve .backdrop { fill: var(--hist-backdrop); }
+.tone-curve .curve.red { stroke: var(--curve-red); }
+.tone-curve .curve.green { stroke: var(--curve-green); }
+.tone-curve .curve.blue { stroke: var(--curve-blue); }
+/* The channel switch (ADR 0038): a swatch per channel, the accent dot when shaped. */
+.curve-channels { align-self: stretch; display: grid; grid-template-columns: repeat(4, 1fr); }
+.curve-channels > label { position: relative; justify-content: center; gap: 6px; }
+.curve-channels > label.edited::after { content: ""; position: absolute; top: 4px; right: 5px; width: 5px; height: 5px; border-radius: 3px; background: var(--accent); }
+.channel-swatch { width: 7px; height: 7px; border-radius: 4px; }
+.channel-swatch.red { background: var(--curve-red); }
+.channel-swatch.green { background: var(--curve-green); }
+.channel-swatch.blue { background: var(--curve-blue); }
 .curve-point { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 1.5px var(--canvas); cursor: grab; }
 .curve-point.active, .curve-point:focus-visible { background: var(--accent); outline: none; box-shadow: 0 0 0 1.5px var(--canvas), 0 0 0 3px var(--accent-soft); }
 .tone-curve svg { position: absolute; inset: 0; width: 100%; height: 100%; }

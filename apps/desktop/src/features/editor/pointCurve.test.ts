@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { neutralRecipe } from "./recipe";
 import {
   DIAGONAL,
+  channelPoints,
+  curvesEdited,
+  withChannelPoints,
   MAX_POINTS,
   curvePath,
   evalCurve,
@@ -64,6 +68,23 @@ describe("tone curve", () => {
     expect(removePoint(S, 1)).toEqual([S[0], S[2], S[3]]);
     expect(removePoint(S, 0)).toEqual(S);
     expect(resetEnd(movePoint(S, 0, 0.1, 0.2), 0)[0]).toEqual([0, 0]);
+  });
+
+  it("keeps each channel's curve, leaving diagonals out", () => {
+    const r = neutralRecipe(15);
+    expect(channelPoints(r, "red")).toEqual(DIAGONAL);
+    const red = withChannelPoints(r, "red", S);
+    expect(red.channelCurves).toEqual({ red: S });
+    expect(red.pointCurve).toBeUndefined();
+    expect(channelPoints(red, "red")).toEqual(S);
+    expect(channelPoints(red, "blue")).toEqual(DIAGONAL);
+    expect(curvesEdited(red)).toBe(true);
+    // Back to the diagonal: the whole field goes.
+    const back = withChannelPoints(red, "red", [...DIAGONAL]);
+    expect(back.channelCurves).toBeUndefined();
+    expect(curvesEdited(back)).toBe(false);
+    // The RGB curve is its own field.
+    expect(withChannelPoints(r, "rgb", S).pointCurve).toEqual(S);
   });
 
   it("finds the point under the pointer", () => {

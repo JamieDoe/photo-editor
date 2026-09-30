@@ -142,6 +142,25 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
             },
         ),
         (
+            "channel_curves_warm",
+            EditRecipe {
+                channel_curves: Some(renderer::ops::point_curve::ChannelCurves {
+                    red: Some(renderer::ops::point_curve::PointCurve::new(&[
+                        [0.0, 0.0],
+                        [0.5, 0.56],
+                        [1.0, 1.0],
+                    ])),
+                    blue: Some(renderer::ops::point_curve::PointCurve::new(&[
+                        [0.0, 0.04],
+                        [0.5, 0.44],
+                        [1.0, 0.96],
+                    ])),
+                    ..Default::default()
+                }),
+                ..r
+            },
+        ),
+        (
             "chromatic_aberration",
             EditRecipe {
                 chromatic_aberration: Some(renderer::ChromaticAberration {
