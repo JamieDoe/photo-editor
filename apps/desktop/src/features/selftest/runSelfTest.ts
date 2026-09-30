@@ -826,6 +826,16 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const saved = await ipc.createPreset("Self-test look", edited);
       await ipc.renamePreset(saved.id, "Self-test renamed");
       const listed = await ipc.listPresets();
+      // Preset files (ADR 0047): out to a file and back, a Lightroom preset (the repo's
+      // fixture), and a missing file, which fails on its own.
+      const dir = config.exportPath.replace(/[^/\\]+$/, "");
+      const presetFile = `${dir}photo-editor-self-test.preset`;
+      const lightroomFile = config.imagePath.replace(/[/\\]local[/\\][^/\\]+$/, "/presets/lightroom-sample.xmp");
+      const written = await ipc.exportPreset(saved.id, presetFile);
+      const imports = await ipc.importPresets([presetFile, lightroomFile, `${dir}missing.xmp`]);
+      const roundTrip = imports.imported.find((i) => !i.fromLightroom);
+      const fromLightroom = imports.imported.find((i) => i.fromLightroom);
+      for (const i of imports.imported) await ipc.deletePreset(i.preset.id);
       await ipc.deletePreset(saved.id);
       const after = await ipc.listPresets();
       return {
@@ -840,6 +850,17 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         savedLookOnly: saved.recipe.exposure === 0 && saved.recipe.contrast === 40,
         renamed: listed.some((p) => p.id === saved.id && p.name === "Self-test renamed"),
         deleted: !after.some((p) => p.id === saved.id) && after.length === listed.length - 1,
+        files: {
+          written: written === presetFile,
+          roundTrip:
+            roundTrip !== undefined &&
+            roundTrip.preset.name === "Self-test renamed" &&
+            JSON.stringify(roundTrip.preset.recipe) === JSON.stringify(listed.find((p) => p.id === saved.id)?.recipe),
+          lightroom: fromLightroom
+            ? { name: fromLightroom.preset.name, contrast: fromLightroom.preset.recipe.contrast, leftOut: fromLightroom.leftOut }
+            : null,
+          failed: imports.failed.map((f) => f.file),
+        },
       };
     })();
     const presetOk =
@@ -853,7 +874,13 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       presetCheck.channelSpread.mono < 1 &&
       presetCheck.savedLookOnly &&
       presetCheck.renamed &&
-      presetCheck.deleted;
+      presetCheck.deleted &&
+      presetCheck.files.written &&
+      presetCheck.files.roundTrip &&
+      presetCheck.files.lightroom?.name === "Soft & Warm" &&
+      presetCheck.files.lightroom.contrast === 18 &&
+      presetCheck.files.lightroom.leftOut.includes("Color Grading") &&
+      presetCheck.files.failed.join() === "missing.xmp";
 
     // Shapes combined (ADR 0043): -1 EV over the top, less a hard circle at its
     // middle. Inside the circle unchanged, beside it darker.

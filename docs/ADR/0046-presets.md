@@ -75,7 +75,8 @@ everything else.
      follow their button when something scrolls, and close on a click elsewhere or
      Escape.
 7. **Not yet:**
-   - importing and exporting presets as files (the next milestone);
+   - importing and exporting presets as files (done in ADR 0047, which also imports
+     Lightroom presets);
    - the design's **Auto** button (an automatic starting point), which is a separate
      feature.
 8. **Cost** (release self-test, Nikon Z 6, machine load 6–8): each preview renders in

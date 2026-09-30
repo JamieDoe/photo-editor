@@ -19,6 +19,7 @@ import type { ExportRequestDto } from "./generated/ExportRequestDto";
 import type { ExportStartedDto } from "./generated/ExportStartedDto";
 import type { FolderListingDto } from "./generated/FolderListingDto";
 import type { PresetDto } from "./generated/PresetDto";
+import type { PresetImportDto } from "./generated/PresetImportDto";
 import type { ImageSummaryDto } from "./generated/ImageSummaryDto";
 import type { IndexEvent } from "./generated/IndexEvent";
 import type { LibraryStatusDto } from "./generated/LibraryStatusDto";
@@ -96,6 +97,13 @@ export const renamePreset = (id: string, name: string) => invoke<null>("rename_p
 /** Replaces a saved preset's look; resolves to the look stored. */
 export const updatePreset = (id: string, recipe: EditRecipe) => invoke<EditRecipe>("update_preset", { id, recipe });
 export const deletePreset = (id: string) => invoke<null>("delete_preset", { id });
+/** Saves a preset as a file the photographer chooses (`destination` is for the
+ *  self-test only); resolves to the path, or null if they cancelled. */
+export const exportPreset = (id: string, destination: string | null = null) =>
+  invoke<string | null>("export_preset", { id, destination });
+/** Imports preset files the photographer chooses (the app's own, or Lightroom .xmp;
+ *  `paths` is for the self-test only). */
+export const importPresets = (paths: string[] | null = null) => invoke<PresetImportDto>("import_presets", { paths });
 /** Auto level: the straighten angle that levels the open photo, or null (no clear horizon). */
 export const autoLevel = (imageId: number) => invoke<number | null>("auto_level", { imageId });
 /** Remove chromatic aberration: the correction measured on the open photo, or null (too

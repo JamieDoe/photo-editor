@@ -161,6 +161,35 @@ impl From<app_core::Preset> for PresetDto {
     }
 }
 
+/// What importing preset files did (ADR 0047).
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PresetImportDto {
+    pub imported: Vec<ImportedPresetDto>,
+    /// Files that could not be imported, and why.
+    pub failed: Vec<PresetImportFailureDto>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ImportedPresetDto {
+    pub preset: PresetDto,
+    pub from_lightroom: bool,
+    /// Lightroom settings this app has no counterpart for, by Lightroom's names.
+    pub left_out: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PresetImportFailureDto {
+    /// The file's name.
+    pub file: String,
+    pub message: String,
+}
+
 /// The preset a `PresetDto::id` names.
 pub fn preset_ref(id: &str) -> Option<app_core::PresetRef> {
     if let Some(name) = id.strip_prefix("builtin:") {

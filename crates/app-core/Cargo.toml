@@ -23,6 +23,7 @@ jobs.workspace = true
 export = { path = "../export", default-features = false }
 rayon.workspace = true
 log.workspace = true
+quick-xml.workspace = true
 
 [dev-dependencies]
 fixtures.workspace = true

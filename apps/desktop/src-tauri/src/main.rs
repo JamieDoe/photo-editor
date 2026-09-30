@@ -93,6 +93,8 @@ fn main() {
             commands::presets::rename_preset,
             commands::presets::update_preset,
             commands::presets::delete_preset,
+            commands::presets::export_preset,
+            commands::presets::import_presets,
             commands::backups::library_backups,
             commands::backups::back_up_library,
             commands::backups::show_backups,

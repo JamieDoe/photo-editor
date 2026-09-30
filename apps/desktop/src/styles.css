@@ -632,7 +632,8 @@ select.mask-shape-mode { height: 24px; padding: 0 6px; border-radius: 6px; backg
 /* Presets (ADR 0046), as in the design: a strip under the histogram of 64 x 44
    previews, the applied one ringed in the accent colour. */
 .presets { flex-shrink: 0; padding: 0 0 12px; border-top: 1px solid var(--hairline); }
-.presets-header { height: 44px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; }
+.presets-header { height: 44px; padding: 0 12px 0 16px; display: flex; align-items: center; gap: 2px; }
+.presets-title { flex: 1 1 auto; }
 .presets-title { font-size: 13px; font-weight: 500; }
 .preset-strip { display: flex; gap: 8px; padding: 2px 16px 2px; overflow-x: auto; scrollbar-width: none; }
 .preset-strip::-webkit-scrollbar { display: none; }
@@ -670,3 +671,10 @@ button.popover-item { height: 32px; padding: 0 10px; border-radius: 8px; backgro
 button.popover-item .icon { color: var(--text-2); }
 button.popover-item:hover:not(:disabled) { background: var(--hover-strong); }
 button.popover-item.danger, button.popover-item.danger .icon { color: var(--danger); }
+.popover-icon { display: flex; align-items: center; justify-content: center; color: var(--text-2); background: var(--fill-quiet); }
+.popover-text.small { font-size: 11.5px; color: var(--text-3); }
+.import-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; }
+.import-list li { display: flex; flex-direction: column; gap: 2px; }
+.import-name { font-size: 12.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.import-note { font-size: 11.5px; line-height: 1.35; color: var(--text-3); }
+.import-list li.failed .import-name { color: var(--danger); }
