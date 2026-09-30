@@ -237,6 +237,28 @@ pub fn read_xmp(xml: &str) -> Result<LightroomPreset, LightroomError> {
             }
         }
     }
+    // Black and white: Lightroom hides HSL and mixes grey from each colour's
+    // brightness (B&W mix). The mixer's luminance before Saturation -100 does the same
+    // here (ADR 0051), so the B&W mix becomes it, and HSL is dropped as Lightroom
+    // ignores it.
+    let grayscale = s.is("ConvertToGrayscale", "True");
+    if grayscale {
+        mixer = ColourMixer::default();
+        for (band, shift) in [
+            ("Red", &mut mixer.red),
+            ("Orange", &mut mixer.orange),
+            ("Yellow", &mut mixer.yellow),
+            ("Green", &mut mixer.green),
+            ("Aqua", &mut mixer.aqua),
+            ("Blue", &mut mixer.blue),
+            ("Purple", &mut mixer.purple),
+            ("Magenta", &mut mixer.magenta),
+        ] {
+            if let Some(v) = s.num(&format!("GrayMixer{band}")) {
+                shift.luminance = v;
+            }
+        }
+    }
     if mixer != ColourMixer::default() {
         r.mixer = Some(mixer);
     }
@@ -288,13 +310,6 @@ pub fn read_xmp(xml: &str) -> Result<LightroomPreset, LightroomError> {
         .iter()
         .any(|k| s.set(k)),
         "Color Grading",
-    );
-    note(
-        s.is("ConvertToGrayscale", "True")
-            && s.values
-                .keys()
-                .any(|k| k.starts_with("GrayMixer") && s.set(k)),
-        "B&W mix",
     );
     note(
         [
@@ -432,7 +447,9 @@ mod tests {
         let p = read_xmp(xmp).unwrap();
         assert_eq!((p.recipe.saturation, p.recipe.contrast), (-100.0, 25.0));
         assert_eq!(p.name, None);
-        assert_eq!(p.left_out, ["B&W mix", "Profile"]);
+        assert_eq!(p.left_out, ["Profile"]);
+        // The B&W mix is the mixer's luminance (ADR 0051).
+        assert_eq!(p.recipe.mixer.unwrap().red.luminance, 20.0);
         // The light in kelvin comes across as set (ADR 0051).
         let wb = p.recipe.white_balance.unwrap();
         assert_eq!((wb.kelvin, wb.tint), (5500.0, 0.0));

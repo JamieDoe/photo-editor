@@ -26,10 +26,14 @@ export function ColourMixerControls({
   mixer,
   disabled,
   onChange,
+  blackAndWhite = false,
 }: {
   spec: MixerSpec;
   mixer: ColourMixer;
   disabled: boolean;
+  /** The photo is black and white (Saturation -100): Luminance sets each colour's grey,
+   *  as a B&W mix does (ADR 0051). */
+  blackAndWhite?: boolean;
   onChange: (m: ColourMixer) => void;
 }) {
   // The design opens on Blues.
@@ -41,9 +45,10 @@ export function ColourMixerControls({
   return (
     <>
       <div className="mixer-head">
-        <span className="mixer-title">Colour mixer</span>
+        <span className="mixer-title">{blackAndWhite ? "B&W mix" : "Colour mixer"}</span>
         <span className="mixer-band">{band.label}</span>
       </div>
+      {blackAndWhite && <p className="mixer-hint">Luminance sets how light each colour turns in black and white.</p>}
       <div
         className="mixer-dots"
         role="radiogroup"

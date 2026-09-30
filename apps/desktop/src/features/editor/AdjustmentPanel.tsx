@@ -105,6 +105,7 @@ export function AdjustmentPanel({ specs, mixerSpec, histogram, recipe, onChange,
                   <ColourMixerControls
                     spec={mixerSpec}
                     mixer={mixerOf(recipe)}
+                    blackAndWhite={recipe.saturation <= -100}
                     disabled={disabled}
                     onChange={(m) => onChange({ ...recipe, mixer: m })}
                   />

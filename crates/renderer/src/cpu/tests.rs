@@ -271,6 +271,56 @@ fn matches_scalar_reference_for_all_stages() {
 }
 
 #[test]
+fn the_colour_mixer_is_the_black_and_white_mix() {
+    // Red and blue patches side by side, made black and white. Brightening reds in the
+    // mixer lightens the red patch's grey and leaves the blue one (ADR 0051: a
+    // Lightroom preset's B&W mix maps onto the mixer's luminance).
+    let (w, h) = (8u32, 2u32);
+    let px = |x: u32| {
+        if x < w / 2 {
+            [0.40f32, 0.06, 0.05]
+        } else {
+            [0.05, 0.08, 0.40]
+        }
+    };
+    let data: Vec<u16> = (0..w * h)
+        .flat_map(|i| px(i % w).map(|v| (v * 65535.0) as u16))
+        .collect();
+    let img = LinearImage::new(w, h, data).unwrap();
+    let mono = EditRecipe {
+        saturation: -100.0,
+        sharpening: 0.0,
+        ..Default::default()
+    };
+    let redder = EditRecipe {
+        mixer: Some(crate::ColourMixer {
+            red: crate::HslShift {
+                luminance: 60.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+        ..mono.clone()
+    };
+    let (a, b) = (render(&mono, &img), render(&redder, &img));
+    let grey = |o: &OutputImage, x: usize| {
+        let p = &o.data()[x * 3..x * 3 + 3];
+        assert!(
+            p[0].abs_diff(p[1]) <= 1 && p[1].abs_diff(p[2]) <= 1,
+            "{p:?}"
+        );
+        i32::from(p[0])
+    };
+    assert!(
+        grey(&b, 1) > grey(&a, 1) + 10,
+        "red: {} -> {}",
+        grey(&a, 1),
+        grey(&b, 1)
+    );
+    assert!((grey(&b, 6) - grey(&a, 6)).abs() <= 2, "blue moved");
+}
+
+#[test]
 fn identity_reproduces_display_referred_source() {
     // An 8-bit sRGB source, linearised, must come back unchanged with no edits.
     let table = color::srgb8_to_linear16_table();
