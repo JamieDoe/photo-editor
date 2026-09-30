@@ -9,18 +9,25 @@ use tauri_plugin_dialog::DialogExt;
 use super::{IpcResult, wait};
 use crate::AppState;
 use crate::ipc::{
-    FRAME_FLAG_CACHE_HIT, FRAME_HEADER_BYTES, ImageSummaryDto, IpcError, PreviewRequestDto,
+    FRAME_FLAG_CACHE_HIT, FRAME_FLAG_HISTOGRAM, FRAME_HEADER_BYTES, ImageSummaryDto, IpcError,
+    PreviewRequestDto,
 };
 
 /// Encodes a frame in the binary layout documented on [`FRAME_HEADER_BYTES`].
 fn frame_bytes(
     img: &OutputImage,
     level: u32,
-    flags: u32,
+    mut flags: u32,
     ms: f64,
     full_size: (u32, u32),
+    histogram: Option<&renderer::Histogram>,
 ) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(FRAME_HEADER_BYTES + img.byte_size());
+    if histogram.is_some() {
+        flags |= FRAME_FLAG_HISTOGRAM;
+    }
+    let mut bytes = Vec::with_capacity(
+        FRAME_HEADER_BYTES + renderer::histogram::ENCODED_BYTES + img.byte_size(),
+    );
     bytes.extend_from_slice(&img.width().to_le_bytes());
     bytes.extend_from_slice(&img.height().to_le_bytes());
     bytes.extend_from_slice(&level.to_le_bytes());
@@ -28,6 +35,9 @@ fn frame_bytes(
     bytes.extend_from_slice(&(ms as f32).to_le_bytes());
     bytes.extend_from_slice(&full_size.0.to_le_bytes());
     bytes.extend_from_slice(&full_size.1.to_le_bytes());
+    if let Some(h) = histogram {
+        h.write_le(&mut bytes);
+    }
     bytes.extend_from_slice(img.data());
     bytes
 }
@@ -142,5 +152,6 @@ pub async fn render_preview(
         flags,
         frame.render_ms,
         frame.full_size,
+        frame.histogram.as_deref(),
     )))
 }

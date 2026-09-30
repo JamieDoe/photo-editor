@@ -139,7 +139,8 @@ slider change ─► setRecipe ─► PreviewScheduler (≤ 1 request per animat
                miss ─► job on interactive lane, supersede key "viewer-preview"
                         (cancels the previous render) ─► CpuRenderer ─► cache insert
   ◄─ binary frame: 28-byte header (incl. the full-resolution output size after crop,
-     which the viewer's box follows) + RGBA8 pixels
+     which the viewer's box follows) + the frame's histogram (4 KB, ADR 0036)
+     + RGBA8 pixels
   ─► putImageData on a canvas (no pixel processing in JS)
 ... 180 ms after the last change: one "detail" render at viewport resolution
 ```
@@ -160,10 +161,10 @@ UI "Export…" ─► export_image (Rust shows save dialog, validates destinatio
   adjustment ranges come from `renderer`, so UI sliders are built from engine specs,
   not hard-coded ranges.
 - Preview frames bypass JSON: `render_preview` returns a `tauri::ipc::Response` with a
-  fixed 20-byte little-endian header (`src-tauri/src/ipc.rs`, mirrored in
-  `src/ipc/frame.ts`) followed by RGBA8 pixels. The UI wraps the buffer in an
-  `ImageData` view without copying. The open commands stream the embedded preview in
-  the same format over a `tauri::ipc::Channel` (flag bit 1), before they return.
+  fixed 28-byte little-endian header (`src-tauri/src/ipc.rs`, mirrored in
+  `src/ipc/frame.ts`), the histogram when flagged (viewer frames), then RGBA8 pixels.
+  The UI wraps the pixels in an `ImageData` view without copying, and reads the
+  histogram's 4 KB of counts.
 - Errors cross IPC as `{ kind, message }`. `message` is photographer-facing; technical
   detail is logged on the Rust side. `kind: "cancelled"` means superseded and is
   silently ignored by the UI.

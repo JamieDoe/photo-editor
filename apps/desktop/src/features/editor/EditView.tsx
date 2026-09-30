@@ -12,6 +12,7 @@ import { geometryEdited, isIdentity } from "./recipe";
 import { AdjustmentPanel } from "./AdjustmentPanel";
 import { CropOverlay, CropToolbar, GeometryControls, useCropTool } from "./CropTool";
 import { ChromaticAberrationToggle } from "./LensControls";
+import { Histogram } from "./Histogram";
 import { PanelSection } from "./PanelSection";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
@@ -141,9 +142,15 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
         </div>
       </div>
       <aside className="panel-right" aria-label="Adjustments">
-        <div className={exif.length > 0 ? "panel-exif" : "panel-exif empty"}>
-          {exif.length > 0 ? exif.map((x) => <span key={x}>{x}</span>) : image ? "No exposure details" : ""}
-        </div>
+        <Histogram
+          histogram={image && editor.displayed?.imageId === image.id ? editor.displayed.frame.histogram : null}
+          specs={info?.adjustments ?? []}
+          recipe={recipe}
+          onChange={editor.setRecipe}
+          disabled={!image}
+          details={exif}
+          emptyDetails={image ? "No exposure details" : ""}
+        />
         <div className="panel-scroll scroll">
           {info && recipe && (
             <AdjustmentPanel

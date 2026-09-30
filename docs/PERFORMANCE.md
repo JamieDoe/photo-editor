@@ -540,3 +540,18 @@ machine load 5–7:
   - Ricoh GR III: 0.7 px;
   - synthetic chart: 0.0 px.
 
+
+## 25. Histogram (ADR 0036)
+
+`renderer::Histogram::of` on an RGBA8 frame, median of 50, three rounds, machine
+load about 4:
+
+| Frame | ms |
+|---|---|
+| 1516×1010 (interactive) | 0.37–0.52 |
+| 3032×2020 (detail) | 1.15–1.20 |
+
+- It is computed in the render job (and on cache hits), not on the UI thread.
+- Each frame gains 4 KB.
+- Release self-test, Nikon Z 6: all 162 viewer frames carried a histogram that counted
+  every pixel. The interactive render median was 30 ms, as before (§22).

@@ -80,19 +80,28 @@ function mockListing(path: string) {
 }
 
 function placeholderFrame(w: number, h: number): ArrayBuffer {
-  const buf = new ArrayBuffer(28 + w * h * 4);
+  // Header, histogram (flag 2: 4 planes of 256 u32), pixels.
+  const hist = 4 * 256 * 4;
+  const buf = new ArrayBuffer(28 + hist + w * h * 4);
   const v = new DataView(buf);
   v.setUint32(0, w, true);
   v.setUint32(4, h, true);
   v.setUint32(8, 1, true);
+  v.setUint32(12, 2, true);
   v.setFloat32(16, 2.1, true);
   v.setUint32(20, w * 4, true);
   v.setUint32(24, h * 4, true);
-  const px = new Uint8Array(buf, 28);
+  const px = new Uint8Array(buf, 28 + hist);
+  const counts = new Uint32Array(4 * 256);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = (y * w + x) * 4;
     px[i] = (x * 255) / w; px[i + 1] = (y * 255) / h; px[i + 2] = 128; px[i + 3] = 255;
+    counts[px[i]!]!++;
+    counts[256 + px[i + 1]!]!++;
+    counts[512 + px[i + 2]!]!++;
+    counts[768 + ((54 * px[i]! + 183 * px[i + 1]! + 19 * px[i + 2]! + 128) >> 8)]!++;
   }
+  counts.forEach((n, k) => v.setUint32(28 + k * 4, n, true));
   return buf;
 }
 

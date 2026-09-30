@@ -66,6 +66,8 @@ pub struct PreviewFrame {
     /// The size this recipe's output has at full resolution (after crop), so the
     /// viewer keeps one exact shape for all of its renders.
     pub full_size: (u32, u32),
+    /// The frame's histogram (ADR 0036), for viewer frames; `None` for thumbnails.
+    pub histogram: Option<Arc<renderer::Histogram>>,
 }
 
 #[derive(Debug, Clone)]

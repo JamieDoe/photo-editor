@@ -412,6 +412,13 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       renderMs: caFrame?.frame.renderMs ?? null,
     };
     const chromaticAberrationOk = measured !== undefined && caMs < 3000 && (measured === null || caFrame !== null);
+    // Every viewer frame carries its histogram (ADR 0036), counting each pixel once.
+    const histogramChecked = frames.map((f) => {
+      const h = f.frame.histogram;
+      return h !== null && h.luma.reduce((a, b) => a + b, 0) === f.frame.width * f.frame.height;
+    });
+    const histogram = { frames: frames.length, withHistogram: histogramChecked.filter(Boolean).length };
+    const histogramOk = frames.length > 0 && histogramChecked.every(Boolean);
 
     const stats = driver.editor().schedulerStats();
     const checks = {
@@ -430,6 +437,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       crop: cropOk,
       perspective: perspectiveOk,
       chromaticAberration: chromaticAberrationOk,
+      histogram: histogramOk,
       autoLevel: autoLevelOk,
     };
     // Named so that a failing run explains itself.
@@ -452,6 +460,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       crop,
       perspective,
       chromaticAberration,
+      histogram,
       autoLevel,
       quitGuard,
       indexing,
