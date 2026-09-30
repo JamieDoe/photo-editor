@@ -103,6 +103,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Histogram | Dragging adjusts Blacks, Shadows, Exposure, Highlights or Whites by zone; hovering tints the zone and shows its name and value in place of the exposure details; multiply blending on the light theme | Requested (Lightroom's behaviour); the readout says what a drag will change; the design is dark only |
 | Remove chromatic aberration | The switch's subtitle says "Measuring…" and then the result, for three seconds | Turning it on measures the photo; the design has no in-progress state |
 | Settings | Whole screen (grouped cards, segmented controls) | The design has no settings; built from its tokens and components |
+| Undo and redo (ADR 0044) | Two icon buttons in the Edit header, between the save status and the photo counter; ⌘Z and ⇧⌘Z | The design has no undo control; placed with the edit's other status and actions |
 
 ### Not built yet (and so not shown)
 

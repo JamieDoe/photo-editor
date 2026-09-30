@@ -7,6 +7,7 @@ import type { EngineInfoDto } from "../../ipc/generated/EngineInfoDto";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { ImageSummaryDto } from "../../ipc/generated/ImageSummaryDto";
 import { Autosaver, type SaveState } from "./autosave";
+import { EditHistory, describeChange } from "./history";
 import { PreviewScheduler, type FrameInfo, type SchedulerStats } from "./previewScheduler";
 import { defaultRecipe } from "./recipe";
 
@@ -51,6 +52,14 @@ export function useEditor() {
   /** The latest completed save, so the Library can mark the photo edited or not. */
   const [lastSaved, setLastSaved] = useState<{ path: string; edited: boolean } | null>(null);
   const autosaverRef = useRef<Autosaver | null>(null);
+  /** Undo history per photo path, for this session (ADR 0044); the open photo's is
+   *  `historyRef`. Each remembers the recipe it ends at, to tell whether it still
+   *  applies when the photo is opened again. */
+  const historiesRef = useRef(new Map<string, { history: EditHistory; recipe: EditRecipe }>());
+  const historyRef = useRef<{ history: EditHistory; recipe: EditRecipe } | null>(null);
+  /** What Undo and Redo would change ("Exposure"), or null. */
+  const [undoLabel, setUndoLabel] = useState<string | null>(null);
+  const [redoLabel, setRedoLabel] = useState<string | null>(null);
 
   const imageRef = useRef<ImageSummaryDto | null>(null);
   const recipeRef = useRef<EditRecipe | null>(null);
@@ -111,6 +120,27 @@ export function useEditor() {
     };
   }, []);
 
+  // A pointer held down (a drag, a brush stroke) makes its changes one step. It ends
+  // after the pointer-up's own handlers, which may make the last change.
+  useEffect(() => {
+    const begin = () => historyRef.current?.history.beginGesture();
+    const end = () => window.setTimeout(() => historyRef.current?.history.endGesture(), 0);
+    window.addEventListener("pointerdown", begin, true);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    return () => {
+      window.removeEventListener("pointerdown", begin, true);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+    };
+  }, []);
+
+  const syncHistoryLabels = () => {
+    const h = historyRef.current?.history;
+    setUndoLabel(h?.undoLabel ?? null);
+    setRedoLabel(h?.redoLabel ?? null);
+  };
+
   function show(d: DisplayedFrame) {
     setDisplayed(d);
     listenersRef.current.forEach((l) => l(d));
@@ -149,15 +179,42 @@ export function useEditor() {
     if (imageRef.current && recipeRef.current) schedulerRef.current?.request(toRender(recipeRef.current));
   }, []);
 
-  /** The photographer changed the edit: show it, and save it if the photo is in the library. */
-  const setRecipe = useCallback(
+  /** Shows `r` as the photographer's edit, and saves it if the photo is in the library. */
+  const commitRecipe = useCallback(
     (r: EditRecipe) => {
       applyRecipe(r);
+      if (historyRef.current) historyRef.current.recipe = r;
       const img = imageRef.current;
       if (img?.editSaving === "library") autosaverRef.current?.schedule(img.path, r);
     },
     [applyRecipe],
   );
+
+  /** The photographer changed the edit: a step in its history. */
+  const setRecipe = useCallback(
+    (r: EditRecipe) => {
+      const before = recipeRef.current;
+      if (before && historyRef.current) historyRef.current.history.record(before, r, performance.now());
+      commitRecipe(r);
+      syncHistoryLabels();
+    },
+    [commitRecipe],
+  );
+
+  /** Undoes (-1) or redoes (+1) the last step of the open photo's edit. */
+  const stepHistory = useCallback(
+    (direction: -1 | 1) => {
+      const h = historyRef.current?.history;
+      const current = recipeRef.current;
+      if (!h || !current) return;
+      const next = direction < 0 ? h.undo(current) : h.redo(current);
+      if (next) commitRecipe(next);
+      syncHistoryLabels();
+    },
+    [commitRecipe],
+  );
+  const undo = useCallback(() => stepHistory(-1), [stepHistory]);
+  const redo = useCallback(() => stepHistory(1), [stepHistory]);
 
   const adopt = useCallback(
     (summary: ImageSummaryDto | null) => {
@@ -166,12 +223,19 @@ export function useEditor() {
       setImage(summary);
       setError(null);
       // The saved edit (if any) is the starting point, so the first render shows it.
-      applyRecipe(summary.savedRecipe ?? defaultRecipe(info.recipeVersion, info.adjustments));
+      const start = summary.savedRecipe ?? defaultRecipe(info.recipeVersion, info.adjustments);
+      applyRecipe(start);
+      historyRef.current = historyFor(summary.path, start);
+      syncHistoryLabels();
       setSaveState(summary.editSaving === "library" ? "saved" : null);
       return summary;
     },
     [info, applyRecipe],
   );
+
+  /** See `historyForPhoto`; steps are named after the sliders' labels. */
+  const historyFor = (path: string, start: EditRecipe) =>
+    historyForPhoto(historiesRef.current, path, start, new Map((info?.adjustments ?? []).map((a) => [a.key, a.label])));
 
   /**
    * Opens a photo. The current photo stays on screen (the viewer dims it) until the
@@ -246,6 +310,11 @@ export function useEditor() {
     busy,
     exportState,
     setRecipe,
+    /** Undo and redo (ADR 0044), and what each would change (null: nothing). */
+    undo,
+    redo,
+    undoLabel,
+    redoLabel,
     resetRecipe: () => info && setRecipe(defaultRecipe(info.recipeVersion, info.adjustments)),
     saveState,
     lastSaved,
@@ -262,3 +331,28 @@ export function useEditor() {
 }
 
 export type Editor = ReturnType<typeof useEditor>;
+
+/** Photos whose history is kept for the session: the least recently opened go. */
+const MAX_HISTORIES = 30;
+
+/**
+ * The open photo's history, continuing the one from when it was last open this
+ * session if the photo's edit is still what that history ended at (otherwise the edit
+ * changed elsewhere, and history starts again from here).
+ */
+function historyForPhoto(
+  histories: Map<string, { history: EditHistory; recipe: EditRecipe }>,
+  path: string,
+  start: EditRecipe,
+  labels: ReadonlyMap<string, string>,
+): { history: EditHistory; recipe: EditRecipe } {
+  const kept = histories.get(path);
+  histories.delete(path);
+  const entry =
+    kept && JSON.stringify(kept.recipe) === JSON.stringify(start)
+      ? kept
+      : { history: new EditHistory((keys) => describeChange(keys, labels)), recipe: start };
+  histories.set(path, entry);
+  if (histories.size > MAX_HISTORIES) histories.delete(histories.keys().next().value!);
+  return entry;
+}
