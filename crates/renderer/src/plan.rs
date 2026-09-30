@@ -145,7 +145,7 @@ impl RenderPlan {
         let local: Vec<LocalMask> = r
             .masks
             .iter()
-            .filter(|m| !m.adjustments.is_identity())
+            .filter(|m| !m.hidden && !m.adjustments.is_identity())
             .map(|m| {
                 let a = m.adjustments;
                 let warmth = if a.warmth == 0.0 {

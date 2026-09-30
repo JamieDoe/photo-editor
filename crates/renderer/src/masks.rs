@@ -26,6 +26,10 @@ pub struct Mask {
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
     pub invert: bool,
+    /// Kept but not applied: the photographer switched it off to compare.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
+    pub hidden: bool,
     #[serde(default)]
     pub adjustments: LocalAdjustments,
 }
@@ -136,6 +140,7 @@ impl Mask {
             id: self.id,
             shape: self.shape.sanitized(),
             invert: self.invert,
+            hidden: self.hidden,
             adjustments: self.adjustments.sanitized(),
         }
     }
@@ -505,6 +510,7 @@ mod tests {
     fn serialises_with_its_kind() {
         let m = Mask {
             id: 3,
+            hidden: false,
             shape: linear([0.5, 0.1], [0.5, 0.6]),
             invert: false,
             adjustments: LocalAdjustments {
@@ -518,5 +524,14 @@ mod tests {
             r#"{"id":3,"shape":{"kind":"linear","start":[0.5,0.1],"end":[0.5,0.6]},"adjustments":{"exposure":-0.5,"warmth":0.0,"clarity":0.0}}"#
         );
         assert_eq!(serde_json::from_str::<Mask>(&json).unwrap(), m);
+        // Inverted or hidden masks say so; others leave the flags out.
+        let flagged = Mask {
+            invert: true,
+            hidden: true,
+            ..m
+        };
+        let json = serde_json::to_string(&flagged).unwrap();
+        assert!(json.contains(r#""invert":true,"hidden":true"#), "{json}");
+        assert_eq!(serde_json::from_str::<Mask>(&json).unwrap(), flagged);
     }
 }

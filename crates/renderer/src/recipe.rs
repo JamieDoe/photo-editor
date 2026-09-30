@@ -39,7 +39,7 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   upright.
 /// - 17: adds masks (ADR 0040), written only when there are some; older recipes have
 ///   none.
-/// - 18: adds radial masks and inverted masks (ADR 0041).
+/// - 18: adds radial masks, and inverted and hidden masks (ADR 0041).
 pub const RECIPE_VERSION: u32 = 18;
 
 /// A non-destructive edit: parameters only, never pixels.
@@ -467,6 +467,7 @@ mod tests {
         let masked = EditRecipe {
             masks: vec![crate::masks::Mask {
                 id: 7,
+                hidden: false,
                 invert: true,
                 shape: crate::masks::MaskShape::Linear {
                     start: [0.5, 0.1],

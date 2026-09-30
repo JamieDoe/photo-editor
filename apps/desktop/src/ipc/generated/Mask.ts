@@ -13,4 +13,8 @@ id: number, shape: MaskShape,
 /**
  * Adjust outside the shape instead of inside.
  */
-invert?: boolean, adjustments: LocalAdjustments, };
+invert?: boolean, 
+/**
+ * Kept but not applied: the photographer switched it off to compare.
+ */
+hidden?: boolean, adjustments: LocalAdjustments, };

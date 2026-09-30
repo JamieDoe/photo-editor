@@ -85,6 +85,8 @@ export function useMaskTool(opts: {
       setOpen(true);
     },
     remove: (id: number) => commit(masks.filter((m) => m.id !== id)),
+    /** Hides a mask's effect, or shows it again; it stays in the list either way. */
+    toggleHidden: (id: number) => commit(updateMask(masks, id, (m) => ({ ...m, hidden: m.hidden ? undefined : true }))),
     setShape: (id: number, shape: MaskShape) => commit(updateMask(masks, id, (m) => ({ ...m, shape }))),
     setAdjustment: (key: keyof LocalAdjustments, value: number) => {
       if (active) commit(setAdjustment(masks, active.id, key, value));
@@ -242,7 +244,7 @@ function LinearGuides({ tool, mask, space, boxRef, shape }: GuideProps<Linear>) 
             ))}
           </linearGradient>
         </defs>
-        {tool.overlay && <rect width={W} height={H} fill={`url(#${gradientId})`} />}
+        {tool.overlay && !mask.hidden && <rect width={W} height={H} fill={`url(#${gradientId})`} />}
         <line className="mask-line dashed" {...line(s)} />
         <line className="mask-line" {...line(c)} />
         <line className="mask-line dashed" {...line(e)} />
@@ -309,7 +311,7 @@ function RadialGuides({ tool, mask, space, boxRef, shape }: GuideProps<Radial>) 
             ))}
           </radialGradient>
         </defs>
-        {tool.overlay && <rect width={W} height={H} fill={`url(#${gradientId})`} />}
+        {tool.overlay && !mask.hidden && <rect width={W} height={H} fill={`url(#${gradientId})`} />}
         {inner > 0.02 && <ellipse className="mask-line faint" {...ellipse(inner)} />}
         <ellipse className="mask-line dashed" {...ellipse(1)} />
       </svg>
@@ -340,7 +342,13 @@ export function MaskToolbar({ tool }: { tool: MaskTool }) {
   return (
     <div className="photo-toolbar mask-toolbar" role="toolbar" aria-label="Masks">
       {tool.masks.map((m) => (
-        <button key={m.id} className="mask-chip" aria-pressed={tool.active?.id === m.id} onClick={() => tool.pick(m.id)}>
+        <button
+          key={m.id}
+          className={m.hidden ? "mask-chip hidden" : "mask-chip"}
+          aria-pressed={tool.active?.id === m.id}
+          title={m.hidden ? "Hidden" : undefined}
+          onClick={() => tool.pick(m.id)}
+        >
           <span className="mask-dot" style={{ background: MASK_KINDS[m.shape.kind].dot }} />
           {maskName(tool.masks, m)}
         </button>

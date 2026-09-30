@@ -159,6 +159,15 @@ export const EyeIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** The eye crossed out: hidden. */
+export const EyeOffIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" />
+    <circle cx="8" cy="8" r="2" />
+    <path d="M2.5 13.5l11-11" />
+  </Icon>
+);
+
 export const CloseIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 4l8 8M12 4l-8 8" />

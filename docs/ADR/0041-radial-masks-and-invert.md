@@ -25,9 +25,14 @@ fills an ellipse. It shows no feather or invert controls.
 2. **`invert` on every mask** (omitted from the JSON when off): coverage becomes
    1 − coverage, for linear and radial alike. Inverting a radial makes an off-centre
    vignette; inverting a linear gradient flips which side is adjusted.
-3. **Recipe v18.** Older readers would not know `radial`; older recipes read
+3. **`hidden` on every mask** (omitted from the JSON when off): the mask is kept, with
+   its shape and adjustments, but not applied. The plan leaves it out, so previews,
+   thumbnails and exports all agree. Each row in the Selective section has an eye
+   button to hide or show it (crossed out when hidden). Hidden masks are dimmed in the
+   list and the toolbar, and their tint is not drawn; their handles stay, for editing.
+4. **Recipe v18.** Older readers would not know `radial`; older recipes read
    unchanged.
-4. **UI:**
+5. **UI:**
    - **Adding:** "Radial" is in the mask toolbar's Add group and the Add tiles. A new
      radial starts as a circle in the middle of the shown picture, a little under
      half its short side across, feather 50.
@@ -41,12 +46,12 @@ fills an ellipse. It shows no feather or invert controls.
    - **Mask card:** below a dashed divider, Feather (radial only; its spec comes
      from the engine) and an **Invert** switch, styled like the lens switches.
    - Inverted masks' tint covers the outside.
-5. **Cost:** a radial adds about 0.6 ms over a linear gradient at 1516×1010 (a square
+6. **Cost:** a radial adds about 0.6 ms over a linear gradient at 1516×1010 (a square
    root per pixel), 2.5–2.7 ms over no mask (docs/PERFORMANCE.md §29).
-6. **Self-test:** an inverted −1 EV radial in the middle darkens the top rows by 44.6
+7. **Self-test:** an inverted −1 EV radial in the middle darkens the top rows by 44.6
    levels and leaves the middle unchanged (0.00).
 
 ## Deviations from the design
 
 Recorded in ADR 0016: the Feather and Invert controls (the product requires them),
-the handles, and the inner fade ellipse.
+the per-mask eye button (requested), the handles, and the inner fade ellipse.

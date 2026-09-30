@@ -1,4 +1,4 @@
-import { CloseIcon, PlusIcon } from "../../components/icons";
+import { CloseIcon, EyeIcon, EyeOffIcon, PlusIcon } from "../../components/icons";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { LocalAdjustments } from "../../ipc/generated/LocalAdjustments";
 import type { MaskTool } from "./MaskTool";
@@ -34,7 +34,7 @@ export function SelectiveControls({
         {tool.masks.map((m) => {
           const on = active?.id === m.id;
           return (
-            <div key={m.id} className={on ? "mask-row active" : "mask-row"}>
+            <div key={m.id} className={`mask-row${on ? " active" : ""}${m.hidden ? " hidden" : ""}`}>
               <button className="mask-row-pick" aria-pressed={on} disabled={disabled} onClick={() => tool.pick(m.id)}>
                 <span className="mask-swatch">
                   <span className="mask-dot" style={{ background: MASK_KINDS[m.shape.kind].dot }} />
@@ -44,7 +44,17 @@ export function SelectiveControls({
                   <span className="mask-row-kind">{MASK_KINDS[m.shape.kind].label}</span>
                 </span>
               </button>
-              <button className="mask-remove" aria-label="Delete mask" title="Delete mask" disabled={disabled} onClick={() => tool.remove(m.id)}>
+              <button
+                className="mask-row-icon"
+                aria-pressed={m.hidden ?? false}
+                aria-label={m.hidden ? "Show mask" : "Hide mask"}
+                title={m.hidden ? "Show mask" : "Hide mask"}
+                disabled={disabled}
+                onClick={() => tool.toggleHidden(m.id)}
+              >
+                {m.hidden ? <EyeOffIcon size={13} /> : <EyeIcon size={13} />}
+              </button>
+              <button className="mask-row-icon" aria-label="Delete mask" title="Delete mask" disabled={disabled} onClick={() => tool.remove(m.id)}>
                 <CloseIcon size={12} />
               </button>
             </div>
