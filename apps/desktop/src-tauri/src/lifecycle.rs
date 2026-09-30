@@ -26,8 +26,9 @@ pub struct QuitRequestedDto {
     pub exports_running: u32,
 }
 
+/// Exports running, and photos queued behind them (ADR 0050).
 fn exports_running(state: &AppState) -> usize {
-    state.exports.lock().map_or(0, |e| e.len())
+    state.exports.lock().map_or(0, |e| e.len()) + state.export_queue.pending()
 }
 
 /// Whether a close/quit should be held for confirmation (and the UI asked).
@@ -77,6 +78,8 @@ pub fn on_run_event<R: Runtime>(app: &AppHandle<R>, event: RunEvent) {
 pub fn shutdown<R: Runtime>(app: AppHandle<R>, code: i32) {
     if let Some(state) = app.try_state::<AppState>() {
         state.quitting.store(true, Ordering::SeqCst);
+        // Queued photos never start; the running one is cancelled with the others.
+        state.export_queue.cancel();
         let tokens: Vec<_> = state
             .exports
             .lock()

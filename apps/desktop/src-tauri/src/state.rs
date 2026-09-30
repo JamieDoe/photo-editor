@@ -39,6 +39,8 @@ pub struct AppState {
     pub next_export_id: AtomicU64,
     /// Cancel tokens of exports still running, by export id (see `lifecycle`).
     pub exports: Mutex<HashMap<u64, CancelToken>>,
+    /// Photos waiting to be exported, one after another (ADR 0050).
+    pub export_queue: crate::export_queue::ExportQueue,
     /// Set once the user confirmed quitting, so the resulting exit is not intercepted.
     pub quitting: AtomicBool,
 }
@@ -104,6 +106,7 @@ impl AppState {
             self_test,
             next_export_id: AtomicU64::new(1),
             exports: Mutex::new(HashMap::new()),
+            export_queue: Default::default(),
             quitting: AtomicBool::new(false),
         }
     }

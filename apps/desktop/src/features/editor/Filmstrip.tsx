@@ -28,6 +28,7 @@ export function Filmstrip({
   onOpen,
   onSync,
   syncing,
+  onExport,
 }: {
   library: LibraryApi;
   /** The photo open in Edit, if it is one of the Library's. */
@@ -35,6 +36,8 @@ export function Filmstrip({
   onOpen: (path: string) => void;
   onSync: () => void;
   syncing: boolean;
+  /** Opens the export dialog for the open and ticked photos (ADR 0050). */
+  onExport: () => void;
 }) {
   const photos = library.visible;
   const ticked = new Set(library.batch);
@@ -94,6 +97,9 @@ export function Filmstrip({
             >
               <SyncIcon size={13} />
               {syncing ? "Syncing…" : "Sync edits"}
+            </button>
+            <button className="batch-export" title="Export the open and ticked photos" onClick={onExport}>
+              Export…
             </button>
             <button className="batch-clear" aria-label="Clear selection" title="Clear selection" onClick={library.clearBatch}>
               <CloseIcon size={12} />

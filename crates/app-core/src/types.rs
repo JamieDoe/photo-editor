@@ -93,6 +93,18 @@ pub struct ExportRequest {
     pub format: ExportFormat,
 }
 
+/// Exporting a photo straight from its file (ADR 0050), as the export queue does: it
+/// need not be open in the editor.
+#[derive(Debug, Clone)]
+pub struct FileExport {
+    pub source: PathBuf,
+    pub recipe: EditRecipe,
+    pub destination: PathBuf,
+    pub format: ExportFormat,
+    /// The output's long edge at most this many pixels; the full size when `None`.
+    pub long_edge: Option<u32>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportStage {
     Decoding,

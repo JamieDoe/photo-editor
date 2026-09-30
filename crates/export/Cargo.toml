@@ -16,6 +16,7 @@ turbojpeg = ["dep:jpeg-turbo"]
 image-core.workspace = true
 platform.workspace = true
 jpeg-encoder.workspace = true
+rayon.workspace = true
 jpeg-turbo = { workspace = true, optional = true }
 
 [dev-dependencies]

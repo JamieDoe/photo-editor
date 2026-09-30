@@ -697,3 +697,19 @@ release, machine load 6–8), 1,000 photos, three rounds:
 Release self-test, Nikon Z 6 folder: syncing onto 7 photos took 1–7 ms through the
 command. A batch needs no progress bar; the thumbnails re-render afterwards, as each
 is shown.
+
+## 34. The export queue (ADR 0050)
+
+Release self-test, Nikon Z 6 fixture folder, machine load 6–8:
+
+| Export | Time per photo |
+|---|---|
+| 1350 px long edge (decoded at reduced scale, rendered, shrunk in linear light) | ~300 ms |
+| Full size (§4 and §7: decode / render / encode / write 806 / 36 / 81 / 8 ms) | ~930 ms |
+
+- Photos export one after another: a full-size export holds about 26 bytes a pixel, so
+  running several at once would multiply peak memory.
+- A sized export decodes at the smallest scale that fills its long edge after the crop,
+  which cuts both time and memory.
+- Cancelling at the first progress event stopped a full-size run before its first
+  photo finished.

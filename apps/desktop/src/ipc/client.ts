@@ -14,7 +14,9 @@ import type { CollectionListingDto } from "./generated/CollectionListingDto";
 import type { DiagnosticsDto } from "./generated/DiagnosticsDto";
 import type { EditRecipe } from "./generated/EditRecipe";
 import type { EditSavedDto } from "./generated/EditSavedDto";
+import type { ExportBatchDto } from "./generated/ExportBatchDto";
 import type { ExportEvent } from "./generated/ExportEvent";
+import type { ExportQueueEvent } from "./generated/ExportQueueEvent";
 import type { ExportRequestDto } from "./generated/ExportRequestDto";
 import type { ExportStartedDto } from "./generated/ExportStartedDto";
 import type { FolderListingDto } from "./generated/FolderListingDto";
@@ -63,6 +65,15 @@ export const exportImage = (request: ExportRequestDto) =>
   invoke<ExportStartedDto | null>("export_image", { request });
 
 /** Async so that failures (including synchronous ones outside Tauri) become rejections. */
+/** Chooses the export folder in the system's dialog (ADR 0050); null if cancelled. */
+export const chooseExportFolder = () => invoke<string | null>("choose_export_folder");
+/** Queues photos for export; resolves to the photos now in the run. */
+export const startExport = (batch: ExportBatchDto) => invoke<number>("start_export", { batch });
+export const cancelExports = () => invoke<null>("cancel_exports");
+export async function onExportQueueEvent(handler: (e: ExportQueueEvent) => void): Promise<UnlistenFn> {
+  return listen<ExportQueueEvent>("export://queue", (event) => handler(event.payload));
+}
+
 export async function onExportEvent(handler: (e: ExportEvent) => void): Promise<UnlistenFn> {
   return listen<ExportEvent>(EXPORT_EVENT, (event) => handler(event.payload));
 }

@@ -48,8 +48,8 @@ pub async fn update_settings(
     Ok(view(&state))
 }
 
-/// Folders are chosen only through the native dialog (see the library and backup
-/// commands), so a settings update from the UI may *clear* the default folder but can
+/// Folders are chosen only through the native dialog (see the library, backup and
+/// export commands), so a settings update from the UI may *clear* the default folder but can
 /// never add or change a folder: that would grant access at next launch, or send
 /// backups somewhere the user never chose.
 fn guard_library_changes(before: &Settings, mut requested: Settings) -> Settings {
@@ -58,6 +58,7 @@ fn guard_library_changes(before: &Settings, mut requested: Settings) -> Settings
         requested.library.default_folder = before.library.default_folder.clone();
     }
     requested.backups.copy_folder = before.backups.copy_folder.clone();
+    requested.export.folder = before.export.folder.clone();
     requested
 }
 
@@ -108,5 +109,21 @@ mod tests {
         let before = with_folders(None, &[]);
         let result = guard_library_changes(&before, with_folders(Some("/"), &[]));
         assert_eq!(result.library.default_folder, None);
+    }
+
+    #[test]
+    fn the_export_folder_is_never_set_from_the_ui() {
+        let mut before = Settings::default();
+        before.export.folder = Some("/Users/me/Exports".to_owned());
+        let mut requested = before.clone();
+        requested.export.folder = Some("/somewhere/else".to_owned());
+        requested.export.long_edge = Some(1350);
+        let kept = guard_library_changes(&before, requested);
+        assert_eq!(kept.export.folder.as_deref(), Some("/Users/me/Exports"));
+        assert_eq!(
+            kept.export.long_edge,
+            Some(1350),
+            "other export settings still apply"
+        );
     }
 }

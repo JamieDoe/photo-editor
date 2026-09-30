@@ -139,7 +139,7 @@ button.text-button:hover:not(:disabled) { background: none; color: var(--accent-
   color: var(--text-2); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; cursor: pointer;
 }
 .segmented > button:hover:not(:disabled) { background: var(--hover); color: var(--text); }
-.segmented > [aria-current="page"], .segmented > label:has(input:checked) { background: var(--control); color: var(--text); box-shadow: var(--segment-shadow); }
+.segmented > [aria-current="page"], .segmented > [aria-checked="true"], .segmented > label:has(input:checked) { background: var(--control); color: var(--text); box-shadow: var(--segment-shadow); }
 .segmented > label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
 .segmented.small { border-radius: 8px; background: var(--surface); }
 .segmented.small > label, .segmented.small > button { height: 26px; padding: 0 10px; border-radius: 6px; font-size: 12px; }
@@ -736,3 +736,40 @@ button.strip-image::after { content: ""; position: absolute; inset: 0; border-ra
 button.strip-check { position: absolute; left: 5px; top: 5px; width: 18px; height: 18px; padding: 0; border-radius: 9px; background: rgb(11 12 14 / 55%); border: 1.5px solid rgb(255 255 255 / 70%); color: #0b0c0e; opacity: 0; transition: opacity 0.12s ease; }
 .strip-thumb:hover button.strip-check, button.strip-check:focus-visible, .strip-thumb.ticked button.strip-check { opacity: 1; }
 .strip-thumb.ticked button.strip-check { background: var(--accent); border-color: var(--accent); }
+
+/* The export dialog (ADR 0050), as in the design. */
+.export-backdrop { background: rgb(5 5 7 / 62%); backdrop-filter: blur(6px); z-index: 40; }
+.export-dialog { width: min(580px, 92vw); border-radius: 16px; background: var(--raised); border: 1px solid var(--hairline-strong); box-shadow: 0 40px 120px -20px rgb(0 0 0 / 80%); display: flex; flex-direction: column; overflow: hidden; animation: pop 0.24s var(--ease); }
+.export-header { padding: 20px 20px 16px 24px; display: flex; align-items: flex-start; justify-content: space-between; }
+.export-heading { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.export-thumb { width: 60px; height: 40px; flex-shrink: 0; border-radius: 5px; object-fit: cover; background: var(--fill-quiet); }
+.export-titles { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.export-titles h2 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.export-sub { font-size: 12.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.export-close { width: 30px; height: 30px; }
+.export-presets { padding: 0 24px 4px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+button.export-preset { height: auto; padding: 10px 12px; border-radius: 10px; flex-direction: column; align-items: flex-start; gap: 3px; background: var(--fill-quiet); border: 0; box-shadow: inset 0 0 0 1px var(--hairline); text-align: left; }
+button.export-preset[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.export-preset-label { font-size: 12.5px; font-weight: 500; color: var(--text); }
+.export-preset-sub { font-size: 11px; font-weight: 400; color: var(--text-3); }
+.export-rows { margin: 16px 24px 0; border-top: 1px solid var(--hairline); display: flex; flex-direction: column; }
+.export-row { min-height: 52px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--hairline); font-size: 13px; color: var(--text-2); }
+.export-control { display: flex; align-items: center; gap: 12px; }
+.export-range { width: 180px; }
+.export-value { min-width: 28px; text-align: right; font-family: var(--mono, ui-monospace, monospace); font-size: 12px; color: var(--text); }
+.export-footer { padding: 16px 24px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+button.export-folder { height: auto; padding: 4px 6px; margin-left: -6px; border-radius: 8px; flex-direction: column; align-items: flex-start; gap: 2px; background: transparent; border: 0; min-width: 0; }
+button.export-folder:hover:not(:disabled) { background: var(--hover-strong); }
+.export-folder-label { font-size: 11px; font-weight: 400; color: var(--text-3); }
+.export-folder-name { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 500; color: var(--text); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.export-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* The export queue's progress in the top bar, in the Export button's place. */
+.export-progress { height: 32px; padding: 0 6px 0 12px; border-radius: 8px; display: flex; align-items: center; gap: 10px; background: var(--fill-quiet); border: 1px solid var(--hairline); font-size: 12.5px; color: var(--text); }
+.export-progress-text { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.export-progress-bar { width: 72px; height: 4px; border-radius: 2px; background: var(--hairline-strong); overflow: hidden; }
+.export-progress-bar > span { display: block; height: 100%; background: var(--accent); transition: width 0.2s ease; }
+button.export-progress-cancel { width: 22px; height: 22px; padding: 0; border-radius: 6px; background: transparent; border: 0; color: var(--text-3); }
+button.export-progress-cancel:hover:not(:disabled) { background: var(--hover-strong); color: var(--text); }
+button.batch-export { height: 26px; padding: 0 10px; border-radius: 7px; background: transparent; border: 0; font-size: 12px; font-weight: 400; color: var(--text-2); }
+button.batch-export:hover:not(:disabled) { background: var(--hover-strong); color: var(--text); }

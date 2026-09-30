@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { Toast, useToast } from "../components/Toast";
-import { BrandMark, ExportIcon, SettingsIcon } from "../components/icons";
+import { ExportDialog } from "../features/export/ExportDialog";
+import { useExportQueue } from "../features/export/useExportQueue";
+import type { ExportItemDto } from "../ipc/generated/ExportItemDto";
+import { BrandMark, CloseIcon, ExportIcon, SettingsIcon } from "../components/icons";
 import { QuitDialog } from "../components/QuitDialog";
 import { EditView } from "../features/editor/EditView";
 import { useEditor } from "../features/editor/useEditor";
@@ -70,6 +73,37 @@ export function App() {
 
   const { toast, notify } = useToast();
 
+  // Exporting (ADR 0050): the open photo, with its edit as it is now, and the photos
+  // ticked in the filmstrip, with their saved edits, through the export queue.
+  const exports = useExportQueue(editor.reportError, notify);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportPaths = library.batch.filter((p) => p !== editPath);
+  const exportCount = (editor.image ? 1 : 0) + exportPaths.length;
+  const exportNames = (() => {
+    const first = editor.image?.fileName ?? exportPaths[0]?.split(/[\\/]/).pop() ?? "";
+    const others = exportCount - 1;
+    return others > 0 ? `${first} and ${others} other${others === 1 ? "" : "s"}` : first;
+  })();
+  const runExport = async () => {
+    let folder = settings.settings?.export.folder ?? null;
+    if (!folder) {
+      folder = await ipc.chooseExportFolder().catch((e: unknown) => {
+        editor.reportError(e);
+        return null;
+      });
+      await settings.reload();
+      if (!folder) return;
+    }
+    const s = settings.settings?.export;
+    const items: ExportItemDto[] = [
+      ...(editor.image && editor.recipe ? [{ imageId: editor.image.id, recipe: editor.recipe }] : []),
+      ...exportPaths.map((path) => ({ path })),
+    ];
+    if (items.length === 0) return;
+    setExportOpen(false);
+    await exports.start({ items, longEdge: s?.longEdge ?? undefined, quality: s?.jpegQuality ?? 85 });
+  };
+
   // One banner; the most relevant source first.
   const sources = [editor, library, settings];
   const source = sources.find((s) => s.error !== null);
@@ -109,15 +143,33 @@ export function App() {
           >
             <SettingsIcon />
           </button>
-          <button
-            className="primary"
-            onClick={() => void editor.exportImage()}
-            disabled={mode !== "edit" || !editor.image || exporting}
-            title={editor.image ? "Export this photo as a JPEG" : "Open a photo to export it"}
-          >
-            <ExportIcon />
-            {exporting ? "Exporting…" : "Export"}
-          </button>
+          {exports.progress ? (
+            <span className="export-progress" role="status">
+              <span className="export-progress-text">
+                Exporting {Math.min(exports.progress.done + 1, exports.progress.total)} of {exports.progress.total}
+              </span>
+              <span className="export-progress-bar" aria-hidden="true">
+                <span
+                  style={{
+                    width: `${((exports.progress.done + exports.progress.fraction) / Math.max(1, exports.progress.total)) * 100}%`,
+                  }}
+                />
+              </span>
+              <button className="export-progress-cancel" aria-label="Stop exporting" title="Stop exporting" onClick={exports.cancel}>
+                <CloseIcon size={12} />
+              </button>
+            </span>
+          ) : (
+            <button
+              className="primary"
+              onClick={() => setExportOpen(true)}
+              disabled={mode !== "edit" || !editor.image || exporting}
+              title={editor.image ? "Export this photo, and any ticked in the filmstrip" : "Open a photo to export it"}
+            >
+              <ExportIcon />
+              {exporting ? "Exporting…" : "Export"}
+            </button>
+          )}
         </div>
       </header>
       {error && <ErrorBanner error={error} onDismiss={clearError} />}
@@ -146,6 +198,7 @@ export function App() {
             library={library}
             currentPath={editEntry ? editPath : null}
             onOpenPhoto={openFromLibrary}
+            onExport={() => setExportOpen(true)}
             onOpenFile={() => {
               setEditPath(null);
               void editor.openDialog();
@@ -155,6 +208,23 @@ export function App() {
         {mode === "settings" && <SettingsView api={settings} />}
       </div>
       <QuitDialog />
+      {exportOpen && settings.settings && (
+        <ExportDialog
+          count={exportCount}
+          names={exportNames}
+          frame={editor.displayed?.frame ?? null}
+          settings={settings.settings.export}
+          onChange={(change) => settings.update((s) => ({ ...s, export: { ...s.export, ...change } }))}
+          onChooseFolder={() =>
+            void ipc
+              .chooseExportFolder()
+              .then(() => settings.reload())
+              .catch(editor.reportError)
+          }
+          onExport={() => void runExport()}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
       <Toast toast={toast} />
     </div>
   );

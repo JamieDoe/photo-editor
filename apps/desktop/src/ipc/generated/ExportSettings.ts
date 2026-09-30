@@ -4,4 +4,18 @@ export type ExportSettings = {
 /**
  * JPEG quality, 1-100.
  */
-jpegQuality: number, };
+jpegQuality: number, 
+/**
+ * The folder exports are saved to (ADR 0050). Set only through the native folder
+ * dialog.
+ */
+folder: string | null, 
+/**
+ * The exported photos' long edge in pixels; their full size when `None`.
+ */
+longEdge: number | null, 
+/**
+ * The export preset last chosen ("web", "social", "full"), if the settings still
+ * match it.
+ */
+preset: string | null, };

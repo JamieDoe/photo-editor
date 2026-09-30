@@ -5,6 +5,7 @@
  *
  *   npm run dev  ->  http://localhost:1420/dev/mock.html
  */
+import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { createRoot } from "react-dom/client";
 import { App } from "../src/app/App";
@@ -42,7 +43,7 @@ let mockSettings: Record<string, unknown> = {
   general: { theme: "system" },
   performance: { previewCacheMb: 256, backgroundIntensity: "balanced" },
   library: { defaultFolder: null, recentFolders: [] },
-  export: { jpegQuality: 92 },
+  export: { jpegQuality: 85, folder: null, longEdge: 2048, preset: "web" },
   backups: { copyFolder: null },
 };
 
@@ -243,6 +244,28 @@ mockIPC((cmd, payload) => {
       for (const path of paths) mockEdits.set(path, source);
       return new Promise((r) => setTimeout(() => r({ applied: paths.map((path) => ({ path, edited: true })), failed: [] }), 250));
     }
+    case "choose_export_folder":
+      (mockSettings.export as Record<string, unknown>).folder = "/Users/me/Pictures/Exports/Lake District";
+      return "/Users/me/Pictures/Exports/Lake District";
+    case "start_export": {
+      // Dev-only stand-in: a run that reports progress, then finishes.
+      const { items } = (payload as { batch: { items: unknown[] } }).batch;
+      const total = items.length;
+      let done = 0;
+      const tick = () => {
+        if (done >= total) {
+          void emit("export://queue", { type: "finished", exported: total, outputs: [], failed: [], folder: "/Users/me/Pictures/Exports/Lake District", cancelled: false });
+          return;
+        }
+        void emit("export://queue", { type: "progress", done, total, current: `DSC_00${done}.NEF`, fraction: 0.5 });
+        done++;
+        setTimeout(tick, 1500);
+      };
+      setTimeout(tick, 100);
+      return total;
+    }
+    case "cancel_exports":
+      return null;
     case "save_edit": {
       const { path, recipe } = payload as { path: string; recipe: Record<string, number> };
       const edited = ["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "dehaze", "temperature", "tint", "vibrance", "saturation", "texture", "clarity", "noiseReduction", "vignette", "grain"].some((k) => recipe[k] !== 0) || recipe.sharpening !== 40;

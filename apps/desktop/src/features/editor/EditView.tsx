@@ -44,10 +44,12 @@ interface Props {
   /** The Library photo open here, if the open photo is one. */
   currentPath: string | null;
   onOpenPhoto: (path: string) => void;
+  /** Opens the export dialog (the batch bar's Export…). */
+  onExport: () => void;
 }
 
 /** The Edit mode: photograph in the centre, adjustments on the right. */
-export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, notify, library, currentPath, onOpenPhoto }: Props) {
+export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, notify, library, currentPath, onOpenPhoto, onExport }: Props) {
   const { info, image, recipe, busy } = editor;
   // The histogram of what the viewer shows, for the panel's graph and the tone curve.
   const histogram = image && editor.displayed?.imageId === image.id ? editor.displayed.frame.histogram : null;
@@ -305,7 +307,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
           )}
         </div>
         {library.visible.length > 0 && (
-          <Filmstrip library={library} current={currentPath} onOpen={onOpenPhoto} onSync={() => void syncEdits()} syncing={syncing} />
+          <Filmstrip library={library} current={currentPath} onOpen={onOpenPhoto} onSync={() => void syncEdits()} syncing={syncing} onExport={onExport} />
         )}
       </div>
       <aside className="panel-right" aria-label="Adjustments">

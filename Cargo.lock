@@ -1165,6 +1165,7 @@ dependencies = [
  "jpeg-encoder",
  "jpeg-turbo",
  "platform",
+ "rayon",
  "zune-jpeg",
 ]
 

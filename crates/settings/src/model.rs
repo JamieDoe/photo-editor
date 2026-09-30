@@ -127,16 +127,33 @@ pub struct BackupSettings {
 pub struct ExportSettings {
     /// JPEG quality, 1-100.
     pub jpeg_quality: u8,
+    /// The folder exports are saved to (ADR 0050). Set only through the native folder
+    /// dialog.
+    pub folder: Option<String>,
+    /// The exported photos' long edge in pixels; their full size when `None`.
+    pub long_edge: Option<u32>,
+    /// The export preset last chosen ("web", "social", "full"), if the settings still
+    /// match it.
+    pub preset: Option<String>,
 }
 
 impl ExportSettings {
     pub const JPEG_QUALITY_MIN: u8 = 50;
     pub const JPEG_QUALITY_MAX: u8 = 100;
+    /// Long edges below this are not photos any more.
+    pub const LONG_EDGE_MIN: u32 = 256;
+    pub const LONG_EDGE_MAX: u32 = 16_384;
 }
 
 impl Default for ExportSettings {
+    /// As the design's Web preset: 2048 px, quality 85.
     fn default() -> Self {
-        Self { jpeg_quality: 92 }
+        Self {
+            jpeg_quality: 85,
+            folder: None,
+            long_edge: Some(2048),
+            preset: Some("web".to_owned()),
+        }
     }
 }
 
@@ -154,6 +171,11 @@ impl Settings {
             ExportSettings::JPEG_QUALITY_MIN,
             ExportSettings::JPEG_QUALITY_MAX,
         );
+        self.export.long_edge = self
+            .export
+            .long_edge
+            .map(|e| e.clamp(ExportSettings::LONG_EDGE_MIN, ExportSettings::LONG_EDGE_MAX));
+        self.export.folder = self.export.folder.take().filter(|f| !f.trim().is_empty());
         let lib = &mut self.library;
         lib.default_folder = lib.default_folder.take().filter(|f| !f.trim().is_empty());
         let mut seen = std::collections::HashSet::new();

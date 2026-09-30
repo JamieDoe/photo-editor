@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use app_core::{
-    EditRecipe, Engine, EngineConfig, ErrorKind, ExportFormat, ExportRequest, ImageId,
+    EditRecipe, Engine, EngineConfig, ErrorKind, ExportFormat, ExportRequest, FileExport, ImageId,
     PreviewQuality, PreviewRequest, PreviewSlot,
 };
 
@@ -165,6 +165,50 @@ fn newer_preview_supersedes_older_ones() {
         cancelled >= 15,
         "only {cancelled}/19 obsolete renders were cancelled"
     );
+}
+
+#[test]
+fn files_export_fitted_to_a_long_edge_without_being_open() {
+    let dir = fixtures::TempDir::new("engine-export-file");
+    let path = write(dir.path(), "big.jpg", fixtures::chart_jpeg(3000, 2000, 90));
+    let engine = engine();
+    let export = |long_edge, recipe: EditRecipe, name: &str| {
+        engine
+            .export_file(
+                FileExport {
+                    source: path.clone(),
+                    recipe,
+                    destination: dir.path().join(name),
+                    format: ExportFormat::Jpeg { quality: 85 },
+                    long_edge,
+                },
+                |_| {},
+            )
+            .wait()
+            .unwrap()
+    };
+    let web = export(Some(2048), EditRecipe::default(), "web.jpg");
+    assert_eq!((web.width, web.height), (2048, 1365));
+    let full = export(None, EditRecipe::default(), "full.jpg");
+    assert_eq!((full.width, full.height), (3000, 2000));
+    // Cropped to the left half: still fills the long edge (decoded large enough).
+    let half = EditRecipe {
+        geometry: Some(renderer::Geometry {
+            crop: renderer::CropRect {
+                x: 0.0,
+                y: 0.0,
+                w: 0.5,
+                h: 1.0,
+            },
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let cropped = export(Some(1350), half, "cropped.jpg");
+    assert_eq!(cropped.width.max(cropped.height), 1350);
+    // Smaller than the long edge already: never enlarged.
+    let small = export(Some(4000), EditRecipe::default(), "small.jpg");
+    assert_eq!((small.width, small.height), (3000, 2000));
 }
 
 #[test]

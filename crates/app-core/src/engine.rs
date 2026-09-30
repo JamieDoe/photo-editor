@@ -16,8 +16,8 @@ use crate::previews::PreviewCache;
 use crate::session::{OpenImages, OpenedImage};
 use crate::{
     EmbeddedFrame, EngineConfig, EngineError, EngineInfo, ExportProgress, ExportRequest,
-    ExportStage, ExportSummary, ImageId, ImageSummary, PreviewFrame, PreviewRequest, PreviewSlot,
-    SourceIdentity,
+    ExportStage, ExportSummary, FileExport, ImageId, ImageSummary, PreviewFrame, PreviewRequest,
+    PreviewSlot, SourceIdentity,
 };
 
 /// Supersede key for the main viewer's preview renders: a new request cancels the
@@ -308,14 +308,42 @@ impl Engine {
                 Err(jobs::JobError::Failed(EngineError::image_not_open())),
             );
         };
-        if let Err(e) = export::validate_destination(&req.destination, &image.path, req.format) {
+        self.export_file(
+            FileExport {
+                source: image.path.clone(),
+                recipe: req.recipe,
+                destination: req.destination,
+                format: req.format,
+                long_edge: None,
+            },
+            progress,
+        )
+    }
+
+    /// Exports a photo from its file (ADR 0050), at full resolution or fitted to a long
+    /// edge, on the background lane. The photo need not be open.
+    pub fn export_file(
+        &self,
+        req: FileExport,
+        progress: impl Fn(ExportProgress) + Send + 'static,
+    ) -> JobHandle<ExportSummary, EngineError> {
+        if let Err(e) = export::validate_destination(&req.destination, &req.source, req.format) {
             return JobHandle::ready(self.jobs.next_id(), Err(jobs::JobError::Failed(e.into())));
         }
         let shared = Arc::clone(&self.shared);
         let spec = JobSpec::new(Lane::Background, Priority::Export, "export");
-        self.jobs.submit(spec, move |token| {
-            shared.export(&image.path, &req, token, &progress)
-        })
+        self.jobs
+            .submit(spec, move |token| shared.export(&req, token, &progress))
+    }
+
+    /// The file an open image was read from (for exporting it by path).
+    pub fn image_path(&self, id: ImageId) -> Option<PathBuf> {
+        self.shared
+            .images
+            .lock()
+            .expect("images lock")
+            .get(id)
+            .map(|image| image.path.clone())
     }
 
     /// Releases an image and its cached previews.
@@ -474,8 +502,7 @@ impl Shared {
 
     fn export(
         &self,
-        source: &Path,
-        req: &ExportRequest,
+        req: &FileExport,
         token: &CancelToken,
         progress: &dyn Fn(ExportProgress),
     ) -> Result<ExportSummary, EngineError> {
@@ -484,11 +511,24 @@ impl Shared {
             stage: ExportStage::Decoding,
             fraction: 0.0,
         });
+        // A sized export decodes at the smallest scale that still fills it. The crop
+        // keeps only part of the frame; its long edge is at least the smaller of its two
+        // fractions times the frame's, so the frame must be larger by that much.
+        let scale = match req.long_edge {
+            None => DecodeScale::Full,
+            Some(edge) => {
+                let kept = req
+                    .recipe
+                    .geometry
+                    .map_or(1.0, |g| f64::from(g.crop.w.min(g.crop.h)).clamp(0.01, 1.0));
+                DecodeScale::AtLeast((f64::from(edge) / kept).ceil() as u32)
+            }
+        };
         let decoded = self.decoders.decode(
-            source,
+            &req.source,
             // Inside the background lane this is its bounded pool size, so LibRaw's
             // internal threads cannot take the cores interactive renders need.
-            DecodeOptions::new(DecodeScale::Full).with_max_threads(rayon::current_num_threads()),
+            DecodeOptions::new(scale).with_max_threads(rayon::current_num_threads()),
             token,
         )?;
         let decode_ms = ms(start);
@@ -503,6 +543,10 @@ impl Shared {
             .renderer
             .render(&plan, &decoded.image, PixelFormat::Rgb8, token)?;
         drop(decoded);
+        let rendered = match req.long_edge {
+            Some(edge) => export::resize::fit_long_edge(&rendered, edge),
+            None => rendered,
+        };
         let render_ms = ms(t);
 
         progress(ExportProgress {

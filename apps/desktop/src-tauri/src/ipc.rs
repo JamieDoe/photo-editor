@@ -9,6 +9,77 @@ use ts_rs::TS;
 
 /// Name of the Tauri event carrying [`ExportEvent`]s.
 pub const EXPORT_EVENT: &str = "export://event";
+/// Name of the Tauri event carrying [`ExportQueueEvent`]s (ADR 0050).
+pub const EXPORT_QUEUE_EVENT: &str = "export://queue";
+
+/// Photos to export, and how (ADR 0050).
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ExportBatchDto {
+    pub items: Vec<ExportItemDto>,
+    /// The long edge in pixels; the full size when left out.
+    #[ts(optional)]
+    pub long_edge: Option<u32>,
+    /// JPEG quality, 50-100.
+    pub quality: u8,
+    /// The folder to export to, for the self-test only; otherwise the one chosen in
+    /// the folder dialog (settings).
+    #[ts(optional)]
+    pub folder: Option<String>,
+}
+
+/// A file an export wrote.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ExportedFileDto {
+    pub path: String,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// One photo to export: the photo open in the editor (by its image id, with its edit
+/// as it is now), or a library photo (by path, with its saved edit).
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ExportItemDto {
+    #[ts(optional, type = "number")]
+    pub image_id: Option<u64>,
+    #[ts(optional)]
+    pub path: Option<String>,
+    #[ts(optional)]
+    pub recipe: Option<EditRecipe>,
+}
+
+/// The export queue's progress and outcome.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
+#[ts(export)]
+pub enum ExportQueueEvent {
+    /// `done` of `total` photos finished; `current` is exporting, `fraction` of the way.
+    Progress {
+        done: u32,
+        total: u32,
+        current: String,
+        fraction: f32,
+    },
+    /// The queue ran out (or was cancelled).
+    Finished {
+        exported: u32,
+        /// The files written, in order.
+        outputs: Vec<ExportedFileDto>,
+        failed: Vec<FileFailureDto>,
+        /// The folder the photos went to.
+        folder: Option<String>,
+        cancelled: bool,
+    },
+}
 
 /// Preview frames are returned as raw bytes (not JSON) to avoid base64/array encoding
 /// of multi-megabyte buffers. Layout, all little-endian:
