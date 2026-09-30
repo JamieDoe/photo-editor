@@ -41,6 +41,7 @@ pub fn setting_groups() -> Vec<SettingGroup> {
                 "blacks",
                 "dehaze",
                 "pointCurve",
+                "parametricCurve",
                 "channelCurves",
             ],
             true,
@@ -48,7 +49,7 @@ pub fn setting_groups() -> Vec<SettingGroup> {
         group(
             "whiteBalance",
             "White balance",
-            &["temperature", "tint"],
+            &["temperature", "tint", "whiteBalance"],
             true,
         ),
         group(
@@ -164,6 +165,10 @@ mod tests {
     fn every_setting_is_in_exactly_one_group() {
         // A recipe with every optional part present, so every field is written.
         let r = EditRecipe {
+            white_balance: Some(crate::ops::white_balance::AbsoluteWhiteBalance {
+                kelvin: 5500.0,
+                tint: 10.0,
+            }),
             mixer: Some(crate::ColourMixer {
                 red: crate::HslShift {
                     hue: 5.0,
@@ -176,6 +181,10 @@ mod tests {
                 ..Default::default()
             }),
             chromatic_aberration: Some(Default::default()),
+            parametric_curve: Some(crate::ops::parametric_curve::ParametricCurve {
+                darks: 20.0,
+                ..Default::default()
+            }),
             point_curve: Some(crate::ops::point_curve::PointCurve::new(&[
                 [0.0, 0.1],
                 [1.0, 1.0],

@@ -767,20 +767,19 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage, frame: Frame) -> 
             // The RGB curve and each channel's, composed into one table per channel;
             // one shared table when no channel has its own.
             Stage::PointCurve {
+                ref parametric,
                 ref rgb,
                 ref channels,
             } => {
+                // The parametric curve, then the RGB one (ADR 0051).
+                let tone = |x: f32| rgb.eval(parametric.eval(linear_to_srgb(x)));
                 if channels.iter().all(|c| c.is_identity()) {
                     out.push(Kernel::Curve(Box::new(CurveLut::held(|x| {
-                        srgb_to_linear(rgb.eval(linear_to_srgb(x)))
+                        srgb_to_linear(tone(x))
                     }))));
                 } else {
                     out.push(Kernel::ChannelCurves(Box::new((**channels).map(
-                        |channel| {
-                            CurveLut::held(|x| {
-                                srgb_to_linear(channel.eval(rgb.eval(linear_to_srgb(x))))
-                            })
-                        },
+                        |channel| CurveLut::held(|x| srgb_to_linear(channel.eval(tone(x)))),
                     ))));
                 }
             }

@@ -90,6 +90,39 @@ impl WhitePoint {
     }
 }
 
+/// White balance set as the light itself (ADR 0051): a colour temperature and a tint on
+/// Adobe's scale (the light's Duv x 3000; positive is greener light, so a more magenta
+/// photo). Lightroom presets made on raw files set white balance this way; each photo
+/// is balanced from its own as-shot light to this one.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct AbsoluteWhiteBalance {
+    pub kelvin: f32,
+    pub tint: f32,
+}
+
+impl AbsoluteWhiteBalance {
+    /// Tint's range, as Lightroom's.
+    pub const TINT_RANGE: f32 = 150.0;
+
+    pub fn sanitized(self) -> Self {
+        let finite = |v: f32, or: f32| if v.is_finite() { v } else { or };
+        Self {
+            kelvin: finite(self.kelvin, 5500.0).clamp(MIN_KELVIN, MAX_KELVIN),
+            tint: finite(self.tint, 0.0).clamp(-Self::TINT_RANGE, Self::TINT_RANGE),
+        }
+    }
+
+    /// The light it describes.
+    pub fn white_point(self) -> WhitePoint {
+        WhitePoint {
+            kelvin: self.kelvin,
+            duv: self.tint * DUV_PER_UNIT,
+        }
+    }
+}
+
 /// How to show Temperature in kelvin for a photo whose as-shot light is known: the
 /// light the slider assumes is `1e6 / (1e6 / as_shot_kelvin - amount * mired_per_unit)`,
 /// clamped to `min_kelvin..=max_kelvin` (see [`TemperatureScale::kelvin_at`]).
@@ -98,6 +131,9 @@ impl WhitePoint {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct TemperatureScale {
     pub as_shot_kelvin: f32,
+    /// The as-shot light's tint on Adobe's scale (its Duv x 3000), to show a white
+    /// balance set as the light (ADR 0051) on the relative sliders.
+    pub as_shot_tint: f32,
     pub mired_per_unit: f32,
     pub min_kelvin: f32,
     pub max_kelvin: f32,
@@ -109,6 +145,7 @@ impl TemperatureScale {
     pub fn for_source(as_shot: Option<Chromaticity>) -> Option<Self> {
         as_shot.map(|c| Self {
             as_shot_kelvin: WhitePoint::from_chromaticity(c).kelvin,
+            as_shot_tint: WhitePoint::from_chromaticity(c).duv / DUV_PER_UNIT,
             mired_per_unit: MIRED_PER_UNIT,
             min_kelvin: MIN_KELVIN,
             max_kelvin: MAX_KELVIN,
@@ -130,12 +167,20 @@ impl TemperatureScale {
 /// light (`None`: the image is already display-referred, so its white is D65).
 pub fn gains(as_shot: Option<Chromaticity>, temperature: f32, tint: f32) -> [f32; 3] {
     let shot = WhitePoint::from_chromaticity(as_shot.unwrap_or(Chromaticity::D65));
-    // Both lights go through the same conversion, so zero sliders give exactly 1.
+    gains_between(shot, shot.adjusted(temperature, tint))
+}
+
+/// Channel gains balancing the photo for `light` instead of its as-shot light (ADR
+/// 0051).
+pub fn gains_for(as_shot: Option<Chromaticity>, light: AbsoluteWhiteBalance) -> [f32; 3] {
+    let shot = WhitePoint::from_chromaticity(as_shot.unwrap_or(Chromaticity::D65));
+    gains_between(shot, light.sanitized().white_point())
+}
+
+fn gains_between(shot: WhitePoint, assumed: WhitePoint) -> [f32; 3] {
+    // Both lights go through the same conversion, so the same light gives exactly 1.
     let from = shot.chromaticity().to_linear_srgb();
-    let to = shot
-        .adjusted(temperature, tint)
-        .chromaticity()
-        .to_linear_srgb();
+    let to = assumed.chromaticity().to_linear_srgb();
     let mut g = [from[0] / to[0], from[1] / to[1], from[2] / to[2]];
     let luma: f32 = g.iter().zip(REC709_LUMA).map(|(g, w)| g * w).sum();
     for c in &mut g {
@@ -299,6 +344,35 @@ mod tests {
             let a = w.adjusted(25.0, 0.0);
             let shift = 1.0e6 / w.kelvin - 1.0e6 / a.kelvin;
             assert!((shift - 30.0).abs() < 0.01, "{shift}");
+        }
+    }
+
+    #[test]
+    fn a_light_set_in_kelvin_matches_the_same_shift_on_the_sliders() {
+        let shot = Chromaticity { x: 0.44, y: 0.40 };
+        let scale = TemperatureScale::for_source(Some(shot)).unwrap();
+        // The as-shot light itself: no change.
+        let same = AbsoluteWhiteBalance {
+            kelvin: scale.as_shot_kelvin,
+            tint: scale.as_shot_tint,
+        };
+        for g in gains_for(Some(shot), same) {
+            assert!((g - 1.0).abs() < 1e-3, "{g}");
+        }
+        // 500 K warmer than as shot, in mired: the same as the equivalent slider.
+        let kelvin = scale.as_shot_kelvin + 500.0;
+        let temperature = (1.0e6 / scale.as_shot_kelvin - 1.0e6 / kelvin) / MIRED_PER_UNIT;
+        let tint = 12.0;
+        let set = gains_for(
+            Some(shot),
+            AbsoluteWhiteBalance {
+                kelvin,
+                tint: scale.as_shot_tint + tint,
+            },
+        );
+        let slid = gains(Some(shot), temperature, tint);
+        for (a, b) in set.iter().zip(slid) {
+            assert!((a - b).abs() < 1e-3, "{set:?} vs {slid:?}");
         }
     }
 }

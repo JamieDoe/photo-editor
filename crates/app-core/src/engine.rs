@@ -96,6 +96,7 @@ impl Engine {
             mask_feather: renderer::adjustments::MASK_FEATHER,
             mask_density: renderer::adjustments::MASK_DENSITY,
             setting_groups: renderer::settings::setting_groups(),
+            curve_regions: renderer::adjustments::CURVE_REGIONS.to_vec(),
         }
     }
 

@@ -190,14 +190,14 @@ mockIPC((cmd, payload) => {
         { id: "detail", label: "Detail and effects", fields: ["texture", "clarity", "sharpening", "noiseReduction", "vignette", "grain"], copiedByDefault: true },
         { id: "geometry", label: "Crop, geometry and lens", fields: ["geometry", "chromaticAberration"], copiedByDefault: false },
         { id: "masks", label: "Masks", fields: ["masks"], copiedByDefault: false },
-      ] };
+      ], curveRegions: [["highlights", "Highlights"], ["lights", "Lights"], ["darks", "Darks"], ["shadows", "Shadows"]].map(([key, label]) => ({ key, label, group: "Tone curve", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" })) };
     case "open_image_dialog":
     case "open_image_path":
       openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";
       return {
         path: openedPath,
         savedRecipe: mockEdits.get(openedPath) ?? null,
-        editSaving: cmd === "open_image_path" ? "library" : "notInLibrary", id: 1, fileName: "mock.nef", decoder: "libraw", cameraRaw: true, camera: "Mock Camera", iso: 100, aperture: 6.7, shutterSeconds: 1, focalLengthMm: 52, temperatureScale: { asShotKelvin: 5200, miredPerUnit: 1.2, minKelvin: 1667, maxKelvin: 25000 }, fullWidth: 6000, fullHeight: 4000, levels: [[3000, 2000], [1500, 1000], [750, 500], [375, 250]], pyramidBytes: 0, identityMs: 0.5, decodeMs: 380, pyramidMs: 2, embeddedPreviewMs: 12 };
+        editSaving: cmd === "open_image_path" ? "library" : "notInLibrary", id: 1, fileName: "mock.nef", decoder: "libraw", cameraRaw: true, camera: "Mock Camera", iso: 100, aperture: 6.7, shutterSeconds: 1, focalLengthMm: 52, temperatureScale: { asShotKelvin: 5200, asShotTint: 6, miredPerUnit: 1.2, minKelvin: 1667, maxKelvin: 25000 }, fullWidth: 6000, fullHeight: 4000, levels: [[3000, 2000], [1500, 1000], [750, 500], [375, 250]], pyramidBytes: 0, identityMs: 0.5, decodeMs: 380, pyramidMs: 2, embeddedPreviewMs: 12 };
     case "render_preview":
       return placeholderFrame(600, 400);
     case "self_test_config":

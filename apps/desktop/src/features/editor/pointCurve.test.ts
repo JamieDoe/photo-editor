@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { neutralRecipe } from "./recipe";
 import {
+  isRegionKey,
+  parametricOf,
+  withRegion,
   DIAGONAL,
   channelPoints,
   curvesEdited,
@@ -90,5 +93,15 @@ describe("tone curve", () => {
   it("finds the point under the pointer", () => {
     expect(nearestPoint(S, 0.26, 0.19, 0.03, 0.05)).toBe(1);
     expect(nearestPoint(S, 0.5, 0.5, 0.03, 0.05)).toBeNull();
+  });
+
+  it("sets the region sliders, leaving the curve out at zero", () => {
+    const base = neutralRecipe(21);
+    const lifted = withRegion(base, "lights", 30);
+    expect(lifted.parametricCurve).toEqual({ ...parametricOf(base), lights: 30 });
+    expect(curvesEdited(lifted)).toBe(true);
+    expect("parametricCurve" in withRegion(lifted, "lights", 0)).toBe(false);
+    expect(isRegionKey("darks")).toBe(true);
+    expect(isRegionKey("contrast")).toBe(false);
   });
 });

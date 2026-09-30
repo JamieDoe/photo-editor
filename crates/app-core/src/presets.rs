@@ -172,12 +172,21 @@ pub fn import_preset_file(
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let is_xmp = path
-        .extension()
-        .is_some_and(|e| e.eq_ignore_ascii_case("xmp"))
-        || text.contains("camera-raw-settings");
-    let (name, look, left_out) = if is_xmp {
-        match lightroom::read_xmp(&text) {
+    let extension = |ext: &str| {
+        path.extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case(ext))
+    };
+    let is_xmp = extension("xmp") || text.contains("camera-raw-settings");
+    // Lightroom before 7.3 wrote presets as a Lua table (ADR 0051).
+    let is_lrtemplate =
+        !is_xmp && (extension("lrtemplate") || text.trim_start().starts_with("s = {"));
+    let (name, look, left_out) = if is_xmp || is_lrtemplate {
+        let read = if is_xmp {
+            lightroom::read_xmp(&text)
+        } else {
+            lightroom::read_lrtemplate(&text)
+        };
+        match read {
             Ok(p) => (p.name.unwrap_or(stem), p.recipe, p.left_out),
             Err(LightroomError::NotAPreset) => {
                 return Err(unreadable(format!(
@@ -215,7 +224,7 @@ pub fn import_preset_file(
     let preset = create_preset(catalogue, &name, &look)?;
     Ok(ImportedPreset {
         preset,
-        from_lightroom: is_xmp,
+        from_lightroom: is_xmp || is_lrtemplate,
         left_out,
     })
 }
@@ -373,11 +382,21 @@ mod tests {
         assert!(got.from_lightroom);
         assert_eq!(got.preset.name, "Soft & Warm");
         assert_eq!(got.preset.recipe.contrast, 18.0);
-        assert_eq!(
-            got.left_out,
-            ["Parametric curve", "Color Grading", "Masks and healing"]
-        );
+        assert_eq!(got.left_out, ["Color Grading", "Masks and healing"]);
         assert_eq!(list_presets(&cat).unwrap().len(), 7);
+    }
+
+    #[test]
+    fn older_lightroom_presets_are_imported_too() {
+        let cat = Catalogue::open_in_memory().unwrap();
+        let sample = std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../tests/fixtures/presets/lightroom-sample.lrtemplate"
+        ));
+        let got = import_preset_file(&cat, sample).unwrap();
+        assert!(got.from_lightroom);
+        assert_eq!(got.preset.name, "Faded \"Film\"");
+        assert_eq!(got.preset.recipe.contrast, -15.0);
     }
 
     #[test]
