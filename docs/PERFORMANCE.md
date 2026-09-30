@@ -672,3 +672,6 @@ load about 6–7, on battery. The mask has Exposure and Warmth:
   Low Power Mode the web view ran at 30 fps (idle frame gap p50 33 ms), and painting
   matched it: p50 33 ms, p95 34–35 ms for all nine large strokes, erases included.
   Photo round trip p50 16 ms, render p50 11 ms.
+- Out of Low Power Mode (two runs, load about 3–5): idle frame gap p50 17 ms; all nine
+  large strokes p50 17 ms, p95 18–19 ms, max 21 ms (60 fps). Photo round trip p50
+  14–15 ms, render p50 9.6–10.5 ms.
