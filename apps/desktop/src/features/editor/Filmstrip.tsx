@@ -5,9 +5,12 @@ import { FILTERS } from "../library/marks";
 import { PhotoThumbnail } from "../library/PhotoThumbnail";
 import type { LibraryApi } from "../library/useLibrary";
 
-/** A thumbnail's width and the gap after it, and the strip's side padding (px). */
+/** A thumbnail's width and the gap after it, and the strip's side padding (px). The
+ *  rings of the open and ticked photos reach 4 px outside a thumbnail, so the gap
+ *  leaves 6 px between two rings. */
 const THUMB = 96;
-const STRIDE = THUMB + 8;
+const GAP = 14;
+const STRIDE = THUMB + GAP;
 const PADDING = 16;
 /** Thumbnails kept mounted either side of those in view. */
 const OVERSCAN = 4;
@@ -105,7 +108,7 @@ export function Filmstrip({
         className="filmstrip-scroll"
         onScroll={(e) => setView({ left: e.currentTarget.scrollLeft, width: e.currentTarget.clientWidth })}
       >
-        <div className="filmstrip-track" style={{ width: PADDING * 2 + photos.length * STRIDE - 8 }}>
+        <div className="filmstrip-track" style={{ width: PADDING * 2 + photos.length * STRIDE - GAP }}>
           {photos.slice(first, last).map((p, i) => (
             <StripThumb
               key={p.path}
