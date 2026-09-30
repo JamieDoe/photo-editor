@@ -1,13 +1,17 @@
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
 
-use app_core::{ExportFormat, ExportRequest, ImageId};
+use app_core::{EditRecipe, ExportFormat, ExportRequest, ImageId};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 
 use super::{IpcResult, wait};
 use crate::AppState;
-use crate::ipc::{EXPORT_EVENT, ExportEvent, ExportRequestDto, ExportStartedDto, IpcError};
+use crate::export_queue::QueuedExport;
+use crate::ipc::{
+    EXPORT_EVENT, ExportBatchDto, ExportEvent, ExportRequestDto, ExportStartedDto, FileFailureDto,
+    IpcError,
+};
 
 /// Starts a background export. Returns `None` if the user cancelled the save dialog.
 /// Progress and completion are delivered as [`ExportEvent`]s.
@@ -103,4 +107,129 @@ fn with_jpeg_extension(path: PathBuf) -> PathBuf {
         s.push(".jpg");
         PathBuf::from(s)
     }
+}
+
+/// Chooses the folder exports are saved to, in the system's folder dialog, and
+/// remembers it (ADR 0050). Resolves to the folder, or `None` if cancelled.
+#[tauri::command]
+pub async fn choose_export_folder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> IpcResult<Option<String>> {
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        app.dialog()
+            .file()
+            .set_title("Export to")
+            .blocking_pick_folder()
+    })
+    .await
+    .map_err(IpcError::internal)?;
+    let Some(folder) = picked.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    let folder = folder.display().to_string();
+    let mut settings = state.settings.get();
+    settings.export.folder = Some(folder.clone());
+    state
+        .settings
+        .update(settings)
+        .map_err(IpcError::internal)?;
+    Ok(Some(folder))
+}
+
+/// Queues photos for export (ADR 0050): the open photo with its current edit, or
+/// library photos with their saved edits. Progress and the outcome arrive as
+/// [`crate::ipc::ExportQueueEvent`]s. Resolves to the photos now in the run.
+#[tauri::command]
+pub async fn start_export(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    batch: ExportBatchDto,
+) -> IpcResult<u32> {
+    let folder = match (&batch.folder, &state.self_test) {
+        (Some(folder), Some(_)) => PathBuf::from(folder),
+        (Some(_), None) => {
+            return Err(IpcError::internal(
+                "Export folder must be chosen by the user.",
+            ));
+        }
+        (None, _) => match state.settings.get().export.folder {
+            Some(folder) => PathBuf::from(folder),
+            None => {
+                return Err(app_core::EngineError::new(
+                    app_core::ErrorKind::InvalidInput,
+                    "Choose a folder to export to.",
+                    "no export folder",
+                )
+                .into());
+            }
+        },
+    };
+    let quality = batch.quality.clamp(
+        settings::ExportSettings::JPEG_QUALITY_MIN,
+        settings::ExportSettings::JPEG_QUALITY_MAX,
+    );
+    let long_edge = batch.long_edge.map(|e| {
+        e.clamp(
+            settings::ExportSettings::LONG_EDGE_MIN,
+            settings::ExportSettings::LONG_EDGE_MAX,
+        )
+    });
+    let catalogue = std::sync::Arc::clone(&state.catalogue);
+    let resolved: Vec<Result<(PathBuf, EditRecipe), FileFailureDto>> = batch
+        .items
+        .into_iter()
+        .map(|item| {
+            let name = item.path.clone().unwrap_or_default();
+            let refuse = |message: &str| FileFailureDto {
+                file: std::path::Path::new(&name).file_name().map_or_else(
+                    || "A photo".to_owned(),
+                    |n| n.to_string_lossy().into_owned(),
+                ),
+                message: message.to_owned(),
+            };
+            let source = match (item.image_id, &item.path) {
+                (Some(id), _) => state.engine.image_path(ImageId(id)),
+                (None, Some(path)) => state.folders.check(std::path::Path::new(path)),
+                (None, None) => None,
+            };
+            let Some(source) = source else {
+                return Err(refuse("It isn’t open or in a library folder."));
+            };
+            let recipe = match item.recipe {
+                Some(recipe) => recipe,
+                None => {
+                    let stored = catalogue.edit_at(&source).unwrap_or_else(|e| {
+                        log::warn!("edit lookup failed for {}: {e}", source.display());
+                        None
+                    });
+                    app_core::SavedEdit::from_stored(stored.as_ref())
+                        .recipe()
+                        .unwrap_or_default()
+                }
+            };
+            Ok((source, recipe))
+        })
+        .collect();
+    let mut items = Vec::new();
+    let mut refused = Vec::new();
+    for r in resolved {
+        match r {
+            Ok((source, recipe)) => items.push(QueuedExport {
+                source,
+                recipe,
+                folder: folder.clone(),
+                long_edge,
+                quality,
+            }),
+            Err(f) => refused.push(f),
+        }
+    }
+    Ok(state.export_queue.add(&app, items, refused))
+}
+
+/// Stops exporting: the photo exporting now is cancelled and the rest are dropped.
+#[tauri::command]
+pub fn cancel_exports(state: State<'_, AppState>) {
+    state.export_queue.cancel();
 }

@@ -3,6 +3,7 @@
 
 mod backups;
 mod commands;
+mod export_queue;
 mod ipc;
 mod lifecycle;
 mod logging;
@@ -48,7 +49,14 @@ fn main() {
             );
             // Needs the app handle for the platform config directory, so the state is
             // created here rather than before the builder.
-            let settings_path = app.path().app_config_dir()?.join("settings.json");
+            let settings_path = if self_test.is_some() {
+                // Self-test runs start from default settings and never change the user's.
+                let path = std::env::temp_dir().join("photo-editor-self-test-settings.json");
+                let _ = std::fs::remove_file(&path);
+                path
+            } else {
+                app.path().app_config_dir()?.join("settings.json")
+            };
             let catalogue_path = app.path().app_data_dir()?.join("catalogue.sqlite");
             let backups_dir = app.path().app_data_dir()?.join("backups");
             let thumbnail_dir = if self_test.is_some() {
@@ -107,6 +115,9 @@ fn main() {
             commands::images::auto_level,
             commands::images::measure_chromatic_aberration,
             commands::export::export_image,
+            commands::export::choose_export_folder,
+            commands::export::start_export,
+            commands::export::cancel_exports,
             commands::selftest::self_test_config,
             commands::selftest::self_test_report,
             commands::selftest::self_test_request_close,

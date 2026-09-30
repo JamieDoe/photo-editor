@@ -153,10 +153,16 @@ slider change ─► setRecipe ─► PreviewScheduler (≤ 1 request per animat
 ### Export
 
 ```text
-UI "Export…" ─► export_image (Rust shows save dialog, validates destination)
-  ─► Engine::export [background lane, bounded compute pool]
-       full decode ─► render (RGB8) ─► JPEG encode (libjpeg-turbo) ─► atomic write (tmp + rename)
-  ◄─ returns job id immediately; progress/finished/failed arrive as events
+UI export dialog ─► start_export {items (open photo by id with its edit, or library
+                   paths with saved edits), long edge, quality}   (ADR 0050)
+  ─► export queue (desktop crate): one photo at a time; folder from settings (set only
+     through the native folder dialog); unique names, never replacing a file
+     ─► Engine::export_file [background lane, bounded compute pool]
+          decode (full, or the smallest scale filling the long edge after the crop)
+          ─► render (RGB8) ─► shrink in linear light ─► JPEG encode (libjpeg-turbo)
+          ─► atomic write (tmp + rename)
+  ◄─ "export://queue" events: progress (done / total / current), finished (files
+     written, failures, cancelled); the quit guard counts running and queued photos
 ```
 
 ## 4. Typed IPC

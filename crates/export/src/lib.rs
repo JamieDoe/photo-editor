@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use image_core::{OutputImage, PixelFormat};
 
+pub mod resize;
 #[cfg(feature = "turbojpeg")]
 mod turbo;
 

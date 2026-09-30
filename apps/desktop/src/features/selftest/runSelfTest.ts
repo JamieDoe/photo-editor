@@ -1,4 +1,5 @@
 import * as ipc from "../../ipc/client";
+import type { ExportQueueEvent } from "../../ipc/generated/ExportQueueEvent";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
@@ -341,6 +342,51 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       batch.allEdited &&
       batch.syncedLook &&
       batch.keptOwnCrop;
+
+    // The export queue (ADR 0050) through the real command, engine and files: three
+    // photos at 1350 px into the temporary folder, one after another, reporting
+    // progress; then a full-size run of all of them, cancelled after it starts.
+    const exportQueue = await (async () => {
+      if (!indexing) return null;
+      const folder = config.exportPath.replace(/[^/\\]+$/, "");
+      const photos = (await ipc.listFolder(indexing.folder)).photos.map((p) => p.path);
+      const run = async (items: string[], longEdge: number | undefined, cancelAfterStart: boolean) => {
+        let progress = 0;
+        let finished: Extract<ExportQueueEvent, { type: "finished" }> | null = null;
+        const unlisten = await ipc.onExportQueueEvent((e) => {
+          if (e.type === "progress") {
+            progress++;
+            if (cancelAfterStart && progress === 1) void ipc.cancelExports();
+          } else finished = e;
+        });
+        const t0 = performance.now();
+        await ipc.startExport({ items: items.map((path) => ({ path })), longEdge, quality: 85, folder });
+        const done = await waitFor(() => finished, 120_000, "export queue").catch(() => null);
+        unlisten();
+        return { done, progress, ms: Math.round(performance.now() - t0) };
+      };
+      const sized = await run(photos.slice(0, 3), 1350, false);
+      const stopped = await run(photos, undefined, true);
+      return {
+        exported: sized.done?.exported ?? null,
+        longEdges: sized.done?.outputs.map((o) => Math.max(o.width, o.height)) ?? [],
+        failed: sized.done?.failed.length ?? null,
+        progressEvents: sized.progress,
+        msPerPhoto: sized.done ? Math.round(sized.ms / 3) : null,
+        cancelled: stopped.done?.cancelled ?? null,
+        exportedBeforeCancel: stopped.done?.exported ?? null,
+        of: photos.length,
+      };
+    })();
+    const exportQueueOk =
+      exportQueue !== null &&
+      exportQueue.exported === 3 &&
+      exportQueue.longEdges.every((e) => e === 1350) &&
+      exportQueue.failed === 0 &&
+      exportQueue.progressEvents > 3 &&
+      exportQueue.cancelled === true &&
+      exportQueue.exportedBeforeCancel !== null &&
+      exportQueue.exportedBeforeCancel < exportQueue.of;
 
     // Quit guard: closing the window while an export runs must be held for
     // confirmation. The final shutdown (self_test_report) then cancels the export.
@@ -1118,6 +1164,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       compare: compareOk,
       presets: presetOk,
       batch: batchOk,
+      exportQueue: exportQueueOk,
       copyPaste: copyPasteOk,
       crop: cropOk,
       perspective: perspectiveOk,
@@ -1148,6 +1195,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       compare: compareCheck,
       presets: presetCheck,
       batch,
+      exportQueue,
       copyPaste: copyPasteCheck,
       crop,
       perspective,
