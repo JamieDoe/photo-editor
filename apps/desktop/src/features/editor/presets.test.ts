@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { PresetDto } from "../../ipc/generated/PresetDto";
-import { applyPreset, hasLook, photoKey, stableStringify } from "./presets";
+import { applyPreset, appliedPreset, hasLook, photoKey, stableStringify } from "./presets";
 import { neutralRecipe } from "./recipe";
 
 const mono: PresetDto = {
@@ -40,5 +40,20 @@ describe("presets", () => {
     expect(photoKey({ ...photo, contrast: 0 })).toBe(photoKey(photo));
     expect(photoKey({ ...photo, exposure: 0 })).not.toBe(photoKey(photo));
     expect(stableStringify({ b: 1, a: { d: 2, c: undefined } })).toBe('{"a":{"d":2},"b":1}');
+  });
+
+  it("shows one preset as applied when several share a look", () => {
+    const natural: PresetDto = { id: "builtin:natural", name: "Natural", builtIn: true, recipe: { ...neutralRecipe(20), vibrance: 12 } };
+    const mine: PresetDto = { ...natural, id: "user:1", name: "Mine", builtIn: false };
+    const all = [natural, mono, mine];
+    const r = applyPreset(photo, natural);
+    // The one chosen, while the photo has its look.
+    expect(appliedPreset(r, all, "builtin:natural")).toBe("builtin:natural");
+    expect(appliedPreset(r, all, "user:1")).toBe("user:1");
+    // Nothing chosen (or the choice no longer matches): the saved preset first.
+    expect(appliedPreset(r, all, undefined)).toBe("user:1");
+    expect(appliedPreset(r, all, "builtin:mono")).toBe("user:1");
+    expect(appliedPreset(r, [natural, mono], undefined)).toBe("builtin:natural");
+    expect(appliedPreset(photo, all, "builtin:natural")).toBeNull();
   });
 });

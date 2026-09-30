@@ -55,11 +55,19 @@ everything else.
    300 ms after the change stops.
 6. **UI:**
    - The strip sits under the histogram, as in the design. Clicking a preset applies
-     it. A preset is ringed while the photo has its look, even after a reopen, since
-     the ring compares looks rather than remembering a click.
-   - **Save…** in the strip's header names and saves the current look.
-   - A saved preset shows ⋯ on hover. It opens a panel under the strip with Rename,
-     Update (to the current look) and Delete; deleting asks first.
+     it.
+   - One preset at most is ringed, while the photo has its look. Several presets can
+     share a look, such as one saved straight after applying Natural. The ringed one
+     is the preset last chosen on the photo this session (applied, saved or updated).
+     Otherwise it is a saved preset with that look before a built-in one, which also
+     covers reopening.
+   - **Save…** in the strip's header opens a popover to name and save the current
+     look.
+   - A saved preset shows ⋯ on hover. It opens a popover with its details: its name
+     (Rename), **Update to this photo's look** (off when the photo already has it),
+     and **Delete preset…**, which asks first.
+   - The popover floats over the panel, so the scrolling strip does not clip it. It
+     closes on a click elsewhere, Escape, or scrolling.
 7. **Not yet:**
    - importing and exporting presets as files (the next milestone);
    - the design's **Auto** button (an automatic starting point), which is a separate
@@ -76,7 +84,7 @@ everything else.
 
 Recorded in ADR 0016:
 - **Save…** stands where the design has **Auto** (not built yet);
-- the ⋯ button and the manage panel for saved presets (the design has no way to
+- the ⋯ button and the details popover for saved presets (the design has no way to
   manage presets);
 - previews are renders of the photo, where the design used a drawing tinted by CSS
   filters.

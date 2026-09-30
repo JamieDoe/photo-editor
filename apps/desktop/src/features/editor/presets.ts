@@ -45,3 +45,15 @@ export function stableStringify(v: unknown): string {
       : value,
   );
 }
+
+/**
+ * The one preset to show as applied, if the photo has a preset's look: the one last
+ * chosen on it (applied, saved or updated) while the photo still has its look;
+ * otherwise a saved preset with the look before a built-in one (several can share a
+ * look, such as a preset saved straight after applying Natural).
+ */
+export function appliedPreset(current: EditRecipe, presets: readonly PresetDto[], chosen: string | undefined): string | null {
+  const matching = presets.filter((p) => hasLook(current, p));
+  if (chosen !== undefined && matching.some((p) => p.id === chosen)) return chosen;
+  return (matching.find((p) => !p.builtIn) ?? matching[0])?.id ?? null;
+}

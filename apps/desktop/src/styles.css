@@ -644,9 +644,25 @@ button.preset-apply:hover:not(:disabled) .preset-image { box-shadow: 0 0 0 1px v
 button.preset-apply[aria-pressed="true"] .preset-image { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent); }
 .preset-name { max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-2); }
 button.preset-apply[aria-pressed="true"] .preset-name { color: var(--text); }
-button.preset-more { position: absolute; top: 6px; right: 2px; width: 20px; height: 20px; padding: 0; border-radius: 6px; background: rgba(11, 12, 14, 0.62); border: 0; color: #fff; opacity: 0; }
-.preset-tile:hover button.preset-more, button.preset-more:focus-visible { opacity: 1; }
-.preset-panel { margin: 10px 12px 0 16px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
-.preset-panel .text-input { flex: 1 1 120px; }
-.preset-panel-text { flex: 1 1 100%; font-size: 12px; color: var(--text-2); }
-.preset-panel-text.strong { flex: 1 1 0; min-width: 0; color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.preset-more { position: absolute; top: 6px; right: 2px; width: 20px; height: 20px; padding: 0; border-radius: 6px; background: rgb(11 12 14 / 62%); border: 0; color: #fff; opacity: 0; transition: opacity 0.12s ease; }
+button.preset-more:hover:not(:disabled), button.preset-more[aria-expanded="true"] { background: rgb(11 12 14 / 85%); }
+.preset-tile:hover button.preset-more, .preset-tile.editing button.preset-more, button.preset-more:focus-visible { opacity: 1; }
+button.preset-more .icon { stroke-width: 2.4; }
+
+/* A floating panel (components/Popover.tsx), styled as the floating bars. */
+.popover {
+  position: fixed; z-index: 50; padding: 6px; border-radius: 12px;
+  background: var(--raised); border: 1px solid var(--hairline-strong); box-shadow: 0 16px 40px -12px rgb(0 0 0 / 60%);
+  animation: fade-in 0.12s ease;
+}
+.popover-section { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+.popover-section + .popover-section { border-top: 1px solid var(--hairline); }
+.popover-label { font-size: 11.5px; color: var(--text-3); }
+.popover-row { display: flex; gap: 6px; }
+.popover-row .text-input { flex: 1 1 auto; }
+.popover-actions { display: flex; justify-content: flex-end; gap: 6px; }
+button.popover-item { height: auto; min-height: 30px; padding: 6px 8px; margin: 0 -4px; border-radius: 7px; background: transparent; border: 0; flex-direction: column; align-items: flex-start; gap: 1px; font-size: 12.5px; font-weight: 400; color: var(--text); text-align: left; }
+button.popover-item:hover:not(:disabled) { background: var(--hover-strong); }
+button.popover-item.danger { color: var(--danger); }
+.popover-item-sub { font-size: 11px; color: var(--text-3); }
+.popover-confirm { display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--text-2); }
