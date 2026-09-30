@@ -413,7 +413,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     const framesBeforeCrop = frames.length;
     driver.editor().setRecipe({
       ...beforeCrop,
-      geometry: { straighten: 0, crop: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, aspect: "free", vertical: 0, horizontal: 0 },
+      geometry: { straighten: 0, crop: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, aspect: "free", vertical: 0, horizontal: 0, rotation: 0, flip: false },
     });
     const cropped = await waitFor(
       () => frames.slice(framesBeforeCrop).find((f) => f.frame.fullWidth === Math.round(fullW / 2)) ?? null,
@@ -431,8 +431,36 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       cropped.frame.fullHeight === Math.round(fullH / 2) &&
       Math.abs(cropped.frame.width / cropped.frame.height - fullW / fullH) < 0.02;
 
+    // A quarter turn (ADR 0039): the frame is the photo on its side.
+    const framesBeforeTurn = frames.length;
+    driver.editor().setRecipe({
+      ...beforeCrop,
+      geometry: {
+        straighten: 0,
+        crop: { x: 0, y: 0, w: 1, h: 1 },
+        aspect: "original",
+        vertical: 0,
+        horizontal: 0,
+        rotation: 1,
+        flip: false,
+      },
+    });
+    const turnedFrame = await waitFor(
+      () => frames.slice(framesBeforeTurn).find((f) => f.frame.fullWidth === fullH && !f.frame.cacheHit) ?? null,
+      10_000,
+      "turned frame",
+    ).catch(() => null);
+    driver.editor().setRecipe(beforeCrop);
+    const turn = {
+      fullSize: turnedFrame ? `${turnedFrame.frame.fullWidth}x${turnedFrame.frame.fullHeight}` : null,
+      frameSize: turnedFrame ? `${turnedFrame.frame.width}x${turnedFrame.frame.height}` : null,
+      renderMs: turnedFrame?.frame.renderMs ?? null,
+    };
+    const turnOk =
+      turnedFrame !== null && turnedFrame.frame.fullHeight === fullW && turnedFrame.frame.height > turnedFrame.frame.width;
+
     // Perspective (ADR 0034): the renderer fits the same crop as the crop tool.
-    const shape = { straighten: 0, vertical: 40, horizontal: -15 };
+    const shape = { straighten: 0, vertical: 40, horizontal: -15, rotation: 0, flip: false };
     const fitted = fitCropFor(fullW / fullH, shape, fullW, fullH);
     const framesBeforePerspective = frames.length;
     driver.editor().setRecipe({ ...beforeCrop, geometry: { ...shape, crop: fitted, aspect: "original" } });
@@ -506,6 +534,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       toneCurve: toneCurveOk,
       crop: cropOk,
       perspective: perspectiveOk,
+      turn: turnOk,
       chromaticAberration: chromaticAberrationOk,
       histogram: histogramOk,
       autoLevel: autoLevelOk,
@@ -529,6 +558,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       toneCurve,
       crop,
       perspective,
+      turn,
       chromaticAberration,
       histogram,
       autoLevel,

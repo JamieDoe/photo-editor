@@ -7,7 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from "react";
-import { CropIcon, LevelIcon } from "../../components/icons";
+import { CropIcon, FlipIcon, LevelIcon, RotateIcon } from "../../components/icons";
 import * as ipc from "../../ipc/client";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { AspectRatio } from "../../ipc/generated/AspectRatio";
@@ -20,10 +20,13 @@ import {
   aspectRatioOf,
   cropView,
   drag,
+  flipGeometry,
   fromView,
   largestIn,
   remap,
+  orientedSize,
   toView,
+  turnGeometry,
   viewRatio,
   type Handle,
   type ViewShape,
@@ -32,7 +35,15 @@ import { GroupSliders } from "./AdjustmentPanel";
 import { Slider } from "./Slider";
 import { formatSliderValue } from "./sliderTrack";
 
-const NO_GEOMETRY: Geometry = { straighten: 0, crop: FULL, aspect: "original", vertical: 0, horizontal: 0 };
+const NO_GEOMETRY: Geometry = {
+  straighten: 0,
+  crop: FULL,
+  aspect: "original",
+  vertical: 0,
+  horizontal: 0,
+  rotation: 0,
+  flip: false,
+};
 
 export function geometryOf(r: EditRecipe): Geometry {
   return r.geometry ?? NO_GEOMETRY;
@@ -49,7 +60,7 @@ export function useCropTool(opts: {
   onChange: (r: EditRecipe) => void;
   setViewTransform: (t: ((r: EditRecipe) => EditRecipe) | null) => void;
 }) {
-  const { recipe, imageId, size, onChange, setViewTransform } = opts;
+  const { recipe, imageId, size: sourceSize, onChange, setViewTransform } = opts;
   const [open, setOpen] = useState(false);
   // Auto level's result, shown for a moment ("Horizon levelled · −1.4°").
   const [status, setStatus] = useState<string | null>(null);
@@ -59,10 +70,12 @@ export function useCropTool(opts: {
     return () => window.clearTimeout(t);
   }, [status]);
   const g = recipe ? geometryOf(recipe) : NO_GEOMETRY;
+  // The photo as turned (ADR 0039): the frame the crop and the view are in.
+  const size = sourceSize ? orientedSize(g, sourceSize.width, sourceSize.height) : null;
   const view = size ? cropView(g, size.width, size.height) : FULL;
 
   useEffect(() => {
-    if (!open || !size) {
+    if (!open || !sourceSize) {
       setViewTransform(null);
       return;
     }
@@ -70,10 +83,11 @@ export function useCropTool(opts: {
     // crop over it.
     setViewTransform((r) => {
       const geo = geometryOf(r);
-      return { ...r, geometry: { ...geo, crop: cropView(geo, size.width, size.height), aspect: "free" } };
+      const turned = orientedSize(geo, sourceSize.width, sourceSize.height);
+      return { ...r, geometry: { ...geo, crop: cropView(geo, turned.width, turned.height), aspect: "free" } };
     });
     return () => setViewTransform(null);
-  }, [open, size, setViewTransform]);
+  }, [open, sourceSize, setViewTransform]);
 
   const update = useCallback(
     (next: Geometry) => {
@@ -125,17 +139,24 @@ export function useCropTool(opts: {
       if (imageId === null) return;
       ipc
         .autoLevel(imageId)
-        .then((angle) => {
-          if (angle === null) {
+        .then((measured) => {
+          if (measured === null) {
             setStatus("No clear horizon found");
             return;
           }
+          // Measured on the photo as shot: a mirror levels the other way. Quarter
+          // turns do not change it (turns about the centre commute).
+          const angle = g.flip ? -measured : measured;
           setStraighten(angle);
           setStatus(`Horizon levelled · ${angle > 0 ? "+" : angle < 0 ? "−" : ""}${Math.abs(angle).toFixed(1)}°`);
         })
         .catch(() => setStatus("Couldn't level the photo"));
     },
     setOverlay: (o: CropRect) => update({ ...g, crop: fromView(o, view) }),
+    /** A quarter turn clockwise (1) or anticlockwise (-1), keeping the edit (ADR 0039). */
+    turn: (dir: 1 | -1) => update(turnGeometry(g, dir)),
+    /** Mirrors the picture left to right, keeping the edit. */
+    flip: () => update(flipGeometry(g)),
   };
 }
 
@@ -205,6 +226,16 @@ export function CropToolbar({ tool, straighten }: { tool: CropTool; straighten: 
   return (
     <div className="photo-toolbar crop-toolbar" role="toolbar" aria-label="Crop">
       <AspectButtons tool={tool} className="crop-ratio" />
+      <span className="toolbar-divider" />
+      <button className="crop-icon" title="Rotate left" aria-label="Rotate left" onClick={() => tool.turn(-1)}>
+        <RotateIcon mirrored size={15} />
+      </button>
+      <button className="crop-icon" title="Rotate right" aria-label="Rotate right" onClick={() => tool.turn(1)}>
+        <RotateIcon size={15} />
+      </button>
+      <button className="crop-icon" title="Flip horizontally" aria-label="Flip horizontally" onClick={tool.flip}>
+        <FlipIcon size={15} />
+      </button>
       <span className="toolbar-divider" />
       <label htmlFor="crop-straighten" className="crop-label">
         Straighten

@@ -35,7 +35,9 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   recipes have none.
 /// - 15: adds red, green and blue tone curves (ADR 0038), written only when shaped;
 ///   older recipes have none.
-pub const RECIPE_VERSION: u32 = 15;
+/// - 16: adds quarter turns and a flip to the geometry (ADR 0039); older geometry is
+///   upright.
+pub const RECIPE_VERSION: u32 = 16;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -188,7 +190,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=15 => Ok(Self {
+            7..=16 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -330,7 +332,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":15,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":16,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -427,6 +429,8 @@ mod tests {
                 aspect: AspectRatio::Free,
                 vertical: 30.0,
                 horizontal: -12.5,
+                rotation: 3,
+                flip: true,
             }),
             ..Default::default()
         };

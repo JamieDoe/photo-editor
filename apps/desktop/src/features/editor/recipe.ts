@@ -87,6 +87,8 @@ export function geometryEdited(r: EditRecipe): boolean {
   if (!g) return false;
   const { crop } = g;
   return (
+    g.rotation % 4 !== 0 ||
+    g.flip ||
     g.straighten !== 0 ||
     g.vertical !== 0 ||
     g.horizontal !== 0 ||

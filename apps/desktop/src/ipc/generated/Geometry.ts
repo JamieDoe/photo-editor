@@ -23,4 +23,13 @@ vertical: number,
  * Horizontal perspective, -100..100: positive widens the right side, correcting a
  * wall that recedes to the right.
  */
-horizontal: number, };
+horizontal: number, 
+/**
+ * Quarter turns clockwise, 0..3 (ADR 0039), applied to the photo first: every
+ * other setting here is in the turned (and flipped) photo's frame.
+ */
+rotation: number, 
+/**
+ * Mirrored left to right, before the quarter turns.
+ */
+flip: boolean, };

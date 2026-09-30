@@ -1,9 +1,61 @@
 import { describe, expect, it } from "vitest";
-import { cropView, drag, fitCrop, fitCropFor, fromView, largestIn, remap, toView, viewRatio, viewToSource } from "./cropGeometry";
+import type { Geometry } from "../../ipc/generated/Geometry";
+import {
+  cropView,
+  drag,
+  fitCrop,
+  fitCropFor,
+  flipGeometry,
+  fromView,
+  largestIn,
+  orientedSize,
+  remap,
+  toView,
+  turnGeometry,
+  viewRatio,
+  viewToSource,
+} from "./cropGeometry";
 
 const shape = (straighten: number, vertical = 0, horizontal = 0) => ({ straighten, vertical, horizontal });
 
 describe("crop geometry", () => {
+  const g: Geometry = {
+    straighten: 3,
+    crop: { x: 0.1, y: 0.2, w: 0.5, h: 0.3 },
+    aspect: "wide16x9",
+    vertical: 40,
+    horizontal: -10,
+    rotation: 0,
+    flip: false,
+  };
+
+  it("turns the edit with the picture", () => {
+    const cw = turnGeometry(g, 1);
+    expect(cw.rotation).toBe(1);
+    // The crop's top-left corner goes to the top-right.
+    expect(cw.crop.x).toBeCloseTo(0.5);
+    expect(cw.crop.y).toBeCloseTo(0.1);
+    expect([cw.crop.w, cw.crop.h]).toEqual([0.3, 0.5]);
+    expect([cw.vertical, cw.horizontal, cw.straighten, cw.aspect]).toEqual([10, 40, 3, "free"]);
+    // Four turns either way come back.
+    let back = g;
+    for (let i = 0; i < 4; i++) back = turnGeometry(back, 1);
+    expect({ ...back, aspect: g.aspect }).toEqual(g);
+    const undone = turnGeometry(turnGeometry(g, 1), -1);
+    expect(undone.crop.x).toBeCloseTo(g.crop.x);
+    expect(undone.crop.y).toBeCloseTo(g.crop.y);
+    expect([undone.vertical, undone.horizontal]).toEqual([g.vertical, g.horizontal]);
+    expect(orientedSize(cw, 6000, 4000)).toEqual({ width: 4000, height: 6000 });
+  });
+
+  it("mirrors the edit with the picture", () => {
+    const f = flipGeometry(turnGeometry(g, 1));
+    expect([f.flip, f.rotation]).toEqual([true, 3]);
+    expect(f.crop.x).toBeCloseTo(0.2);
+    expect([f.straighten, f.horizontal]).toEqual([-3, -40]);
+    expect(flipGeometry(flipGeometry(g))).toEqual(g);
+  });
+
   it("fits crops like the renderer", () => {
     // The same case as `fit_crop_matches_the_ui` in crates/renderer/src/geometry.rs.
     const c = fitCrop(1.5, 5, 6000, 4000);

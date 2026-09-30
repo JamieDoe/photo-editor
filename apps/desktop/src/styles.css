@@ -289,7 +289,7 @@ button.flag-button:hover:not(:disabled) { background: var(--hover-strong); color
 button.flag-button.pick[aria-pressed="true"] { background: var(--primary-bg); color: var(--primary-fg); }
 button.flag-button.reject[aria-pressed="true"] { background: var(--danger-soft); color: var(--danger); }
 .viewer { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 8px 32px 0; }
-.photo-toolbar-strip { height: 68px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.photo-toolbar-strip { height: 68px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; container-type: inline-size; }
 .photo-toolbar {
   height: 44px; padding: 0 6px; border-radius: 12px; display: flex; align-items: center; gap: 2px;
   background: var(--raised); border: 1px solid var(--hairline-strong); box-shadow: 0 10px 30px -10px rgb(0 0 0 / 60%);
@@ -333,6 +333,8 @@ button.crop-ratio[aria-pressed="true"] { background: rgb(255 255 255 / 10%); col
 .crop-label { font-size: 12px; color: var(--text-2); }
 .crop-straighten { width: 120px; margin: 0 8px; }
 .crop-angle { font-family: var(--mono); font-size: 11.5px; color: var(--text); width: 44px; }
+button.crop-icon { width: 30px; height: 30px; padding: 0; border-radius: 8px; background: transparent; border-color: transparent; color: var(--text-2); }
+button.crop-icon:hover:not(:disabled) { color: var(--text); }
 button.crop-reset { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 12.5px; font-weight: 400; background: transparent; border-color: transparent; color: var(--text-2); }
 button.crop-done { height: 30px; padding: 0 14px; border-radius: 8px; font-size: 12.5px; }
 .geometry-aspect { display: flex; flex-direction: column; gap: 9px; }
@@ -344,6 +346,17 @@ button.geometry-crop { height: 34px; border-radius: 8px; justify-content: center
 .geometry-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .geometry-status { font-size: 12px; color: var(--text-2); }
 .crop-toolbar { position: relative; }
+/* Narrow stages: the crop toolbar tightens, then leaves the aspect ratios to the
+   Geometry panel (which has them too), so it never overflows. */
+@container (max-width: 760px) {
+  .crop-label { display: none; }
+  button.crop-ratio { padding: 0 7px; }
+  .crop-straighten { width: 90px; margin: 0 6px; }
+  button.crop-reset { padding: 0 8px; }
+}
+@container (max-width: 600px) {
+  button.crop-ratio, .crop-ratio + .toolbar-divider { display: none; }
+}
 .crop-status { position: absolute; left: 50%; bottom: calc(100% + 10px); transform: translateX(-50%); white-space: nowrap; height: 28px; padding: 0 12px; border-radius: 14px; background: var(--raised); border: 1px solid var(--hairline-strong); font-size: 12px; display: flex; align-items: center; color: var(--text); }
 .viewer-canvas.fill { display: block; width: 100%; height: 100%; }
 .viewer { position: relative; }

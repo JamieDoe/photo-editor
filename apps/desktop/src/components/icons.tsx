@@ -72,6 +72,24 @@ export const LevelIcon = (p: IconProps) => (
 );
 
 /** The design's crop / Geometry icon. */
+/** A quarter-turn arrow; `mirrored` points it anticlockwise. */
+export const RotateIcon = ({ mirrored = false, ...p }: IconProps & { mirrored?: boolean }) => (
+  <Icon {...p}>
+    <g transform={mirrored ? "matrix(-1 0 0 1 16 0)" : undefined}>
+      <path d="M3.5 9.5a5 5 0 1 0 1.8-4.8" />
+      <path d="M5.5 1.8v3.1H2.4" />
+    </g>
+  </Icon>
+);
+
+export const FlipIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M8 1.5v13" strokeDasharray="1.5 2" />
+    <path d="M6 4L2 12h4z" />
+    <path d="M10 4l4 8h-4z" />
+  </Icon>
+);
+
 export const CropIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M4 1.5V12h10.5" />
