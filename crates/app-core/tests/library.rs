@@ -1,7 +1,7 @@
 //! Indexing integration tests: real files on disk, real catalogue, engine job system.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use app_core::{Catalogue, Engine, EngineConfig, IndexProgress, IndexStage, JobError};
 
@@ -148,10 +148,27 @@ fn cancelled_scan_marks_nothing_missing() {
         photo(&s.root.join(format!("IMG_{i}.jpg")), i);
     }
     s.index();
+    // Cancel from inside the scan, once it has begun recording: a rescan of ten
+    // unchanged files can finish before a cancel from out here arrives. The progress
+    // callback waits for the job's token, so the cancel always lands mid-scan.
+    let slot: Arc<(Mutex<Option<jobs::CancelToken>>, Condvar)> = Arc::default();
+    let in_scan = Arc::clone(&slot);
     let handle = s
         .engine
-        .index_folder(Arc::clone(&s.catalogue), s.root.clone(), |_| {});
-    handle.cancel();
+        .index_folder(Arc::clone(&s.catalogue), s.root.clone(), move |p| {
+            if p.stage == IndexStage::Recording && p.processed == 0 {
+                let (token, ready) = &*in_scan;
+                let token = ready
+                    .wait_while(token.lock().unwrap(), |t| t.is_none())
+                    .unwrap();
+                token.as_ref().unwrap().cancel();
+            }
+        });
+    {
+        let (token, ready) = &*slot;
+        *token.lock().unwrap() = Some(handle.token().clone());
+        ready.notify_all();
+    }
     assert_eq!(handle.wait().unwrap_err(), JobError::Cancelled);
     let missing = s
         .catalogue
