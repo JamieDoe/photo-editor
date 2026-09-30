@@ -395,6 +395,62 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       toneCurve.redCurveLift.red > 10 &&
       Math.abs(toneCurve.redCurveLift.green) < 3;
 
+    // Undo and redo (ADR 0044): three exposures while a pointer is held down are one
+    // step. Undoing it renders the photo as before the drag, redoing it as dragged.
+    const history = await (async () => {
+      const ed = () => driver.editor();
+      // The recipe set just before, once React has shown it.
+      const before = await waitFor(() => (ed().recipe === beforeCurve ? beforeCurve : null), 5_000, "recipe before the drag");
+      const sameSize = (f: RenderedFrame) =>
+        baseline !== null && f.frame.width === baseline.frame.width && f.frame.height === baseline.frame.height;
+      /** The first frame (at the baseline's size) of what `act` requests, once React
+       *  has shown the change too. */
+      const frameOf = async (act: () => void, what: string) => {
+        const mark = ed().schedulerStats().requested;
+        act();
+        const frame = await waitFor(() => frames.find((f) => f.info.seq > mark && sameSize(f)) ?? null, 10_000, what).catch(
+          () => null,
+        );
+        await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+        return frame;
+      };
+      window.dispatchEvent(new PointerEvent("pointerdown"));
+      ed().setRecipe({ ...before, exposure: before.exposure + 0.3 });
+      ed().setRecipe({ ...before, exposure: before.exposure + 0.6 });
+      const draggedFrame = await frameOf(() => ed().setRecipe({ ...before, exposure: before.exposure + 0.9 }), "dragged frame");
+      window.dispatchEvent(new PointerEvent("pointerup"));
+      await new Promise((r) => setTimeout(r, 20));
+      const dragged = ed().recipe!;
+      const label = ed().undoLabel;
+      const undoneFrame = await frameOf(() => ed().undo(), "undone frame");
+      const undone = ed().recipe!;
+      const redoLabel = ed().redoLabel;
+      const redoneFrame = await frameOf(() => ed().redo(), "redone frame");
+      const redone = ed().recipe!;
+      const luma = (f: RenderedFrame | null) => (f ? Math.round(meanLuma(f) * 100) / 100 : null);
+      return {
+        label,
+        redoLabel,
+        undoneMatchesRecipe: JSON.stringify(undone) === JSON.stringify(before),
+        redoneMatchesRecipe: redone === dragged,
+        meanLuma: { before: luma(baseline), dragged: luma(draggedFrame), undone: luma(undoneFrame), redone: luma(redoneFrame) },
+      };
+    })();
+    driver.editor().setRecipe(beforeCurve);
+    const m = history.meanLuma;
+    const historyOk =
+      history.label === "Exposure" &&
+      history.redoLabel === "Exposure" &&
+      history.undoneMatchesRecipe &&
+      history.redoneMatchesRecipe &&
+      m.before !== null &&
+      m.dragged !== null &&
+      m.undone !== null &&
+      m.redone !== null &&
+      m.dragged > m.before + 10 &&
+      Math.abs(m.undone - m.before) < 0.5 &&
+      Math.abs(m.redone - m.dragged) < 0.5;
+
     // Auto level through the real command (ADR 0033): an angle or null, quickly.
     const tLevel = performance.now();
     let levelError: string | null = null;
@@ -806,6 +862,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       ratingsAndFlags: marksOk,
       savedEdits: editsOk,
       toneCurve: toneCurveOk,
+      history: historyOk,
       crop: cropOk,
       perspective: perspectiveOk,
       turn: turnOk,
@@ -831,6 +888,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       firstVisibleMs: firstFrameMs,
       reopen,
       toneCurve,
+      history,
       crop,
       perspective,
       turn,

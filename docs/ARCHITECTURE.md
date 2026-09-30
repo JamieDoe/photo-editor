@@ -251,7 +251,8 @@ See `PERFORMANCE.md` for measured consequences.
   ICC profile or metadata.
 - Windows: LibRaw is opened with a narrow-character path (non-ASCII paths will fail);
   the LibRaw DLL is not bundled.
-- Edits are saved per photo (ADR 0019), but there is no undo history yet (Phase 7).
+- Edits are saved per photo (ADR 0019). Undo history (ADR 0044) lasts the session; it is
+  not saved.
 - Library: folders are listed from the filesystem, one level at a time, joined with
   details and marks from the catalogue. The library-wide Picks / Rated / Rejected
   collections come from the catalogue. There is no sort, search or multi-select yet.
