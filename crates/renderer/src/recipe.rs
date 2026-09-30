@@ -43,7 +43,8 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 19: adds brush masks (ADR 0042).
 /// - 20: adds masks of several shapes, and mask density (ADR 0043); older masks are
 ///   one shape at full density.
-pub const RECIPE_VERSION: u32 = 20;
+/// - 21: adds white balance set as a light (ADR 0051), written only when set.
+pub const RECIPE_VERSION: u32 = 21;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -74,6 +75,13 @@ pub struct EditRecipe {
     pub temperature: f32,
     /// Green/magenta shift relative to the as-shot white balance, -100..100.
     pub tint: f32,
+    /// White balance set as the light itself (ADR 0051), as Lightroom presets made on
+    /// raw files set it: each photo is balanced from its own as-shot light to this
+    /// one, and Temperature and Tint are ignored. `None` (and omitted from the JSON)
+    /// when white balance is relative.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub white_balance: Option<crate::ops::white_balance::AbsoluteWhiteBalance>,
     /// Saturation that favours muted colours and spares skin tones, -100..100.
     pub vibrance: f32,
     /// Colour saturation, -100 (monochrome) .. 100.
@@ -136,6 +144,7 @@ impl Default for EditRecipe {
             dehaze: 0.0,
             temperature: 0.0,
             tint: 0.0,
+            white_balance: None,
             vibrance: 0.0,
             saturation: 0.0,
             texture: 0.0,
@@ -202,7 +211,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=20 => Ok(Self {
+            7..=21 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -229,6 +238,7 @@ impl EditRecipe {
             dehaze: DEHAZE.clamp(self.dehaze),
             temperature: TEMPERATURE.clamp(self.temperature),
             tint: TINT.clamp(self.tint),
+            white_balance: self.white_balance.map(|w| w.sanitized()),
             vibrance: VIBRANCE.clamp(self.vibrance),
             saturation: SATURATION.clamp(self.saturation),
             texture: TEXTURE.clamp(self.texture),
@@ -293,6 +303,7 @@ impl EditRecipe {
             && s.dehaze == 0.0
             && s.temperature == 0.0
             && s.tint == 0.0
+            && s.white_balance.is_none()
             && s.vibrance == 0.0
             && s.saturation == 0.0
             && s.texture == 0.0
@@ -350,7 +361,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":20,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":21,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 

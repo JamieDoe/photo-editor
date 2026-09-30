@@ -5,4 +5,9 @@
  * light the slider assumes is `1e6 / (1e6 / as_shot_kelvin - amount * mired_per_unit)`,
  * clamped to `min_kelvin..=max_kelvin` (see [`TemperatureScale::kelvin_at`]).
  */
-export type TemperatureScale = { asShotKelvin: number, miredPerUnit: number, minKelvin: number, maxKelvin: number, };
+export type TemperatureScale = { asShotKelvin: number, 
+/**
+ * The as-shot light's tint on Adobe's scale (its Duv x 3000), to show a white
+ * balance set as the light (ADR 0051) on the relative sliders.
+ */
+asShotTint: number, miredPerUnit: number, minKelvin: number, maxKelvin: number, };

@@ -192,13 +192,26 @@ pub fn read_xmp(xml: &str) -> Result<LightroomPreset, LightroomError> {
     take("Vibrance", &mut r.vibrance);
     take("Saturation", &mut r.saturation);
     // White balance as a shift from the photo's own; Lightroom writes this for
-    // presets made on JPEGs, and kelvin values for raw files (left out below).
+    // presets made on JPEGs.
     take("IncrementalTemperature", &mut r.temperature);
     take("IncrementalTint", &mut r.tint);
     take("Sharpness", &mut r.sharpening);
     take("LuminanceSmoothing", &mut r.noise_reduction);
     take("PostCropVignetteAmount", &mut r.vignette);
     take("GrainAmount", &mut r.grain);
+
+    // Presets made on raw files set the light itself, in kelvin (ADR 0051): each photo
+    // is balanced to it from its own as-shot light.
+    if let Some(kelvin) = s.num("Temperature")
+        && !s.is("WhiteBalance", "As Shot")
+        && !s.values.contains_key("IncrementalTemperature")
+    {
+        r.white_balance = Some(renderer::ops::white_balance::AbsoluteWhiteBalance {
+            kelvin,
+            tint: s.num("Tint").unwrap_or(0.0),
+        });
+        used = true;
+    }
 
     // HSL: Lightroom's eight bands are this app's.
     let mut mixer = ColourMixer::default();
@@ -252,10 +265,6 @@ pub fn read_xmp(xml: &str) -> Result<LightroomPreset, LightroomError> {
             left_out.push(what);
         }
     };
-    let custom_white_balance = s.values.contains_key("Temperature")
-        && !s.is("WhiteBalance", "As Shot")
-        && !s.values.contains_key("IncrementalTemperature");
-    note(custom_white_balance, "White balance in kelvin");
     note(
         [
             "ParametricShadows",
@@ -423,10 +432,10 @@ mod tests {
         let p = read_xmp(xmp).unwrap();
         assert_eq!((p.recipe.saturation, p.recipe.contrast), (-100.0, 25.0));
         assert_eq!(p.name, None);
-        assert_eq!(
-            p.left_out,
-            ["White balance in kelvin", "B&W mix", "Profile"]
-        );
+        assert_eq!(p.left_out, ["B&W mix", "Profile"]);
+        // The light in kelvin comes across as set (ADR 0051).
+        let wb = p.recipe.white_balance.unwrap();
+        assert_eq!((wb.kelvin, wb.tint), (5500.0, 0.0));
     }
 
     #[test]

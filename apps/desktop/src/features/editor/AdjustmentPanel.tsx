@@ -13,7 +13,7 @@ import { Slider } from "./Slider";
 import { curvesEdited } from "./pointCurve";
 import { ToneCurve } from "./ToneCurve";
 import { formatSliderValue } from "./sliderTrack";
-import { formatKelvin, kelvinAt, WHITE_BALANCE_TRACKS } from "./whiteBalance";
+import { formatKelvin, kelvinAt, relativeWhiteBalance, WHITE_BALANCE_TRACKS, withRelativeWhiteBalance } from "./whiteBalance";
 
 interface Props {
   specs: AdjustmentSpec[];
@@ -46,7 +46,11 @@ const GROUP_ICONS: Record<string, ReactNode> = {
  */
 export function AdjustmentPanel({ specs, mixerSpec, histogram, recipe, onChange, disabled, temperatureScale }: Props) {
   const groups = [...new Set(specs.map((s) => s.group))];
-  const valueOf = (spec: AdjustmentSpec) => (isAdjustmentKey(spec.key) ? recipe[spec.key] : spec.default);
+  // A white balance set as a light (ADR 0051) shows on Temperature and Tint as the
+  // shift it amounts to for this photo; moving either turns it into that shift.
+  const wb = relativeWhiteBalance(recipe, temperatureScale);
+  const valueOf = (spec: AdjustmentSpec) =>
+    spec.key === "temperature" || spec.key === "tint" ? wb[spec.key] : isAdjustmentKey(spec.key) ? recipe[spec.key] : spec.default;
   // As in the design, Temperature reads as the light it assumes ("5650 K").
   const format = (spec: AdjustmentSpec, v: number) =>
     spec.key === "temperature" && temperatureScale
@@ -118,7 +122,9 @@ export function AdjustmentPanel({ specs, mixerSpec, histogram, recipe, onChange,
               extra={mixer ?? curve ?? finishing}
               disabled={disabled}
               onChange={(key, v) => {
-                if (isAdjustmentKey(key)) onChange({ ...recipe, [key]: v });
+                if (!isAdjustmentKey(key)) return;
+                const base = key === "temperature" || key === "tint" ? withRelativeWhiteBalance(recipe, temperatureScale) : recipe;
+                onChange({ ...base, [key]: v });
               }}
             />
           </PanelSection>
