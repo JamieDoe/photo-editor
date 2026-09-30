@@ -22,6 +22,14 @@ pub struct Mask {
     /// Tells masks apart while they are edited; not rendered.
     pub id: u32,
     pub shape: MaskShape,
+    /// Adjust outside the shape instead of inside.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
+    pub invert: bool,
+    /// Kept but not applied: the photographer switched it off to compare.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
+    pub hidden: bool,
     #[serde(default)]
     pub adjustments: LocalAdjustments,
 }
@@ -36,6 +44,18 @@ pub enum MaskShape {
     /// `start` → `end`). Points are fractions of the frame's width and height; they
     /// may lie outside it.
     Linear { start: [f32; 2], end: [f32; 2] },
+    /// A radial gradient (ADR 0041): an ellipse, fully on inside, fading to nothing at
+    /// its edge. `centre` is in frame fractions; `radius` (along the ellipse's own two
+    /// axes) in fractions of the frame's diagonal, which a quarter turn leaves alone;
+    /// `angle` turns the first axis clockwise from horizontal, in degrees. `feather`
+    /// (0..100) is the share of the radius the fade takes: 0 is a hard edge, 100 fades
+    /// from the centre.
+    Radial {
+        centre: [f32; 2],
+        radius: [f32; 2],
+        angle: f32,
+        feather: f32,
+    },
 }
 
 /// What a mask changes where it covers the photo, as the global controls do.
@@ -90,15 +110,37 @@ impl MaskShape {
                 }
                 Self::Linear { start, end }
             }
+            Self::Radial {
+                centre,
+                radius,
+                angle,
+                feather,
+            } => {
+                let finite = |v: f32, or: f32| if v.is_finite() { v } else { or };
+                let angle = finite(angle, 0.0).rem_euclid(360.0);
+                let angle = if angle > 180.0 { angle - 360.0 } else { angle };
+                Self::Radial {
+                    centre: clean(centre),
+                    radius: radius.map(|r| finite(r, 0.1).clamp(MIN_RADIUS, MAX_RADIUS)),
+                    angle: if angle == 0.0 { 0.0 } else { angle },
+                    feather: finite(feather, 50.0).clamp(0.0, 100.0),
+                }
+            }
         }
     }
 }
+
+/// A radial gradient's radii, as fractions of the frame's diagonal.
+const MIN_RADIUS: f32 = 0.002;
+const MAX_RADIUS: f32 = 3.0;
 
 impl Mask {
     pub fn sanitized(&self) -> Self {
         Self {
             id: self.id,
             shape: self.shape.sanitized(),
+            invert: self.invert,
+            hidden: self.hidden,
             adjustments: self.adjustments.sanitized(),
         }
     }
@@ -130,6 +172,14 @@ pub enum CompiledShape {
     /// Coverage `1 - smoothstep(t)` with `t = (p - start) · along`, where `along` is
     /// start → end divided by its squared length.
     Linear { start: [f32; 2], along: [f32; 2] },
+    /// Coverage `1 - smoothstep(inner, 1, d)`, where `d` is the elliptical distance
+    /// from `centre` (1 on the edge): `axes` are the ellipse's axis directions divided
+    /// by their radii.
+    Radial {
+        centre: [f32; 2],
+        axes: [[f32; 2]; 2],
+        inner: f32,
+    },
 }
 
 impl CompiledShape {
@@ -145,6 +195,21 @@ impl CompiledShape {
                     along: [d[0] / len2, d[1] / len2],
                 }
             }
+            MaskShape::Radial {
+                centre,
+                radius,
+                angle,
+                feather,
+            } => {
+                let diagonal = frame.width.hypot(frame.height);
+                let (sin, cos) = angle.to_radians().sin_cos();
+                let (a, b) = (radius[0] * diagonal, radius[1] * diagonal);
+                Self::Radial {
+                    centre: [centre[0] * frame.width, centre[1] * frame.height],
+                    axes: [[cos / a, sin / a], [-sin / b, cos / b]],
+                    inner: 1.0 - feather / 100.0,
+                }
+            }
         }
     }
 
@@ -156,6 +221,22 @@ impl CompiledShape {
                 let t = ((x - start[0]) * along[0] + (y - start[1]) * along[1]).clamp(0.0, 1.0);
                 1.0 - t * t * (3.0 - 2.0 * t)
             }
+            Self::Radial {
+                centre,
+                axes,
+                inner,
+            } => {
+                let (dx, dy) = (x - centre[0], y - centre[1]);
+                let u = dx * axes[0][0] + dy * axes[0][1];
+                let v = dx * axes[1][0] + dy * axes[1][1];
+                let d = (u * u + v * v).sqrt();
+                if inner >= 1.0 {
+                    // No feather: a hard edge.
+                    return if d <= 1.0 { 1.0 } else { 0.0 };
+                }
+                let t = ((d - inner) / (1.0 - inner)).clamp(0.0, 1.0);
+                1.0 - t * t * (3.0 - 2.0 * t)
+            }
         }
     }
 }
@@ -165,6 +246,8 @@ impl CompiledShape {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LocalMask {
     pub shape: MaskShape,
+    /// Adjusts outside the shape instead.
+    pub invert: bool,
     /// Exposure, in stops.
     pub stops: f32,
     /// Warmth as log2 channel gains.
@@ -188,6 +271,13 @@ pub struct LocalField {
 }
 
 impl LocalField {
+    /// How much mask `m` covers frame point (`fx`, `fy`), its inversion included.
+    #[inline]
+    fn cover(shape: &CompiledShape, m: &LocalMask, fx: f32, fy: f32) -> f32 {
+        let c = shape.coverage(fx, fy);
+        if m.invert { 1.0 - c } else { c }
+    }
+
     pub fn new(masks: &[LocalMask], frame: Frame) -> Self {
         Self {
             masks: masks
@@ -230,7 +320,7 @@ impl LocalField {
             if !m.has_gains() {
                 continue;
             }
-            let c = shape.coverage(fx, fy);
+            let c = Self::cover(shape, m, fx, fy);
             for (gc, wc) in g.iter_mut().zip(m.warmth) {
                 *gc += c * (m.stops + wc);
             }
@@ -245,7 +335,7 @@ impl LocalField {
         self.masks
             .iter()
             .filter(|(_, m)| m.stops != 0.0)
-            .map(|(shape, m)| shape.coverage(fx, fy) * m.stops)
+            .map(|(shape, m)| Self::cover(shape, m, fx, fy) * m.stops)
             .sum()
     }
 
@@ -256,7 +346,7 @@ impl LocalField {
         self.masks
             .iter()
             .filter(|(_, m)| m.clarity != 0.0)
-            .map(|(shape, m)| shape.coverage(fx, fy) * m.clarity)
+            .map(|(shape, m)| Self::cover(shape, m, fx, fy) * m.clarity)
             .sum()
     }
 }
@@ -297,6 +387,7 @@ mod tests {
     fn the_field_follows_the_crop() {
         let masks = [LocalMask {
             shape: linear([0.5, 0.0], [0.5, 0.5]),
+            invert: false,
             stops: 1.0,
             warmth: [0.0; 3],
             clarity: 20.0,
@@ -330,7 +421,9 @@ mod tests {
     #[test]
     fn sanitising_keeps_shapes_usable() {
         let s = linear([f32::NAN, 9.0], [f32::NAN, 9.0]).sanitized();
-        let MaskShape::Linear { start, end } = s;
+        let MaskShape::Linear { start, end } = s else {
+            unreachable!()
+        };
         assert_eq!(start, [0.5, 3.0]);
         assert!(end[1] > start[1]);
         let adj = LocalAdjustments {
@@ -342,11 +435,84 @@ mod tests {
         assert_eq!((adj.exposure, adj.warmth, adj.clarity), (2.0, 0.0, -100.0));
     }
 
+    fn radial(centre: [f32; 2], radius: [f32; 2], angle: f32, feather: f32) -> MaskShape {
+        MaskShape::Radial {
+            centre,
+            radius,
+            angle,
+            feather,
+        }
+    }
+
+    #[test]
+    fn a_radial_gradient_covers_its_ellipse_and_fades_at_the_edge() {
+        // 300 x 400 frame: diagonal 500 px. Radii 100 px and 50 px.
+        let frame = Frame::whole(300, 400);
+        let s = CompiledShape::new(&radial([0.5, 0.5], [0.2, 0.1], 0.0, 50.0), &frame);
+        assert_eq!(s.coverage(150.0, 200.0), 1.0);
+        // Inside the unfeathered half of the radius: full; past the edge: none.
+        assert_eq!(s.coverage(150.0 + 49.0, 200.0), 1.0);
+        assert_eq!(s.coverage(150.0 + 101.0, 200.0), 0.0);
+        assert_eq!(s.coverage(150.0, 200.0 + 51.0), 0.0);
+        // Half way through the fade (three quarters of the radius).
+        assert!((s.coverage(150.0 + 75.0, 200.0) - 0.5).abs() < 1e-5);
+        assert!((s.coverage(150.0, 200.0 + 37.5) - 0.5).abs() < 1e-5);
+        // Turned a quarter: the long axis is vertical.
+        let turned = CompiledShape::new(&radial([0.5, 0.5], [0.2, 0.1], 90.0, 50.0), &frame);
+        assert!(turned.coverage(150.0, 200.0 + 90.0) > 0.0);
+        assert_eq!(turned.coverage(150.0 + 60.0, 200.0), 0.0);
+        // No feather: a hard edge.
+        let hard = CompiledShape::new(&radial([0.5, 0.5], [0.2, 0.2], 0.0, 0.0), &frame);
+        assert_eq!(hard.coverage(150.0 + 99.0, 200.0), 1.0);
+        assert_eq!(hard.coverage(150.0 + 101.0, 200.0), 0.0);
+    }
+
+    #[test]
+    fn inverted_masks_adjust_outside() {
+        let mask = |invert| LocalMask {
+            shape: radial([0.5, 0.5], [0.1, 0.1], 0.0, 0.0),
+            invert,
+            stops: 1.0,
+            warmth: [0.0; 3],
+            clarity: 0.0,
+        };
+        let inside = LocalField::new(&[mask(false)], Frame::whole(300, 400));
+        let outside = LocalField::new(&[mask(true)], Frame::whole(300, 400));
+        assert_eq!(
+            (
+                inside.stops(150, 200, 300, 400),
+                outside.stops(150, 200, 300, 400)
+            ),
+            (1.0, 0.0)
+        );
+        assert_eq!(
+            (inside.stops(5, 5, 300, 400), outside.stops(5, 5, 300, 400)),
+            (0.0, 1.0)
+        );
+    }
+
+    #[test]
+    fn radial_sanitising_keeps_it_drawable() {
+        let MaskShape::Radial {
+            radius,
+            angle,
+            feather,
+            ..
+        } = radial([0.5, 0.5], [0.0, f32::NAN], 540.0, 400.0).sanitized()
+        else {
+            unreachable!()
+        };
+        assert_eq!(radius, [MIN_RADIUS, 0.1]);
+        assert_eq!((angle, feather), (180.0, 100.0));
+    }
+
     #[test]
     fn serialises_with_its_kind() {
         let m = Mask {
             id: 3,
+            hidden: false,
             shape: linear([0.5, 0.1], [0.5, 0.6]),
+            invert: false,
             adjustments: LocalAdjustments {
                 exposure: -0.5,
                 ..Default::default()
@@ -358,5 +524,14 @@ mod tests {
             r#"{"id":3,"shape":{"kind":"linear","start":[0.5,0.1],"end":[0.5,0.6]},"adjustments":{"exposure":-0.5,"warmth":0.0,"clarity":0.0}}"#
         );
         assert_eq!(serde_json::from_str::<Mask>(&json).unwrap(), m);
+        // Inverted or hidden masks say so; others leave the flags out.
+        let flagged = Mask {
+            invert: true,
+            hidden: true,
+            ..m
+        };
+        let json = serde_json::to_string(&flagged).unwrap();
+        assert!(json.contains(r#""invert":true,"hidden":true"#), "{json}");
+        assert_eq!(serde_json::from_str::<Mask>(&json).unwrap(), flagged);
     }
 }

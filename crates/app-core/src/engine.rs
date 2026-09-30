@@ -89,6 +89,7 @@ impl Engine {
             straighten: renderer::adjustments::STRAIGHTEN,
             perspective: renderer::adjustments::PERSPECTIVE.to_vec(),
             mask: renderer::adjustments::mask_specs(),
+            mask_feather: renderer::adjustments::MASK_FEATHER,
         }
     }
 

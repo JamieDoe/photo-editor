@@ -18,4 +18,8 @@ perspective: Array<AdjustmentSpec>,
 /**
  * A mask's Exposure, Warmth and Clarity (ADR 0040).
  */
-mask: Array<AdjustmentSpec>, };
+mask: Array<AdjustmentSpec>, 
+/**
+ * A radial mask's Feather (ADR 0041).
+ */
+maskFeather: AdjustmentSpec, };

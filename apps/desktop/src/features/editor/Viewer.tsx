@@ -45,6 +45,10 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay }: P
     return () => observer.disconnect();
   }, [onResize]);
 
+  // With an overlay the canvas sits in a frame, without one it stands alone: a
+  // different element, so the frame is drawn again when that changes (leaving mask
+  // mode renders nothing new, and would otherwise show an empty canvas).
+  const framed = overlay !== undefined;
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !displayed) return;
@@ -55,7 +59,7 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay }: P
     }
     const ctx = canvas.getContext("2d");
     ctx?.putImageData(new ImageData(frame.pixels, frame.width, frame.height), 0, 0);
-  }, [displayed]);
+  }, [displayed, framed]);
 
   return (
     <div className="viewer" ref={containerRef}>

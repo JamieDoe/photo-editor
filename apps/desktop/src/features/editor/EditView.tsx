@@ -225,6 +225,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
               <SelectiveControls
                 tool={{ ...masks, pick: pickMask }}
                 specs={info.mask}
+                feather={info.maskFeather}
                 disabled={!image}
               />
             </PanelSection>

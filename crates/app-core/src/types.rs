@@ -123,4 +123,5 @@ pub struct EngineInfo {
     pub straighten: AdjustmentSpec,
     pub perspective: Vec<AdjustmentSpec>,
     pub mask: Vec<AdjustmentSpec>,
+    pub mask_feather: AdjustmentSpec,
 }

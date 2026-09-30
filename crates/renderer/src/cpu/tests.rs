@@ -198,6 +198,22 @@ fn matches_scalar_reference_for_all_stages() {
         masks: vec![
             linear_mask(1, [0.5, 0.0], [0.5, 0.6], -0.8, 30.0, 40.0),
             linear_mask(2, [0.0, 0.5], [0.7, 0.5], 0.5, -20.0, -30.0),
+            crate::masks::Mask {
+                id: 3,
+                hidden: false,
+                shape: crate::masks::MaskShape::Radial {
+                    centre: [0.4, 0.6],
+                    radius: [0.3, 0.15],
+                    angle: 30.0,
+                    feather: 60.0,
+                },
+                invert: true,
+                adjustments: crate::masks::LocalAdjustments {
+                    exposure: -0.6,
+                    warmth: 15.0,
+                    clarity: 25.0,
+                },
+            },
         ],
         ..Default::default()
     };
@@ -428,7 +444,9 @@ fn linear_mask(
 ) -> crate::masks::Mask {
     crate::masks::Mask {
         id,
+        hidden: false,
         shape: crate::masks::MaskShape::Linear { start, end },
+        invert: false,
         adjustments: crate::masks::LocalAdjustments {
             exposure,
             warmth,
@@ -478,6 +496,19 @@ fn masks_change_only_what_they_cover() {
             .any(|s| matches!(s, Stage::Detail { .. }))
     );
     assert_ne!(render(&clarity).data(), a.data());
+    // A hidden mask is kept but renders nothing.
+    let hidden = EditRecipe {
+        masks: vec![crate::masks::Mask {
+            hidden: true,
+            ..linear_mask(1, [0.5, 0.0], [0.5, 0.4], -1.0, 0.0, 0.0)
+        }],
+        ..plain.clone()
+    };
+    assert_eq!(
+        RenderPlan::from_recipe(&hidden, None),
+        RenderPlan::from_recipe(&plain, None)
+    );
+    assert_eq!(render(&hidden).data(), a.data());
     // A mask without adjustments renders nothing.
     let idle = EditRecipe {
         masks: vec![linear_mask(1, [0.5, 0.0], [0.5, 0.4], 0.0, 0.0, 0.0)],

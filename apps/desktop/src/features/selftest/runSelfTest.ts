@@ -467,7 +467,49 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
             renderMs: maskedFrame.frame.renderMs,
           }
         : null;
-    const maskOk = mask !== null && mask.topDarker > 5 && Math.abs(mask.bottomChange) < 0.5;
+    const linearMaskOk = mask !== null && mask.topDarker > 5 && Math.abs(mask.bottomChange) < 0.5;
+    // An inverted radial (ADR 0041), -1 EV outside a circle in the middle: the edges
+    // darker, the middle unchanged.
+    const radialFrame = await show(
+      {
+        ...beforeCrop,
+        masks: [
+          {
+            id: 1,
+            shape: { kind: "radial", centre: [0.5, 0.5], radius: [0.2, 0.2], angle: 0, feather: 30 },
+            invert: true,
+            adjustments: { exposure: -1, warmth: 0, clarity: 0 },
+          },
+        ],
+      },
+      "radial mask frame",
+    );
+    const plainFrame = await show(beforeCrop, "frame without the radial mask", radialFrame);
+    // Mean of a band of rows' middle columns, or the whole rows.
+    const patchMean = (f: RenderedFrame, y0: number, y1: number, x0: number, x1: number) => {
+      const { width, height, pixels } = f.frame;
+      let sum = 0;
+      let n = 0;
+      for (let y = Math.floor(y0 * height); y < Math.floor(y1 * height); y++) {
+        for (let x = Math.floor(x0 * width); x < Math.floor(x1 * width); x++) {
+          const i = (y * width + x) * 4;
+          sum += pixels[i]! + pixels[i + 1]! + pixels[i + 2]!;
+          n += 3;
+        }
+      }
+      return sum / n;
+    };
+    const radial =
+      radialFrame && plainFrame
+        ? {
+            edgesDarker: Math.round((patchMean(plainFrame, 0, 0.1, 0, 1) - patchMean(radialFrame, 0, 0.1, 0, 1)) * 10) / 10,
+            middleChange:
+              Math.round((patchMean(radialFrame, 0.45, 0.55, 0.45, 0.55) - patchMean(plainFrame, 0.45, 0.55, 0.45, 0.55)) * 100) / 100,
+            renderMs: radialFrame.frame.renderMs,
+          }
+        : null;
+    const maskOk =
+      linearMaskOk && radial !== null && radial.edgesDarker > 5 && Math.abs(radial.middleChange) < 0.5;
 
     // A quarter turn (ADR 0039): the frame is the photo on its side.
     const framesBeforeTurn = frames.length;
@@ -599,6 +641,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       perspective,
       turn,
       mask,
+      radial,
       chromaticAberration,
       histogram,
       autoLevel,
