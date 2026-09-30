@@ -106,6 +106,11 @@ pub struct Geometry {
     /// Horizontal perspective, -100..100: positive widens the right side, correcting a
     /// wall that recedes to the right.
     pub horizontal: f32,
+    /// Quarter turns clockwise, 0..3 (ADR 0039), applied to the photo first: every
+    /// other setting here is in the turned (and flipped) photo's frame.
+    pub rotation: u8,
+    /// Mirrored left to right, before the quarter turns.
+    pub flip: bool,
 }
 
 impl Geometry {
@@ -115,6 +120,22 @@ impl Geometry {
             && self.vertical == 0.0
             && self.horizontal == 0.0
             && self.crop == CropRect::FULL
+            && self.is_upright()
+    }
+
+    /// Not turned or flipped.
+    pub fn is_upright(&self) -> bool {
+        self.rotation.is_multiple_of(4) && !self.flip
+    }
+
+    /// The size of a `w` x `h` photo once turned: the frame the view and the crop are
+    /// in.
+    pub fn oriented_size<T>(&self, w: T, h: T) -> (T, T) {
+        if self.rotation % 2 == 1 {
+            (h, w)
+        } else {
+            (w, h)
+        }
     }
 
     fn has_perspective(&self) -> bool {
@@ -141,6 +162,8 @@ impl Geometry {
             aspect: self.aspect,
             vertical: amount(self.vertical),
             horizontal: amount(self.horizontal),
+            rotation: self.rotation % 4,
+            flip: self.flip,
         }
     }
 
@@ -169,9 +192,10 @@ impl Geometry {
     /// Output size in pixels for a source of `w` x `h`.
     pub fn output_size(&self, w: u32, h: u32) -> (u32, u32) {
         let c = self.effective_crop(w as f32, h as f32);
+        let (vw, vh) = self.oriented_size(w as f32, h as f32);
         (
-            ((c.w * w as f32).round() as u32).max(1),
-            ((c.h * h as f32).round() as u32).max(1),
+            ((c.w * vw).round() as u32).max(1),
+            ((c.h * vh).round() as u32).max(1),
         )
     }
 }
@@ -190,8 +214,9 @@ fn scaled_about_centre(c: &CropRect, s: f32) -> CropRect {
 /// Perspective at ±100: the virtual camera turns this many degrees.
 const MAX_PERSPECTIVE_DEGREES: f32 = 20.0;
 
-/// Where each point of the view (fractions of the source's width and height) comes
-/// from in the source (pixels): undo the straighten rotation, then the perspective.
+/// Where each point of the view (fractions of the turned photo's width and height)
+/// comes from in the source (pixels): undo the straighten rotation, then the
+/// perspective, then the quarter turns and the flip.
 ///
 /// The perspective is a homography: the source seen by a camera turned about its
 /// horizontal and vertical axes, with a focal length of the long edge (about a 50°
@@ -199,14 +224,20 @@ const MAX_PERSPECTIVE_DEGREES: f32 = 20.0;
 /// view's centre is the photo's centre.
 #[derive(Debug, Clone, Copy)]
 pub struct Mapping {
+    /// The source's size.
     w: f32,
     h: f32,
+    /// The turned photo's size.
+    vw: f32,
+    vh: f32,
+    rotation: u8,
+    flip: bool,
     cos: f32,
     sin: f32,
     focal: f32,
     /// Camera rotation, row-major, and where it takes the centre; `None` without
     /// perspective.
-    rotation: Option<([f32; 9], (f32, f32))>,
+    rotation_matrix: Option<([f32; 9], (f32, f32))>,
 }
 
 impl Mapping {
@@ -223,23 +254,29 @@ impl Mapping {
             let r = [cb, 0.0, sb, sa * sb, ca, -sa * cb, -ca * sb, sa, ca * cb];
             (r, (r[2] / r[8], r[5] / r[8]))
         });
+        let g = g.sanitized();
+        let (vw, vh) = g.oriented_size(w, h);
         Self {
             w,
             h,
+            vw,
+            vh,
+            rotation: g.rotation,
+            flip: g.flip,
             cos,
             sin,
             focal: w.max(h),
-            rotation,
+            rotation_matrix: rotation,
         }
     }
 
     /// Source pixel coordinates of view point (`vx`, `vy`).
     #[inline]
     pub fn source(&self, vx: f32, vy: f32) -> (f32, f32) {
-        let (dx, dy) = ((vx - 0.5) * self.w, (vy - 0.5) * self.h);
+        let (dx, dy) = ((vx - 0.5) * self.vw, (vy - 0.5) * self.vh);
         // The view is turned anticlockwise (on screen) by the angle; undo it.
         let (px, py) = (dx * self.cos - dy * self.sin, dx * self.sin + dy * self.cos);
-        let (px, py) = match &self.rotation {
+        let (px, py) = match &self.rotation_matrix {
             None => (px, py),
             Some((r, (cx, cy))) => {
                 let (u, v) = (px / self.focal, py / self.focal);
@@ -249,7 +286,21 @@ impl Mapping {
                 ((x / z - cx) * self.focal, (y / z - cy) * self.focal)
             }
         };
-        (self.w / 2.0 + px, self.h / 2.0 + py)
+        self.unturned(self.vw / 2.0 + px, self.vh / 2.0 + py)
+    }
+
+    /// A point of the turned photo in the source: each quarter turn clockwise undone
+    /// (a point `(u, v)` of a photo turned from one `ch` pixels high came from
+    /// `(v, ch - u)`), then the flip.
+    #[inline]
+    fn unturned(&self, mut x: f32, mut y: f32) -> (f32, f32) {
+        let (mut cw, mut ch) = (self.vw, self.vh);
+        for _ in 0..self.rotation {
+            (x, y) = (y, cw - x);
+            (cw, ch) = (ch, cw);
+        }
+        debug_assert!((cw - self.w).abs() < 1e-3 && (ch - self.h).abs() < 1e-3);
+        if self.flip { (self.w - x, y) } else { (x, y) }
     }
 
     /// Whether the crop lies inside the photo. Straight lines stay straight under the
@@ -281,13 +332,16 @@ fn inside(c: &CropRect, straighten: f32, w: f32, h: f32) -> bool {
 
 /// The largest crop of `aspect`, centred in the view, inside the photo after all of
 /// `geometry`'s straighten and perspective (its own crop is ignored).
-pub fn fit_crop_for(aspect: AspectRatio, geometry: &Geometry, w: f32, h: f32) -> CropRect {
+///
+/// `w` x `h` is the source's size; the crop is in the turned photo's frame.
+pub fn fit_crop_for(aspect: AspectRatio, geometry: &Geometry, sw: f32, sh: f32) -> CropRect {
     let g = geometry.sanitized();
+    let (w, h) = g.oriented_size(sw, sh);
     if !g.has_perspective() {
         return fit_crop(aspect, g.straighten, w, h);
     }
     let ratio = aspect.ratio(w, h).unwrap_or(w / h);
-    let map = Mapping::new(&g, w, h);
+    let map = Mapping::new(&g, sw, sh);
     // Half-width in pixels, searched: the rectangle grows until a corner leaves.
     let rect = |a: f32| {
         let (cw, ch) = (2.0 * a / w, 2.0 * a / ratio / h);
@@ -356,7 +410,7 @@ pub fn resample_corrected(
     let radial = ca
         .filter(|c| !c.is_identity())
         .map(|c| Radial::new(c, w as f32, h as f32));
-    if g.straighten == 0.0 && !g.has_perspective() && radial.is_none() {
+    if g.straighten == 0.0 && !g.has_perspective() && g.is_upright() && radial.is_none() {
         let x0 = ((crop.x * w as f32).round() as u32).min(w - ow);
         let y0 = ((crop.y * h as f32).round() as u32).min(h - oh);
         data.par_chunks_mut(row_len)
@@ -933,5 +987,82 @@ mod tests {
             Some(&ChromaticAberration::default()),
         );
         assert_eq!(none.data(), src.data());
+    }
+
+    fn turned(rotation: u8, flip: bool) -> Geometry {
+        Geometry {
+            rotation,
+            flip,
+            ..Geometry::default()
+        }
+    }
+
+    /// Red and green of output pixel (`i`, `j`); the gradient's red is 100 x its
+    /// source column and green 100 x its row.
+    fn source_of(img: &LinearImage, i: u32, j: u32) -> (u16, u16) {
+        let k = ((j * img.width() + i) * 3) as usize;
+        (img.data()[k] / 100, img.data()[k + 1] / 100)
+    }
+
+    #[test]
+    fn quarter_turns_and_flips_move_whole_pixels() {
+        let src = gradient(30, 20);
+        // A clockwise turn: 20 x 30, and output (i, j) is source (j, 19 - i).
+        let cw = resample(&src, &turned(1, false));
+        assert_eq!((cw.width(), cw.height()), (20, 30));
+        assert_eq!(source_of(&cw, 0, 0), (0, 19));
+        assert_eq!(source_of(&cw, 19, 0), (0, 0));
+        assert_eq!(source_of(&cw, 3, 7), (7, 16));
+        // Half a turn: (29 - i, 19 - j).
+        let half = resample(&src, &turned(2, false));
+        assert_eq!(source_of(&half, 4, 5), (25, 14));
+        // Anticlockwise: (29 - j, i).
+        let ccw = resample(&src, &turned(3, false));
+        assert_eq!((ccw.width(), ccw.height()), (20, 30));
+        assert_eq!(source_of(&ccw, 3, 7), (22, 3));
+        // Mirrored: (29 - i, j); mirrored then turned clockwise: (29 - j, 19 - i).
+        assert_eq!(source_of(&resample(&src, &turned(0, true)), 4, 5), (25, 5));
+        assert_eq!(source_of(&resample(&src, &turned(1, true)), 3, 7), (22, 16));
+    }
+
+    #[test]
+    fn crops_and_fits_are_in_the_turned_frame() {
+        let g = Geometry {
+            crop: CropRect {
+                x: 0.0,
+                y: 0.0,
+                w: 0.5,
+                h: 0.25,
+            },
+            aspect: AspectRatio::Free,
+            ..turned(1, false)
+        };
+        // Half of the turned width (4000) and a quarter of its height (6000).
+        assert_eq!(g.output_size(6000, 4000), (2000, 1500));
+        let tilted = Geometry {
+            straighten: 5.0,
+            vertical: 30.0,
+            ..turned(3, true)
+        };
+        let fitted = fit_crop_for(AspectRatio::Original, &tilted, 6000.0, 4000.0);
+        let upright = Geometry {
+            rotation: 0,
+            flip: false,
+            ..tilted
+        };
+        // The same as an upright portrait photo.
+        let portrait = fit_crop_for(AspectRatio::Original, &upright, 4000.0, 6000.0);
+        let close = |a: f32, b: f32| (a - b).abs() < 1e-5;
+        assert!(
+            close(fitted.x, portrait.x)
+                && close(fitted.w, portrait.w)
+                && close(fitted.h, portrait.h),
+            "{fitted:?} vs {portrait:?}"
+        );
+        let map = Mapping::new(&tilted, 6000.0, 4000.0);
+        assert!(map.contains(&fitted));
+        assert!(!map.contains(&scaled_about_centre(&fitted, 1.01)));
+        assert!(!turned(2, false).is_identity() && !turned(0, true).is_identity());
+        assert_eq!(turned(5, false).sanitized().rotation, 1);
     }
 }

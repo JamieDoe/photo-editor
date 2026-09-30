@@ -9,10 +9,10 @@ const specs: AdjustmentSpec[] = [
 describe("recipe helpers", () => {
   it("counts framing and lens corrections as edits", () => {
     const r = defaultRecipe(13, specs);
-    const whole = { straighten: 0, crop: { x: 0, y: 0, w: 1, h: 1 }, aspect: "square" as const, vertical: 0, horizontal: 0 };
+    const whole = { straighten: 0, crop: { x: 0, y: 0, w: 1, h: 1 }, aspect: "square" as const, vertical: 0, horizontal: 0, rotation: 0, flip: false };
     // An aspect choice alone changes nothing.
     expect(isIdentity({ ...r, geometry: whole })).toBe(true);
-    for (const g of [{ ...whole, straighten: 1 }, { ...whole, vertical: 5 }, { ...whole, crop: { x: 0.1, y: 0, w: 0.9, h: 1 } }]) {
+    for (const g of [{ ...whole, straighten: 1 }, { ...whole, vertical: 5 }, { ...whole, crop: { x: 0.1, y: 0, w: 0.9, h: 1 } }, { ...whole, rotation: 2 }, { ...whole, flip: true }]) {
       expect(geometryEdited({ ...r, geometry: g })).toBe(true);
       expect(isIdentity({ ...r, geometry: g })).toBe(false);
     }

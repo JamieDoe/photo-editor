@@ -142,6 +142,17 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
             },
         ),
         (
+            "rotate_cw_flipped",
+            EditRecipe {
+                geometry: Some(renderer::Geometry {
+                    rotation: 1,
+                    flip: true,
+                    ..Default::default()
+                }),
+                ..r
+            },
+        ),
+        (
             "channel_curves_warm",
             EditRecipe {
                 channel_curves: Some(renderer::ops::point_curve::ChannelCurves {

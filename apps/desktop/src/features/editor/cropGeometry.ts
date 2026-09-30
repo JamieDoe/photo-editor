@@ -201,3 +201,53 @@ export function drag(start: CropRect, handle: Handle, dx: number, dy: number, r:
 function clamp(v: number, lo: number, hi: number): number {
   return Math.min(hi, Math.max(lo, v));
 }
+
+/** `c` rounded to a millionth, so turning and flipping back gives the same numbers. */
+function tidy(c: CropRect): CropRect {
+  const r = (v: number) => Math.round(v * 1e6) / 1e6;
+  return { x: r(c.x), y: r(c.y), w: r(c.w), h: r(c.h) };
+}
+
+/** A `w` x `h` photo's size once turned by `g`'s quarter turns (ADR 0039): the frame the
+ *  crop and the view are in. */
+export function orientedSize(g: Pick<Geometry, "rotation">, w: number, h: number): { width: number; height: number } {
+  return g.rotation % 2 === 1 ? { width: h, height: w } : { width: w, height: h };
+}
+
+/**
+ * `g` for the picture turned a quarter clockwise (`turn` 1) or anticlockwise (-1) on
+ * screen, keeping the edit: the crop turns with the picture, and Vertical and
+ * Horizontal perspective trade places. A 4:5 or 16:9 crop keeps its shape but is
+ * marked Free, as those shapes are not offered turned.
+ */
+export function turnGeometry(g: Geometry, turn: 1 | -1): Geometry {
+  const c = g.crop;
+  const crop: CropRect = tidy(
+    turn === 1 ? { x: 1 - c.y - c.h, y: c.x, w: c.h, h: c.w } : { x: c.y, y: 1 - c.x - c.w, w: c.h, h: c.w },
+  );
+  const keepsShape = g.aspect === "original" || g.aspect === "square" || g.aspect === "free";
+  return {
+    ...g,
+    rotation: (g.rotation + turn + 4) % 4,
+    crop,
+    aspect: keepsShape ? g.aspect : "free",
+    vertical: turn === 1 ? -g.horizontal : g.horizontal,
+    horizontal: turn === 1 ? g.vertical : -g.vertical,
+  };
+}
+
+/** `g` for the picture mirrored left to right on screen: the flip toggles (the quarter
+ *  turns reverse, as the flip applies before them), and the crop, Straighten and
+ *  Horizontal perspective mirror. */
+export function flipGeometry(g: Geometry): Geometry {
+  const c = g.crop;
+  const clean = (v: number) => (v === 0 ? 0 : -v);
+  return {
+    ...g,
+    rotation: (4 - g.rotation) % 4,
+    flip: !g.flip,
+    crop: tidy({ ...c, x: 1 - c.x - c.w }),
+    straighten: clean(g.straighten),
+    horizontal: clean(g.horizontal),
+  };
+}
