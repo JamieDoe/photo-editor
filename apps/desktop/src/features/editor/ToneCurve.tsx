@@ -3,7 +3,10 @@ import type { FrameHistogram } from "../../ipc/frame";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import { histogramPaths } from "./histogramGraph";
 import {
+  CURVE_CHANNELS,
   DIAGONAL,
+  channelEdited,
+  channelPoints,
   curvePath,
   insertPoint,
   isDiagonal,
@@ -12,6 +15,8 @@ import {
   removePoint,
   resetEnd,
   toneValue,
+  withChannelPoints,
+  type CurveChannel,
   type CurvePoint,
 } from "./pointCurve";
 
@@ -48,7 +53,8 @@ export function ToneCurve({
   disabled: boolean;
   histogram: FrameHistogram | null;
 }) {
-  const points: CurvePoint[] = recipe.pointCurve ?? [...DIAGONAL];
+  const [channel, setChannel] = useState<CurveChannel>("rgb");
+  const points = useMemo(() => channelPoints(recipe, channel), [recipe, channel]);
   const boxRef = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | null>(null);
   // While an inner point is dragged off the graph, it is shown removed.
@@ -57,11 +63,15 @@ export function ToneCurve({
 
   const shown = removing && active !== null ? removePoint(points, active) : points;
   const path = useMemo(() => curvePath(shown, W, H), [shown]);
-  const backdrop = useMemo(() => (histogram ? histogramPaths(histogram).luma : null), [histogram]);
+  // The shown curve's own histogram behind it: luminance for RGB, else the channel.
+  const backdrop = useMemo(() => {
+    if (!histogram) return null;
+    const paths = histogramPaths(histogram);
+    return channel === "rgb" ? `${paths.luma} L288 72 L0 72 Z` : paths[channel];
+  }, [histogram, channel]);
   const edited = !isDiagonal(points);
 
-  const commit = (next: CurvePoint[]) =>
-    onChange({ ...recipe, pointCurve: isDiagonal(next) ? undefined : next });
+  const commit = (next: CurvePoint[]) => onChange(withChannelPoints(recipe, channel, next));
 
   const frac = (e: { clientX: number; clientY: number }) => {
     const box = boxRef.current!.getBoundingClientRect();
@@ -166,6 +176,25 @@ export function ToneCurve({
           )
         )}
       </div>
+      <div className="segmented small curve-channels" role="radiogroup" aria-label="Curve channel">
+        {CURVE_CHANNELS.map((c) => (
+          <label key={c.id} className={channelEdited(recipe, c.id) ? "edited" : undefined}>
+            <input
+              className="sr-only"
+              type="radio"
+              name="curve-channel"
+              checked={channel === c.id}
+              disabled={disabled}
+              onChange={() => {
+                setChannel(c.id);
+                setActive(null);
+              }}
+            />
+            {c.id !== "rgb" && <span className={`channel-swatch ${c.id}`} aria-hidden="true" />}
+            {c.label}
+          </label>
+        ))}
+      </div>
       <div
         ref={boxRef}
         className={`tone-curve${disabled ? "" : " editable"}`}
@@ -176,7 +205,7 @@ export function ToneCurve({
       >
         {backdrop && (
           <svg viewBox="0 0 288 72" preserveAspectRatio="none" aria-hidden="true">
-            <path className="backdrop" d={`${backdrop} L288 72 L0 72 Z`} />
+            <path className="backdrop" d={backdrop} />
           </svg>
         )}
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="Tone curve">
@@ -187,7 +216,7 @@ export function ToneCurve({
             <line key={`y${y}`} className="grid" x1={0} y1={y} x2={W} y2={y} />
           ))}
           <line className="identity" x1={0} y1={H} x2={W} y2={0} />
-          <path className="curve" d={path} />
+          <path className={`curve ${channel}`} d={path} />
         </svg>
         {shown.map(([x, y], i) => (
           <span

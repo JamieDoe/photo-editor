@@ -31,6 +31,8 @@ pub(super) struct RowSpan<'a> {
 pub(super) enum Kernel {
     Gain([f32; 3]),
     Curve(Box<CurveLut>),
+    /// A curve per channel (red, green, blue).
+    ChannelCurves(Box<[CurveLut; 3]>),
     Saturation(f32),
     Vibrance(f32),
     Mixer(Box<MixerTable>),
@@ -604,6 +606,13 @@ impl Kernel {
                     *v = lut.eval(*v);
                 }
             }
+            Self::ChannelCurves(luts) => {
+                for px in rgb.as_chunks_mut::<3>().0 {
+                    for (v, lut) in px.iter_mut().zip(luts.iter()) {
+                        *v = lut.eval(*v);
+                    }
+                }
+            }
             Self::Tone(k) => k.apply(rgb, span),
             Self::Detail(k) => k.apply(rgb, span, scratch),
             Self::Dehaze(k) => k.apply(rgb, span, &mut scratch.row_model),
@@ -707,9 +716,27 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage) -> Vec<Kernel> {
                 }))));
             }
             Stage::BaseCurve => out.push(Kernel::Curve(Box::new(CurveLut::build(look::standard)))),
-            Stage::PointCurve { curve } => out.push(Kernel::Curve(Box::new(CurveLut::held(|x| {
-                srgb_to_linear(curve.eval(linear_to_srgb(x)))
-            })))),
+            // The RGB curve and each channel's, composed into one table per channel.
+            // The RGB curve and each channel's, composed into one table per channel;
+            // one shared table when no channel has its own.
+            Stage::PointCurve {
+                ref rgb,
+                ref channels,
+            } => {
+                if channels.iter().all(|c| c.is_identity()) {
+                    out.push(Kernel::Curve(Box::new(CurveLut::held(|x| {
+                        srgb_to_linear(rgb.eval(linear_to_srgb(x)))
+                    }))));
+                } else {
+                    out.push(Kernel::ChannelCurves(Box::new((**channels).map(
+                        |channel| {
+                            CurveLut::held(|x| {
+                                srgb_to_linear(channel.eval(rgb.eval(linear_to_srgb(x))))
+                            })
+                        },
+                    ))));
+                }
+            }
             Stage::Dehaze { amount } => {
                 let model = cached_dehaze(source, gains_so_far, amount);
                 let columns = model.map().columns(source.width() as usize);

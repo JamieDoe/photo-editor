@@ -39,9 +39,13 @@ pub enum Stage {
     Contrast { gamma: f32 },
     /// The Standard base look's tone curve, per channel (ADR 0022).
     BaseCurve,
-    /// The photographer's tone curve (ADR 0037), per channel on display tones, after
-    /// the base look.
-    PointCurve { curve: PointCurve },
+    /// The photographer's tone curve (ADR 0037) and then each channel's (ADR 0038),
+    /// on display tones, after the base look. Diagonals where unset.
+    /// Boxed: four curves are much larger than any other stage.
+    PointCurve {
+        rgb: Box<PointCurve>,
+        channels: Box<[PointCurve; 3]>,
+    },
     /// Hue, saturation and luminance per colour band (ADR 0025), in band order.
     ColourMixer { bands: [HslShift; 8] },
     /// Chroma boost weighted towards muted colours, sparing skin (-1..1).
@@ -155,8 +159,13 @@ impl RenderPlan {
         if r.look == Look::Standard {
             stages.push(Stage::BaseCurve);
         }
-        if let Some(curve) = r.point_curve.filter(|c| !c.is_identity()) {
-            stages.push(Stage::PointCurve { curve });
+        let rgb = r.point_curve.filter(|c| !c.is_identity());
+        let channels = r.channel_curves.filter(|c| !c.is_identity());
+        if rgb.is_some() || channels.is_some() {
+            stages.push(Stage::PointCurve {
+                rgb: Box::new(rgb.unwrap_or_default()),
+                channels: Box::new(channels.unwrap_or_default().curves()),
+            });
         }
         if let Some(mixer) = r.mixer {
             stages.push(Stage::ColourMixer {
