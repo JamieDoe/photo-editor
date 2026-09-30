@@ -578,7 +578,8 @@ button.mask-add-tile { height: 52px; border-radius: 8px; flex-direction: column;
    pointer. */
 .brush-surface { position: absolute; inset: 0; cursor: none; touch-action: none; }
 .brush-surface svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
-.brush-tint { color: var(--accent); fill: var(--accent); opacity: 0.42; }
+/* The tint: the accent where the brush covers, at the overlay's 42 %. */
+.brush-tint-canvas { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.42; pointer-events: none; }
 .brush-ring { fill: none; stroke: #ffffff; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
 .brush-ring.inner { stroke-width: 1.5; stroke-dasharray: 4 5; opacity: 0.8; }
 .brush-cursor { filter: drop-shadow(0 0 1px rgb(0 0 0 / 70%)); }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { edgeRings } from "./BrushOverlay";
+import { edgeRings } from "./brushTint";
 
 /** The stacked opacity at distance `d` from a stroke drawn with `rings`. */
 function stacked(rings: ReturnType<typeof edgeRings>, d: number): number {

@@ -602,20 +602,27 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
             altKey: alt,
           }),
         );
-      const stroke = async (from: [number, number], to: [number, number], alt: boolean) => {
+      const stroke = async (from: [number, number], to: [number, number], alt: boolean, moves = 40) => {
         const framesBefore = frames.length;
         const gaps: number[] = [];
         let last = await nextFrame();
         fire("pointerdown", from[0], from[1], alt);
-        for (let i = 1; i <= 40; i++) {
-          const t = i / 40;
+        for (let i = 1; i <= moves; i++) {
+          const t = i / moves;
           fire("pointermove", from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t, alt);
           const now = await nextFrame();
           gaps.push(now - last);
           last = now;
         }
         fire("pointerup", to[0], to[1], alt);
-        return { uiFrameGapMs: summarise(gaps), framesShown: frames.length - framesBefore };
+        const shown = frames.slice(framesBefore);
+        return {
+          uiFrameGapMs: summarise(gaps),
+          framesShown: shown.length,
+          roundTripMs: summarise(shown.map((f) => f.info.roundTripMs)),
+          rustRenderMs: summarise(shown.map((f) => f.frame.renderMs)),
+          frameSize: shown.at(-1) ? `${shown.at(-1)!.frame.width}x${shown.at(-1)!.frame.height}` : null,
+        };
       };
       const paint = await stroke([0.05, 0.5], [0.95, 0.5], false);
       const erase = await stroke([0.5, 0.2], [0.5, 0.8], true);
@@ -625,6 +632,17 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const mask = painted.masks?.[0];
       const strokes = mask?.shape.kind === "brush" ? mask.shape.strokes : [];
       const final = frames.at(-1) ?? null;
+      // Then heavier painting, for its timing: a large brush, nine more long strokes
+      // (every third an erase, which used to slow each later one down).
+      for (let k = 0; k < 5; k++) window.dispatchEvent(new KeyboardEvent("keydown", { key: "]" }));
+      await nextFrame();
+      const sizes: Array<ReturnType<typeof summarise>> = [];
+      let lastHeavy: Awaited<ReturnType<typeof stroke>> | null = null;
+      for (let k = 0; k < 9; k++) {
+        const y = 0.1 + k * 0.1;
+        lastHeavy = await stroke([0.05, y], [0.95, y + 0.05], k % 3 === 2, 80);
+        sizes.push(lastHeavy.uiFrameGapMs);
+      }
       byText(".mask-toolbar button", "Done")?.click();
       const plain = await show({ ...painted, masks: undefined }, "frame without the painted mask", final);
       const middle = (f: RenderedFrame) => patchMean(f, 0.48, 0.53, 0.47, 0.53);
@@ -634,6 +652,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         strokes: strokes.map((s) => ({ erase: s.erase ?? false, points: s.points.length })),
         paint,
         erase,
+        heavyGapsByStroke: sizes.map((s) => `${s.p50}/${s.p95}`),
+        lastHeavy,
         erasedMiddleChange: final && plain ? Math.round((middle(final) - middle(plain)) * 100) / 100 : null,
         paintedLeftDarker: final && plain ? Math.round((left(plain) - left(final)) * 10) / 10 : null,
       };

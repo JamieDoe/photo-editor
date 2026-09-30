@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import type { Mask } from "../../ipc/generated/Mask";
 import type { MaskShape } from "../../ipc/generated/MaskShape";
 import type { Stroke } from "../../ipc/generated/Stroke";
 import type { MaskTool } from "./MaskTool";
-import { fromShown, toShown, type Point } from "./masks";
+import { BrushTint } from "./brushTint";
+import { fromShown, type Point } from "./masks";
 
 type Brush = Extract<MaskShape, { kind: "brush" }>;
 
@@ -23,8 +24,8 @@ const round = (v: number) => Math.round(v * 10_000) / 10_000;
 /**
  * A brush mask on the photo (ADR 0042): paint by dragging (holding Option, or with
  * Erase chosen, takes paint away). The design's two rings follow the pointer: the
- * brush's size and, dashed, where its soft edge starts. The tint is drawn from the
- * strokes themselves, in order, as the renderer composes them.
+ * brush's size and, dashed, where its soft edge starts. The tint is drawn on a canvas
+ * from the strokes themselves, as the renderer composes them (see `BrushTint`).
  */
 export function BrushGuides({
   tool,
@@ -41,6 +42,39 @@ export function BrushGuides({
 }) {
   const { w: W, h: H, diagonal: D } = space;
   const [pointer, setPointer] = useState<Point | null>(null);
+  const tintRef = useRef<HTMLCanvasElement>(null);
+  const tint = useRef<BrushTint | null>(null);
+  // The canvas matches the photo's box on screen, in device pixels.
+  const [boxSize, setBoxSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const dpr = window.devicePixelRatio;
+      setBoxSize({
+        width: Math.round(entry.contentRect.width * dpr),
+        height: Math.round(entry.contentRect.height * dpr),
+      });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [boxRef]);
+  const showTint = tool.overlay && !mask.hidden;
+  const { x: cx, y: cy, w: cw, h: ch } = space.crop;
+  useEffect(() => {
+    const canvas = tintRef.current;
+    if (!canvas || !showTint || boxSize.width === 0) return;
+    tint.current ??= new BrushTint();
+    const colour = getComputedStyle(canvas).getPropertyValue("--accent").trim() || "#f0b45e";
+    tint.current.draw(
+      canvas,
+      shape.strokes,
+      { width: boxSize.width, height: boxSize.height, crop: { x: cx, y: cy, w: cw, h: ch } },
+      colour,
+      mask.invert ?? false,
+    );
+  }, [shape.strokes, showTint, boxSize, cx, cy, cw, ch, mask.invert]);
   const [alt, setAlt] = useState(false);
   const drawing = useRef<{ base: Stroke[]; stroke: Stroke; last: [number, number]; frame: number | null } | null>(null);
   useEffect(
@@ -106,13 +140,6 @@ export function BrushGuides({
   const erasing = tool.brush.erase || alt;
   const r = tool.brush.size * D;
   const inner = r * (1 - tool.brush.feather / 100);
-  const prefix = `brush-${mask.id}`;
-  // Pointer moves only move the rings: the strokes are drawn again only when they
-  // (or the picture's size) change.
-  const { content, defs } = useMemo(
-    () => strokeLayers(shape.strokes, prefix, space),
-    [shape.strokes, prefix, W, H, D, space.crop.x, space.crop.y, space.crop.w, space.crop.h],
-  );
   return (
     <div
       className="brush-surface"
@@ -122,25 +149,7 @@ export function BrushGuides({
       onPointerCancel={onPointerUp}
       onPointerLeave={() => setPointer(null)}
     >
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          {defs}
-          {mask.invert && (
-            <mask id={`${prefix}-invert`} maskUnits="userSpaceOnUse" x={0} y={0} width={W} height={H}>
-              <rect width={W} height={H} fill="white" />
-              <g style={{ color: "black" }}>{content}</g>
-            </mask>
-          )}
-        </defs>
-        {tool.overlay &&
-          !mask.hidden &&
-          (mask.invert ? (
-            <rect className="brush-tint" width={W} height={H} mask={`url(#${prefix}-invert)`} />
-          ) : (
-            <g className="brush-tint">{content}</g>
-          ))}
-      </svg>
-      {/* The rings in a layer of their own, so moving them repaints nothing else. */}
+      {showTint && <canvas ref={tintRef} className="brush-tint-canvas" aria-hidden="true" />}
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
         {pointer && (
           <g className={erasing ? "brush-cursor erase" : "brush-cursor"}>
@@ -160,94 +169,4 @@ export function BrushGuides({
       </svg>
     </div>
   );
-}
-
-/** Rings a stroke's soft edge is drawn with. */
-const EDGE_STEPS = 10;
-
-/**
- * The widths and opacities of nested round-capped paths whose stacked opacity is the
- * renderer's brush profile (ADR 0042): full within the unfeathered radius, smoothstep
- * to nothing at the radius. A path of half-width `d` covers every point within `d` of
- * the stroke, so ring k (from the outside in) adds its opacity inside distance `d`;
- * the opacities are chosen so the total over each ring's band is the profile at the
- * band's middle. Exported for tests.
- */
-export function edgeRings(r: number, feather: number): Array<{ halfWidth: number; opacity: number }> {
-  const inner = r * (1 - feather / 100);
-  if (r - inner < 0.5) return [{ halfWidth: r, opacity: 1 }];
-  const profile = (d: number) => {
-    const t = Math.min(1, Math.max(0, (d - inner) / (r - inner)));
-    return 1 - t * t * (3 - 2 * t);
-  };
-  const rings: Array<{ halfWidth: number; opacity: number }> = [];
-  // Outermost first. `covered` is the stacked opacity of the rings drawn so far.
-  let covered = 0;
-  for (let k = EDGE_STEPS; k >= 1; k--) {
-    const outer = inner + ((r - inner) * k) / EDGE_STEPS;
-    const target = profile(inner + ((r - inner) * (k - 0.5)) / EDGE_STEPS);
-    const opacity = covered >= 1 ? 0 : Math.max(0, (target - covered) / (1 - covered));
-    rings.push({ halfWidth: outer, opacity });
-    covered = covered + (1 - covered) * opacity;
-  }
-  rings.push({ halfWidth: inner, opacity: 1 });
-  return rings.filter((ring) => ring.halfWidth > 0 && ring.opacity > 0);
-}
-
-/**
- * The strokes as SVG, composed as the renderer does: each stroke its profile at its
- * flow, paint drawn over what is there, and each erase stroke masking out everything
- * painted before it. Paint is `currentColor`, so the same layers draw the tint or an
- * inverted mask. No filters: they are slow in the app's web view.
- */
-function strokeLayers(strokes: Stroke[], prefix: string, space: Space): { content: ReactNode; defs: ReactNode[] } {
-  const { w: W, h: H, diagonal: D } = space;
-  const defs: ReactNode[] = [];
-  let content: ReactNode[] = [];
-  strokes.forEach((s, i) => {
-    if (s.points.length === 0) return;
-    const d = s.points
-      .map((p, k) => {
-        const q = toShown(p, space.crop);
-        return `${k ? "L" : "M"}${(q[0] * W).toFixed(1)} ${(q[1] * H).toFixed(1)}`;
-      })
-      .join(" ");
-    // A single point is a zero-length path: its round caps make the dab.
-    const path = s.points.length === 1 ? `${d} l0.01 0` : d;
-    const rings = edgeRings(s.size * D, s.feather);
-    // The stroke at its flow: its rings stacked in a group, the group at the flow.
-    const shape = (colour: string) => (
-      <g opacity={s.flow / 100}>
-        {rings.map((ring, k) => (
-          <path
-            key={k}
-            d={path}
-            fill="none"
-            stroke={colour}
-            strokeWidth={2 * ring.halfWidth}
-            strokeOpacity={ring.opacity}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ))}
-      </g>
-    );
-    if (!s.erase) {
-      content.push(<g key={i}>{shape("currentColor")}</g>);
-      return;
-    }
-    const id = `${prefix}-erase-${i}`;
-    defs.push(
-      <mask key={id} id={id} maskUnits="userSpaceOnUse" x={0} y={0} width={W} height={H}>
-        <rect width={W} height={H} fill="white" />
-        {shape("black")}
-      </mask>,
-    );
-    content = [
-      <g key={i} mask={`url(#${id})`}>
-        {content}
-      </g>,
-    ];
-  });
-  return { content, defs };
 }

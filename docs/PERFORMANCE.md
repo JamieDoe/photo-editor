@@ -641,7 +641,12 @@ three rounds, machine load about 7. Strokes are wavy, 200 points each:
 - The app's frame times while painting through the UI (40 pointer moves, two runs,
   load about 8):
 
-  | Stroke | Blurred tint (first version) | Stepped-ring tint |
-  |---|---|---|
-  | Painting | p50 25 ms, p95 36 ms | p50 17 ms, p95 21–34 ms |
-  | Erasing | p50 49 ms, p95 59 ms, max 85 ms | p50 17 ms, p95 17–37 ms |
+  | Stroke | SVG, blurred (first) | SVG, stepped rings (second) | Canvas (now) |
+  |---|---|---|---|
+  | Painting | p50 25 ms, p95 36 ms | p50 17 ms, p95 21–34 ms | p50 17 ms, p95 23–24 ms |
+  | Erasing | p50 49 ms, p95 59 ms | p50 17 ms, p95 17–37 ms | p50 17 ms, p95 17–18 ms |
+  | A large brush after 1, 2 and 3 erase strokes | — | p50 44, 83 and 186 ms | p50 17 ms each (p95 ≤ 22 ms) |
+
+  Each erase stroke nested everything before it in another SVG mask, which the web view
+  redraws on every update. The canvas cuts erases out directly (`destination-out`) and
+  keeps finished strokes in a cached layer, so the cost no longer grows with the strokes.
