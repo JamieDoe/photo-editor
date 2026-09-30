@@ -134,12 +134,15 @@ pub async fn render_preview(
     state: State<'_, AppState>,
     request: PreviewRequestDto,
 ) -> IpcResult<Response> {
-    let handle = state.engine.render_preview(PreviewRequest {
-        image: ImageId(request.image_id),
-        recipe: request.recipe,
-        quality: request.quality,
-        target_long_edge: request.target_long_edge,
-    });
+    let handle = state.engine.render_preview_in(
+        PreviewRequest {
+            image: ImageId(request.image_id),
+            recipe: request.recipe,
+            quality: request.quality,
+            target_long_edge: request.target_long_edge,
+        },
+        request.slot.into(),
+    );
     let frame = wait(handle).await?;
     let flags = if frame.cache_hit {
         FRAME_FLAG_CACHE_HIT

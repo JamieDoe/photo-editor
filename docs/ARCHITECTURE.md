@@ -132,12 +132,15 @@ a reduced-resolution decode; full resolution is decoded only for export.
 slider change ─► setRecipe ─► PreviewScheduler (≤ 1 request per animation frame, and
                               ≤ 1 interactive render in flight: the newest change
                               waits for it, so frames never starve; ADR 0030)
-  ─► render_preview {imageId, recipe, quality, targetLongEdge}
+  ─► render_preview {imageId, recipe, quality, targetLongEdge, slot?}
        Engine: choose pyramid level for quality/target
                cache lookup (source id + recipe hash + size + renderer version)
                hit  ─► respond immediately, cancel in-flight viewer render
                miss ─► job on interactive lane, supersede key "viewer-preview"
                         (cancels the previous render) ─► CpuRenderer ─► cache insert
+               slot "compare" (ADR 0045): the before image of before/after, with
+                        its own key "compare-preview" and a lower priority, so it
+                        and the edit's renders never cancel each other
   ◄─ binary frame: 28-byte header (incl. the full-resolution output size after crop,
      which the viewer's box follows) + the frame's histogram (4 KB, ADR 0036)
      + RGBA8 pixels
@@ -241,7 +244,8 @@ within half the machine.
 
 See `PERFORMANCE.md` for measured consequences.
 
-- One viewer: a single supersede key for previews; multi-view needs per-view keys.
+- Preview slots: the viewer and the before/after comparison each have a supersede key
+  (ADR 0045); further views need their own slots.
 - Full-resolution export holds the whole image in memory (no tiling).
 - LibRaw's OpenMP threads are capped per decode via `DecodeOptions::max_threads`
   on macOS/Linux; Windows has no cap yet.

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use app_core::{
     EditRecipe, Engine, EngineConfig, ErrorKind, ExportFormat, ExportRequest, ImageId,
-    PreviewQuality, PreviewRequest,
+    PreviewQuality, PreviewRequest, PreviewSlot,
 };
 
 fn engine() -> Engine {
@@ -165,6 +165,47 @@ fn newer_preview_supersedes_older_ones() {
         cancelled >= 15,
         "only {cancelled}/19 obsolete renders were cancelled"
     );
+}
+
+#[test]
+fn compare_renders_have_their_own_slot() {
+    let dir = fixtures::TempDir::new("engine-compare-slot");
+    let path = write(dir.path(), "big.jpg", fixtures::chart_jpeg(4000, 3000, 85));
+    let engine = Engine::new(EngineConfig {
+        preview_source_min_edge: 4000,
+        ..EngineConfig::default()
+    });
+    let id = engine.open(&path).wait().unwrap().id;
+    let request = |exposure: f32| PreviewRequest {
+        image: id,
+        recipe: EditRecipe {
+            exposure,
+            ..Default::default()
+        },
+        quality: PreviewQuality::Detail,
+        target_long_edge: 4000,
+    };
+    // The before image, then the live edit changing while it renders: the edit's
+    // requests supersede each other, not the before image.
+    let before = engine.render_preview_in(request(0.0), PreviewSlot::Compare);
+    let edits: Vec<_> = (1..6)
+        .map(|i| engine.render_preview(request(i as f32 * 0.1)))
+        .collect();
+    let before = before.wait().expect("the before image is not cancelled");
+    let results: Vec<_> = edits.into_iter().map(|h| h.wait()).collect();
+    assert!(results.last().unwrap().is_ok());
+    assert_ne!(
+        before.image.data(),
+        results.last().unwrap().as_ref().unwrap().image.data()
+    );
+    // A newer compare request still supersedes an older one.
+    let old = engine.render_preview_in(request(-0.3), PreviewSlot::Compare);
+    let new = engine.render_preview_in(request(-0.4), PreviewSlot::Compare);
+    assert!(new.wait().is_ok());
+    assert!(matches!(
+        old.wait(),
+        Ok(_) | Err(app_core::JobError::Cancelled)
+    ));
 }
 
 #[test]

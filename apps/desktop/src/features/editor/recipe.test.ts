@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
-import { defaultRecipe, geometryEdited, isIdentity, mixerEdited, mixerOf, neutralRecipe } from "./recipe";
+import type { Geometry } from "../../ipc/generated/Geometry";
+import { beforeRecipe, defaultRecipe, geometryEdited, isIdentity, mixerEdited, mixerOf, neutralRecipe } from "./recipe";
 
 const specs: AdjustmentSpec[] = [
   { key: "exposure", label: "Exposure", group: "Light", min: -5, max: 5, step: 0.01, default: 0, more: false, unit: "EV" },
@@ -49,5 +50,21 @@ describe("recipe helpers", () => {
     const edited = { ...r, mixer: { ...neutral, blue: { ...neutral.blue, luminance: -20 } } };
     expect(mixerEdited(edited)).toBe(true);
     expect(isIdentity(edited)).toBe(false);
+  });
+
+  it("compares against the photo unedited but framed as the edit", () => {
+    const geometry: Geometry = {
+      crop: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 },
+      straighten: 2,
+      aspect: "original",
+      vertical: 0,
+      horizontal: 0,
+      rotation: 90,
+      flip: false,
+    };
+    const edited = { ...neutralRecipe(20), exposure: 1.2, clarity: 30, geometry, masks: [] };
+    const before = beforeRecipe(edited, specs);
+    expect(before).toEqual({ ...defaultRecipe(20, specs), geometry });
+    expect(beforeRecipe({ ...edited, geometry: undefined }, specs)).toEqual(defaultRecipe(20, specs));
   });
 });

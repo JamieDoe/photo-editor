@@ -179,6 +179,30 @@ pub struct PreviewRequestDto {
     pub quality: PreviewQuality,
     /// Long edge of the viewport in device pixels.
     pub target_long_edge: u32,
+    /// Which view it is for; the viewer when left out (ADR 0045).
+    #[serde(default)]
+    #[ts(optional, as = "Option<PreviewSlotDto>")]
+    pub slot: PreviewSlotDto,
+}
+
+/// Which view a preview is for: each cancels only its own earlier renders.
+#[derive(Debug, Clone, Copy, Default, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum PreviewSlotDto {
+    #[default]
+    Viewer,
+    /// The photo before editing, for the before/after comparison.
+    Compare,
+}
+
+impl From<PreviewSlotDto> for app_core::PreviewSlot {
+    fn from(s: PreviewSlotDto) -> Self {
+        match s {
+            PreviewSlotDto::Viewer => Self::Viewer,
+            PreviewSlotDto::Compare => Self::Compare,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, TS)]

@@ -104,6 +104,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Remove chromatic aberration | The switch's subtitle says "Measuring…" and then the result, for three seconds | Turning it on measures the photo; the design has no in-progress state |
 | Settings | Whole screen (grouped cards, segmented controls) | The design has no settings; built from its tokens and components |
 | Undo and redo (ADR 0044) | Two icon buttons in the Edit header, between the save status and the photo counter; ⌘Z and ⇧⌘Z | The design has no undo control; placed with the edit's other status and actions |
+| Before / after (ADR 0045) | Compare button, white divider and round handle, Before and After pills, drag anywhere on the photo | The `\` shortcut; "Before…" while the before image renders; no focus-header button (that header is not built) |
 
 ### Not built yet (and so not shown)
 

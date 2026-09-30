@@ -4,7 +4,7 @@ import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { SelfTestConfigDto } from "../../ipc/generated/SelfTestConfigDto";
 import { fitCropFor } from "../editor/cropGeometry";
-import { mixerOf, neutralRecipe } from "../editor/recipe";
+import { beforeRecipe, mixerOf, neutralRecipe } from "../editor/recipe";
 import type { DisplayedFrame, Editor } from "../editor/useEditor";
 
 type RenderedFrame = DisplayedFrame;
@@ -715,6 +715,64 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       };
     })();
 
+    // Before/after (ADR 0045) through the Compare button: the before image is the
+    // photo unedited (as a plain render of it shows), editing while comparing still
+    // renders the edit, and does not render the before image again.
+    const compareCheck = await (async () => {
+      const rgbMean = (pixels: Uint8ClampedArray) => {
+        let sum = 0;
+        for (let i = 0; i < pixels.length; i += 4) sum += pixels[i]! + pixels[i + 1]! + pixels[i + 2]!;
+        return sum / ((pixels.length / 4) * 3);
+      };
+      const round = (v: number) => Math.round(v * 10) / 10;
+      const edited = { ...beforeCrop, masks: undefined, exposure: beforeCrop.exposure + 1 };
+      await show(edited, "edit to compare");
+      const button = () =>
+        [...document.querySelectorAll<HTMLElement>(".photo-toolbar button")].find((b) => b.textContent?.trim() === "Compare");
+      await waitFor(() => button() ?? null, 5_000, "Compare button");
+      const t0 = performance.now();
+      button()!.click();
+      const canvas = await waitFor(
+        () => {
+          const c = document.querySelector<HTMLCanvasElement>(".compare-before");
+          return c?.dataset.drawn ? c : null;
+        },
+        10_000,
+        "before image",
+      ).catch(() => null);
+      const beforeMs = Math.round(performance.now() - t0);
+      if (!canvas) return { error: "no before image" as const };
+      const drawn = canvas.dataset.drawn;
+      const readBefore = () => canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height).data;
+      const beforeMean = rgbMean(readBefore());
+      const live = await show({ ...edited, exposure: edited.exposure + 0.5 }, "edit while comparing");
+      await nextFrame();
+      const redrawn = canvas.dataset.drawn !== drawn;
+      button()!.click();
+      await nextFrame();
+      const closed = document.querySelector(".compare-before") === null;
+      const reference = await show(beforeRecipe(edited, info.adjustments), "unedited frame");
+      return {
+        beforeMs,
+        size: `${canvas.width}x${canvas.height}`,
+        beforeMean: round(beforeMean),
+        uneditedMean: reference ? round(rgbMean(reference.frame.pixels)) : null,
+        editMean: live ? round(rgbMean(live.frame.pixels)) : null,
+        liveEditRendered: live !== null,
+        beforeRenderedAgain: redrawn,
+        closed,
+      };
+    })();
+    const compareOk =
+      !("error" in compareCheck) &&
+      compareCheck.uneditedMean !== null &&
+      compareCheck.editMean !== null &&
+      Math.abs(compareCheck.beforeMean - compareCheck.uneditedMean) < 2 &&
+      compareCheck.editMean > compareCheck.beforeMean + 20 &&
+      compareCheck.liveEditRendered &&
+      !compareCheck.beforeRenderedAgain &&
+      compareCheck.closed;
+
     // Shapes combined (ADR 0043): -1 EV over the top, less a hard circle at its
     // middle. Inside the circle unchanged, beside it darker.
     const combinedFrame = await show(
@@ -863,6 +921,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       savedEdits: editsOk,
       toneCurve: toneCurveOk,
       history: historyOk,
+      compare: compareOk,
       crop: cropOk,
       perspective: perspectiveOk,
       turn: turnOk,
@@ -889,6 +948,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       reopen,
       toneCurve,
       history,
+      compare: compareCheck,
       crop,
       perspective,
       turn,

@@ -47,6 +47,18 @@ pub struct EmbeddedFrame {
     pub extract_ms: f64,
 }
 
+/// Which view a preview is for. Each has its own render slot: a new request cancels
+/// only the previous one for the same view, so the before image of a comparison
+/// (ADR 0045) and the live edit do not cancel each other.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum PreviewSlot {
+    /// The edit being worked on.
+    #[default]
+    Viewer,
+    /// The photo before editing, shown beside it; rendered after the edit's frames.
+    Compare,
+}
+
 #[derive(Debug, Clone)]
 pub struct PreviewRequest {
     pub image: ImageId,

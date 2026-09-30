@@ -137,3 +137,13 @@ export function defaultRecipe(recipeVersion: number, specs: AdjustmentSpec[]): E
   }
   return recipe;
 }
+
+/**
+ * The photo before editing, for the before/after comparison (ADR 0045): every
+ * adjustment at its default, but cropped, turned and straightened as the edit is, so
+ * the two halves line up.
+ */
+export function beforeRecipe(r: EditRecipe, specs: AdjustmentSpec[]): EditRecipe {
+  const before = defaultRecipe(r.version, specs);
+  return r.geometry ? { ...before, geometry: r.geometry } : before;
+}
