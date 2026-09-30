@@ -5,9 +5,12 @@ import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { LocalAdjustments } from "../../ipc/generated/LocalAdjustments";
 import type { Mask } from "../../ipc/generated/Mask";
 import type { MaskShape } from "../../ipc/generated/MaskShape";
+import type { Stroke } from "../../ipc/generated/Stroke";
+import { BrushGuides } from "./BrushOverlay";
 import { isTextEntry } from "../../lib/keyboard";
 import {
   ADDABLE_KINDS,
+  DEFAULT_BRUSH,
   FULL_CROP,
   MASK_KINDS,
   maskName,
@@ -18,6 +21,7 @@ import {
   toShown,
   updateMask,
   withMasks,
+  type BrushSettings,
   type MaskKind,
   type Point,
 } from "./masks";
@@ -39,6 +43,7 @@ export function useMaskTool(opts: {
   const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [overlay, setOverlay] = useState(true);
+  const [brush, setBrushSettings] = useState<BrushSettings>(DEFAULT_BRUSH);
   const masks = recipe ? masksOf(recipe) : [];
   const active = masks.find((m) => m.id === activeId) ?? null;
   const crop: CropRect = recipe?.geometry?.crop ?? FULL_CROP;
@@ -97,6 +102,12 @@ export function useMaskTool(opts: {
     setFeather: (feather: number) =>
       changeActive((m) => (m.shape.kind === "radial" ? { ...m, shape: { ...m.shape, feather } } : m)),
     toggleOverlay: () => setOverlay((o) => !o),
+    /** The brush the next stroke is painted with (ADR 0042). */
+    brush,
+    setBrush: (change: Partial<BrushSettings>) => setBrushSettings((b) => ({ ...b, ...change })),
+    /** The active brush mask's strokes (while painting, the last is in progress). */
+    setStrokes: (strokes: Stroke[]) =>
+      changeActive((m) => (m.shape.kind === "brush" ? { ...m, shape: { kind: "brush", strokes } } : m)),
   };
 }
 
@@ -141,8 +152,10 @@ export function MaskOverlay({ tool, size }: { tool: MaskTool; size: { width: num
     <div className="mask-overlay" ref={boxRef}>
       {mask.shape.kind === "linear" ? (
         <LinearGuides {...props} shape={mask.shape} />
-      ) : (
+      ) : mask.shape.kind === "radial" ? (
         <RadialGuides {...props} shape={mask.shape} />
+      ) : (
+        <BrushGuides {...props} shape={mask.shape} />
       )}
     </div>
   );
@@ -331,6 +344,12 @@ export function MaskToolbar({ tool }: { tool: MaskTool }) {
     const onKey = (e: KeyboardEvent) => {
       if (isTextEntry(e.target) || e.target instanceof HTMLInputElement) return;
       if (e.key === "Enter" || e.key === "Escape") tool.done();
+      // [ and ] resize the brush, as in other editors.
+      if ((e.key === "[" || e.key === "]") && tool.active?.shape.kind === "brush") {
+        const size = e.key === "[" ? tool.brush.size / 1.15 : tool.brush.size * 1.15;
+        tool.setBrush({ size: Math.min(0.25, Math.max(0.0025, size)) });
+        e.preventDefault();
+      }
       if ((e.key === "Delete" || e.key === "Backspace") && tool.active) {
         tool.remove(tool.active.id);
         e.preventDefault();

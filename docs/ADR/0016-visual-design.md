@@ -97,7 +97,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Crop mode | Handles sit just inside the rectangle (design: 3 px outside); the crop view is the largest straightened area in the photo's shape | Handles stay whole at the photo's edge; no empty corners can be chosen (ADR 0032) |
 | Auto level | A status line under the button / above the crop toolbar | The design shows a toast; the app has no toast system yet (ADR 0033) |
 | Crop toolbar | Rotate left, Rotate right and Flip icon buttons after the ratios; on narrow stages the Straighten label goes, then the ratios (still in the Geometry panel) | The design has no rotation (ADR 0039); the toolbar must fit the 800 px minimum window |
-| Masks (ADR 0040): Masks button, mask toolbar (chips, Add, overlay switch, Done), accent tint with a gradient's three lines, Selective section (rows, Exposure / Warmth / Clarity card, Add tiles) | Linear and Radial offered (Brush follows; Subject and Sky need on-device AI); start and end handles on a linear gradient's dashed lines; a radial's side and top handles and its dotted fade-start ellipse; Feather (radial) and Invert in the mask card, and an eye button on each mask row to hide it (ADR 0041); empty-state text without detected skies and subjects | The handles set angle, size and fade directly; the product requires feather and invert on every mask |
+| Masks (ADR 0040): Masks button, mask toolbar (chips, Add, overlay switch, Done), accent tint with a gradient's three lines, Selective section (rows, Exposure / Warmth / Clarity card, Add tiles) | Brush, Linear and Radial offered (Subject and Sky need on-device AI); the brush's Paint/Erase, Size, Feather and Flow in the mask card, and a minus in the brush rings when erasing (ADR 0042); start and end handles on a linear gradient's dashed lines; a radial's side and top handles and its dotted fade-start ellipse; Feather (radial) and Invert in the mask card, and an eye button on each mask row to hide it (ADR 0041); empty-state text without detected skies and subjects | The handles set angle, size and fade directly; the product requires feather and invert on every mask |
 | Tone curve | The photographer's own point curve: points to add, drag and remove, a readout and Reset in the title row, the histogram behind. It does not bend with the sliders as the mock-up's does. An RGB · Red · Green · Blue switch above the graph (ADR 0038) | Requested (a true curve, as in Lightroom); a curve that both follows the sliders and takes points would be ambiguous |
 | Histogram | Dragging adjusts Blacks, Shadows, Exposure, Highlights or Whites by zone; hovering tints the zone and shows its name and value in place of the exposure details; multiply blending on the light theme | Requested (Lightroom's behaviour); the readout says what a drag will change; the design is dark only |
 | Remove chromatic aberration | The switch's subtitle says "Measuring…" and then the result, for three seconds | Turning it on measures the photo; the design has no in-progress state |
@@ -105,7 +105,7 @@ existing screens to the design now, and to match it for every screen built from 
 
 ### Not built yet (and so not shown)
 
-Search, Recently imported, albums, presets and Auto, Brush / Subject / Sky masks, compare, zoom,
+Search, Recently imported, albums, presets and Auto, Subject / Sky masks, compare, zoom,
 the filmstrip, batch selection, the Export dialog, and the Lens correction switch.
 
 ## Consequences

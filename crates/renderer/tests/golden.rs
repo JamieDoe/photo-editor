@@ -231,6 +231,40 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
             },
         ),
         (
+            "mask_brush",
+            EditRecipe {
+                masks: vec![renderer::masks::Mask {
+                    id: 1,
+                    hidden: false,
+                    invert: false,
+                    shape: renderer::masks::MaskShape::Brush {
+                        strokes: vec![
+                            renderer::masks::Stroke {
+                                erase: false,
+                                size: 0.08,
+                                feather: 60.0,
+                                flow: 100.0,
+                                points: vec![[0.15, 0.3], [0.45, 0.45], [0.85, 0.35]],
+                            },
+                            renderer::masks::Stroke {
+                                erase: true,
+                                size: 0.04,
+                                feather: 20.0,
+                                flow: 100.0,
+                                points: vec![[0.5, 0.2], [0.5, 0.6]],
+                            },
+                        ],
+                    },
+                    adjustments: renderer::masks::LocalAdjustments {
+                        exposure: 1.0,
+                        warmth: 40.0,
+                        clarity: 0.0,
+                    },
+                }],
+                ..r.clone()
+            },
+        ),
+        (
             "channel_curves_warm",
             EditRecipe {
                 channel_curves: Some(renderer::ops::point_curve::ChannelCurves {

@@ -620,3 +620,21 @@ load about 7–8. Each mask has Exposure and Warmth:
   linear gradient.
 - Release self-test, Nikon Z 6: an inverted radial darkens the frame's top by 44.6
   levels and leaves the middle unchanged.
+
+## 30. Brush masks (ADR 0042)
+
+Rasterising strokes into the 2048 × 1365 coverage map of a 3:2 frame, median of 10,
+three rounds, machine load about 7. Strokes are wavy, 200 points each:
+
+| Case | Before optimising | After |
+|---|---|---|
+| One stroke, small (0.02 of the diagonal) | 6.1–7.7 ms | 1.2–2.2 ms |
+| One stroke, large (0.08) | 63.5 ms | 7.2–8.2 ms |
+| Ten strokes, medium (0.04) | 180 ms | 21.8–23.0 ms |
+| Painting an 11th stroke over ten cached ones, per update | — | 2.4 ms median, 2.9 ms max |
+
+- The optimisations are path simplification, parallel rows testing only nearby
+  segments, and incremental painting over the cached map of the earlier strokes.
+- Reading the map during a render is one bilinear sample per pixel per mask.
+- Release self-test, Nikon Z 6: the first render with a brush mask, rasterising
+  included, took 10–27 ms depending on load.

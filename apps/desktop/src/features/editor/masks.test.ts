@@ -6,7 +6,10 @@ import {
   fromShown,
   linearCoverage,
   maskName,
+  brushSizeFromSlider,
+  newBrushMask,
   newLinearMask,
+  sliderFromBrushSize,
   newRadialMask,
   radialCoverage,
   type Point,
@@ -80,6 +83,23 @@ describe("masks", () => {
     expect(radialCoverage(shape, [(150 + 101) / 300, 0.5], 300, 400)).toBe(0);
     expect(radialCoverage(shape, [(150 + 75) / 300, 0.5], 300, 400)).toBeCloseTo(0.5, 5);
     expect(radialCoverage({ ...shape, angle: 90 }, [0.5, (200 + 75) / 400], 300, 400)).toBeCloseTo(0.5, 5);
+  });
+
+  it("adds brush masks and turns their strokes with the picture", () => {
+    const m = newBrushMask([]);
+    expect(m.shape).toEqual({ kind: "brush", strokes: [] });
+    const painted: Mask = {
+      ...m,
+      shape: { kind: "brush", strokes: [{ size: 0.04, feather: 50, flow: 100, points: [[0.2, 0.1], [0.3, 0.1]] }] },
+    };
+    const turned = turnMasks([painted], 1)[0]!;
+    expect(turned.shape.kind === "brush" && turned.shape.strokes[0]!.points).toEqual([
+      [0.9, 0.2],
+      [0.9, 0.3],
+    ]);
+    // Sizes are diagonal fractions: a turn keeps them.
+    expect(turned.shape.kind === "brush" && turned.shape.strokes[0]!.size).toBe(0.04);
+    expect(brushSizeFromSlider(sliderFromBrushSize(0.04))).toBe(0.04);
   });
 
   it("covers as the renderer does", () => {

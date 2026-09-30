@@ -145,7 +145,10 @@ impl RenderPlan {
         let local: Vec<LocalMask> = r
             .masks
             .iter()
-            .filter(|m| !m.hidden && !m.adjustments.is_identity())
+            // An empty brush covers nothing (unless inverted: then everything).
+            .filter(|m| {
+                !m.hidden && !m.adjustments.is_identity() && (m.invert || !m.shape.is_empty())
+            })
             .map(|m| {
                 let a = m.adjustments;
                 let warmth = if a.warmth == 0.0 {
@@ -154,7 +157,7 @@ impl RenderPlan {
                     white_balance::gains(as_shot_white, a.warmth, 0.0).map(f32::log2)
                 };
                 LocalMask {
-                    shape: m.shape,
+                    shape: m.shape.clone(),
                     invert: m.invert,
                     stops: a.exposure,
                     warmth,
