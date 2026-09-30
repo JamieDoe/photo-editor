@@ -56,6 +56,8 @@ pub struct EngineInfoDto {
     pub perspective: Vec<AdjustmentSpec>,
     /// A mask's Exposure, Warmth and Clarity (ADR 0040).
     pub mask: Vec<AdjustmentSpec>,
+    /// A radial mask's Feather (ADR 0041).
+    pub mask_feather: AdjustmentSpec,
 }
 
 impl From<EngineInfo> for EngineInfoDto {
@@ -75,6 +77,7 @@ impl From<EngineInfo> for EngineInfoDto {
             straighten: i.straighten,
             perspective: i.perspective,
             mask: i.mask,
+            mask_feather: i.mask_feather,
         }
     }
 }

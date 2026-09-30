@@ -9,4 +9,8 @@ export type Mask = {
 /**
  * Tells masks apart while they are edited; not rendered.
  */
-id: number, shape: MaskShape, adjustments: LocalAdjustments, };
+id: number, shape: MaskShape, 
+/**
+ * Adjust outside the shape instead of inside.
+ */
+invert?: boolean, adjustments: LocalAdjustments, };

@@ -198,6 +198,21 @@ fn matches_scalar_reference_for_all_stages() {
         masks: vec![
             linear_mask(1, [0.5, 0.0], [0.5, 0.6], -0.8, 30.0, 40.0),
             linear_mask(2, [0.0, 0.5], [0.7, 0.5], 0.5, -20.0, -30.0),
+            crate::masks::Mask {
+                id: 3,
+                shape: crate::masks::MaskShape::Radial {
+                    centre: [0.4, 0.6],
+                    radius: [0.3, 0.15],
+                    angle: 30.0,
+                    feather: 60.0,
+                },
+                invert: true,
+                adjustments: crate::masks::LocalAdjustments {
+                    exposure: -0.6,
+                    warmth: 15.0,
+                    clarity: 25.0,
+                },
+            },
         ],
         ..Default::default()
     };
@@ -429,6 +444,7 @@ fn linear_mask(
     crate::masks::Mask {
         id,
         shape: crate::masks::MaskShape::Linear { start, end },
+        invert: false,
         adjustments: crate::masks::LocalAdjustments {
             exposure,
             warmth,

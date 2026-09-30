@@ -39,7 +39,8 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   upright.
 /// - 17: adds masks (ADR 0040), written only when there are some; older recipes have
 ///   none.
-pub const RECIPE_VERSION: u32 = 17;
+/// - 18: adds radial masks and inverted masks (ADR 0041).
+pub const RECIPE_VERSION: u32 = 18;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -198,7 +199,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=17 => Ok(Self {
+            7..=18 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -346,7 +347,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":17,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":18,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -466,6 +467,7 @@ mod tests {
         let masked = EditRecipe {
             masks: vec![crate::masks::Mask {
                 id: 7,
+                invert: true,
                 shape: crate::masks::MaskShape::Linear {
                     start: [0.5, 0.1],
                     end: [0.5, 0.5],

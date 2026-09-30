@@ -31,6 +31,7 @@
   --hist-grid-strong: rgb(255 255 255 / 12%);
   --clip-shadows: #7fa8e8;
   --mask-linear: #f0b45e;
+  --mask-radial: #c8a0f0;
   --hist-backdrop: rgb(255 255 255 / 6%);
   --curve-red: #ef6b62;
   --curve-green: #5fcf85;
@@ -60,7 +61,7 @@
     --switch-off: rgb(0 0 0 / 16%);
     --hist-red: rgb(220 60 50 / 45%); --hist-green: rgb(40 160 80 / 40%); --hist-blue: rgb(50 100 230 / 45%);
     --hist-luma: rgb(0 0 0 / 50%); --hist-blend: multiply; --hist-grid: rgb(0 0 0 / 5%); --hist-grid-strong: rgb(0 0 0 / 14%);
-    --clip-shadows: #3f6fc0; --mask-linear: #c98a2e; --hist-backdrop: rgb(0 0 0 / 6%); --curve-red: #c9392f; --curve-green: #2f9a55; --curve-blue: #3767c9;
+    --clip-shadows: #3f6fc0; --mask-linear: #c98a2e; --mask-radial: #9a6fc9; --hist-backdrop: rgb(0 0 0 / 6%); --curve-red: #c9392f; --curve-green: #2f9a55; --curve-blue: #3767c9;
     --primary-bg: #16171b; --primary-bg-hover: #000000; --primary-fg: #f8f8f9; --thumb-ring: #ffffff;
     --segment-shadow: 0 1px 2px rgb(0 0 0 / 12%);
     --photo-shadow: 0 20px 60px -20px rgb(0 0 0 / 35%), 0 0 0 1px rgb(0 0 0 / 6%);
@@ -79,7 +80,7 @@
   --switch-off: rgb(0 0 0 / 16%);
   --hist-red: rgb(220 60 50 / 45%); --hist-green: rgb(40 160 80 / 40%); --hist-blue: rgb(50 100 230 / 45%);
   --hist-luma: rgb(0 0 0 / 50%); --hist-blend: multiply; --hist-grid: rgb(0 0 0 / 5%); --hist-grid-strong: rgb(0 0 0 / 14%);
-  --clip-shadows: #3f6fc0; --mask-linear: #c98a2e; --hist-backdrop: rgb(0 0 0 / 6%); --curve-red: #c9392f; --curve-green: #2f9a55; --curve-blue: #3767c9;
+  --clip-shadows: #3f6fc0; --mask-linear: #c98a2e; --mask-radial: #9a6fc9; --hist-backdrop: rgb(0 0 0 / 6%); --curve-red: #c9392f; --curve-green: #2f9a55; --curve-blue: #3767c9;
   --primary-bg: #16171b; --primary-bg-hover: #000000; --primary-fg: #f8f8f9; --thumb-ring: #ffffff;
   --segment-shadow: 0 1px 2px rgb(0 0 0 / 12%);
   --photo-shadow: 0 20px 60px -20px rgb(0 0 0 / 35%), 0 0 0 1px rgb(0 0 0 / 6%);
@@ -540,7 +541,9 @@ input.range::-moz-range-thumb { width: 8px; height: 8px; border-radius: 50%; bac
 .mask-overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
 .mask-tint-stop { stop-color: var(--accent); }
 .mask-line { stroke: #ffffff; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
-.mask-line.dashed { stroke-width: 2; stroke-dasharray: 8 8; opacity: 0.8; }
+.mask-line.dashed { stroke-width: 2; stroke-dasharray: 8 8; opacity: 0.8; fill: none; }
+.mask-line.faint { stroke-width: 1.5; stroke-dasharray: 3 6; opacity: 0.55; fill: none; }
+.mask-shape-controls { display: flex; flex-direction: column; gap: 14px; padding-top: 14px; border-top: 1px dashed var(--hairline-strong); }
 .mask-handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #ffffff; box-shadow: 0 0 0 2px rgb(11 12 14 / 85%); cursor: grab; }
 .mask-handle.centre { width: 18px; height: 18px; margin: -9px 0 0 -9px; box-shadow: 0 0 0 3px rgb(11 12 14 / 85%); cursor: move; }
 .mask-toolbar { padding: 0 6px 0 8px; gap: 4px; }

@@ -3,4 +3,4 @@
 /**
  * Where a mask covers the photo.
  */
-export type MaskShape = { "kind": "linear", start: [number, number], end: [number, number], };
+export type MaskShape = { "kind": "linear", start: [number, number], end: [number, number], } | { "kind": "radial", centre: [number, number], radius: [number, number], angle: number, feather: number, };

@@ -155,6 +155,7 @@ impl RenderPlan {
                 };
                 LocalMask {
                     shape: m.shape,
+                    invert: m.invert,
                     stops: a.exposure,
                     warmth,
                     clarity: a.clarity,

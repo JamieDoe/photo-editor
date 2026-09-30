@@ -193,6 +193,7 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
             EditRecipe {
                 masks: vec![renderer::masks::Mask {
                     id: 1,
+                    invert: false,
                     shape: renderer::masks::MaskShape::Linear {
                         start: [0.5, 0.0],
                         end: [0.5, 0.55],
@@ -201,6 +202,27 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                         exposure: -1.0,
                         warmth: -30.0,
                         clarity: 40.0,
+                    },
+                }],
+                ..r.clone()
+            },
+        ),
+        (
+            "mask_radial_inverted",
+            EditRecipe {
+                masks: vec![renderer::masks::Mask {
+                    id: 1,
+                    shape: renderer::masks::MaskShape::Radial {
+                        centre: [0.55, 0.45],
+                        radius: [0.3, 0.2],
+                        angle: -20.0,
+                        feather: 70.0,
+                    },
+                    invert: true,
+                    adjustments: renderer::masks::LocalAdjustments {
+                        exposure: -1.2,
+                        warmth: 0.0,
+                        clarity: 0.0,
                     },
                 }],
                 ..r.clone()

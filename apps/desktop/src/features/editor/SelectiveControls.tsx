@@ -2,7 +2,7 @@ import { CloseIcon, PlusIcon } from "../../components/icons";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { LocalAdjustments } from "../../ipc/generated/LocalAdjustments";
 import type { MaskTool } from "./MaskTool";
-import { MASK_KINDS, maskName } from "./masks";
+import { ADDABLE_KINDS, MASK_KINDS, maskName } from "./masks";
 import { Slider } from "./Slider";
 import { formatSliderValue } from "./sliderTrack";
 import { WHITE_BALANCE_TRACKS } from "./whiteBalance";
@@ -15,7 +15,18 @@ const isLocalKey = (k: string): k is keyof LocalAdjustments => (LOCAL_KEYS as re
  * edits it on the photo), the active mask's Exposure, Warmth and Clarity, and the
  * masks to add. Only built kinds are offered.
  */
-export function SelectiveControls({ tool, specs, disabled }: { tool: MaskTool; specs: AdjustmentSpec[]; disabled: boolean }) {
+export function SelectiveControls({
+  tool,
+  specs,
+  feather,
+  disabled,
+}: {
+  tool: MaskTool;
+  specs: AdjustmentSpec[];
+  /** A radial mask's Feather (ADR 0041). */
+  feather: AdjustmentSpec;
+  disabled: boolean;
+}) {
   const active = tool.active;
   return (
     <div className="selective">
@@ -40,7 +51,9 @@ export function SelectiveControls({ tool, specs, disabled }: { tool: MaskTool; s
           );
         })}
         {tool.masks.length === 0 && (
-          <div className="mask-empty">Adjust just part of the photo. Start with a linear gradient to darken a sky or lighten a foreground.</div>
+          <div className="mask-empty">
+            Adjust just part of the photo: a linear gradient to darken a sky, a radial one to lift a face or darken the edges.
+          </div>
         )}
       </div>
       {active && (
@@ -63,13 +76,42 @@ export function SelectiveControls({ tool, specs, disabled }: { tool: MaskTool; s
                 />
               );
             })}
+          <div className="mask-shape-controls">
+            {active.shape.kind === "radial" && (
+              <Slider
+                id="mask-feather"
+                spec={feather}
+                value={active.shape.feather}
+                shown={formatSliderValue(active.shape.feather, feather.min, feather.step, feather.unit)}
+                zeroMark={false}
+                disabled={disabled}
+                onChange={tool.setFeather}
+              />
+            )}
+            <button
+              className="lens-toggle"
+              aria-pressed={active.invert ?? false}
+              disabled={disabled}
+              onClick={() => tool.setInvert(!(active.invert ?? false))}
+            >
+              <span className="lens-toggle-text">
+                <span className="lens-toggle-label">Invert</span>
+                <span className="lens-toggle-sub">Adjust outside the mask instead</span>
+              </span>
+              <span className="switch" aria-hidden="true">
+                <span className="switch-knob" />
+              </span>
+            </button>
+          </div>
         </div>
       )}
       <div className="mask-add-grid">
-        <button className="chip mask-add-tile" title="Graduated filter" disabled={disabled} onClick={() => tool.add("linear")}>
-          <PlusIcon size={14} />
-          Linear
-        </button>
+        {ADDABLE_KINDS.map((k) => (
+          <button key={k} className="chip mask-add-tile" title={MASK_KINDS[k].hint} disabled={disabled} onClick={() => tool.add(k)}>
+            <PlusIcon size={14} />
+            {MASK_KINDS[k].add}
+          </button>
+        ))}
       </div>
     </div>
   );

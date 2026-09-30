@@ -604,3 +604,19 @@ load about 8:
 - Coverage (a dot product and a smoothstep per mask) is cheap. A lookup-table `exp2`
   would halve the cost if it matters.
 - Release self-test, Nikon Z 6: a render with a mask took 6.3–6.8 ms.
+
+## 29. Radial masks (ADR 0041)
+
+A full render of a 1516×1010 frame (default look), median of 40, three rounds, machine
+load about 7–8. Each mask has Exposure and Warmth:
+
+| Case | ms |
+|---|---|
+| No masks | 2.79–2.96 |
+| One linear gradient | 4.86–4.89 |
+| One radial gradient, inverted | 5.43–5.49 (one 8.39 under load) |
+
+- A radial's elliptical distance adds a square root per pixel, about 0.6 ms over a
+  linear gradient.
+- Release self-test, Nikon Z 6: an inverted radial darkens the frame's top by 44.6
+  levels and leaves the middle unchanged.

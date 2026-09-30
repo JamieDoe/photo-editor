@@ -247,6 +247,15 @@ pub const MASK_CLARITY: AdjustmentSpec = AdjustmentSpec {
     ..MASK_WARMTH
 };
 
+/// A radial mask's Feather (ADR 0041): the share of its radius the fade takes.
+pub const MASK_FEATHER: AdjustmentSpec = AdjustmentSpec {
+    key: "feather",
+    label: "Feather",
+    min: 0.0,
+    default: 50.0,
+    ..MASK_WARMTH
+};
+
 /// A mask's controls (ADR 0040), as the design has them. Keys are
 /// `LocalAdjustments` fields.
 pub fn mask_specs() -> Vec<AdjustmentSpec> {

@@ -14,9 +14,13 @@ export type MaskKind = MaskShape["kind"];
 export type Point = [number, number];
 
 /** How the design names each kind, and its colour dot. */
-export const MASK_KINDS: Record<MaskKind, { label: string; dot: string }> = {
-  linear: { label: "Linear gradient", dot: "var(--mask-linear)" },
+export const MASK_KINDS: Record<MaskKind, { label: string; dot: string; add: string; hint: string }> = {
+  linear: { label: "Linear gradient", dot: "var(--mask-linear)", add: "Linear", hint: "Graduated filter" },
+  radial: { label: "Radial gradient", dot: "var(--mask-radial)", add: "Radial", hint: "Radial filter" },
 };
+
+/** The kinds that can be added, in the design's order. */
+export const ADDABLE_KINDS: readonly MaskKind[] = ["linear", "radial"];
 
 export const FULL_CROP: CropRect = { x: 0, y: 0, w: 1, h: 1 };
 
@@ -57,6 +61,22 @@ export function newLinearMask(masks: readonly Mask[], crop: CropRect): Mask {
   };
 }
 
+/** A new radial gradient in the middle of the shown picture: a circle a little under
+ *  half its short side across, fading over half its radius. */
+export function newRadialMask(masks: readonly Mask[], crop: CropRect): Mask {
+  const id = masks.reduce((max, m) => Math.max(max, m.id), 0) + 1;
+  const r = 0.15 * Math.min(crop.w, crop.h);
+  return {
+    id,
+    shape: { kind: "radial", centre: fromShown([0.5, 0.5], crop), radius: [r, r], angle: 0, feather: 50 },
+    adjustments: { exposure: 0, warmth: 0, clarity: 0 },
+  };
+}
+
+export function newMask(kind: MaskKind, masks: readonly Mask[], crop: CropRect): Mask {
+  return kind === "linear" ? newLinearMask(masks, crop) : newRadialMask(masks, crop);
+}
+
 export function updateMask(masks: readonly Mask[], id: number, change: (m: Mask) => Mask): Mask[] {
   return masks.map((m) => (m.id === id ? change(m) : m));
 }
@@ -70,12 +90,20 @@ export function adjusted(m: Mask): boolean {
   return a.exposure !== 0 || a.warmth !== 0 || a.clarity !== 0;
 }
 
-/** Every point of a shape moved by `f`. */
-function mapPoints(shape: MaskShape, f: (p: Point) => Point): MaskShape {
+/** A shape with every point moved by `f` and a radial's angle changed by `turn`. */
+function mapShape(shape: MaskShape, f: (p: Point) => Point, turn: (angle: number) => number): MaskShape {
   switch (shape.kind) {
     case "linear":
       return { ...shape, start: f(shape.start), end: f(shape.end) };
+    case "radial":
+      return { ...shape, centre: f(shape.centre), angle: normaliseAngle(turn(shape.angle)) };
   }
+}
+
+/** An angle in (-180, 180]. */
+export function normaliseAngle(a: number): number {
+  const r = ((a % 360) + 360) % 360;
+  return r > 180 ? r - 360 : r;
 }
 
 const tidy = (v: number) => Math.round(v * 1e6) / 1e6;
@@ -84,12 +112,13 @@ const tidy = (v: number) => Math.round(v * 1e6) / 1e6;
  *  the crop is (ADR 0039). */
 export function turnMasks(masks: readonly Mask[], turn: 1 | -1): Mask[] {
   const f = ([x, y]: Point): Point => (turn === 1 ? [tidy(1 - y), x] : [y, tidy(1 - x)]);
-  return masks.map((m) => ({ ...m, shape: mapPoints(m.shape, f) }));
+  // Radii are fractions of the diagonal, which a turn leaves alone.
+  return masks.map((m) => ({ ...m, shape: mapShape(m.shape, f, (a) => a + 90 * turn) }));
 }
 
 /** Masks mirrored left to right with the picture. */
 export function flipMasks(masks: readonly Mask[]): Mask[] {
-  return masks.map((m) => ({ ...m, shape: mapPoints(m.shape, ([x, y]): Point => [tidy(1 - x), y]) }));
+  return masks.map((m) => ({ ...m, shape: mapShape(m.shape, ([x, y]): Point => [tidy(1 - x), y], (a) => -a) }));
 }
 
 /**
@@ -102,4 +131,27 @@ export function linearCoverage(start: Point, end: Point, p: Point, w: number, h:
   const len2 = Math.max(d[0]! * d[0]! + d[1]! * d[1]!, 1e-6);
   const t = Math.min(1, Math.max(0, (((p[0] - start[0]) * w) * d[0]! + ((p[1] - start[1]) * h) * d[1]!) / len2));
   return 1 - t * t * (3 - 2 * t);
+}
+
+/**
+ * How much a radial gradient covers shown point `p`, as the renderer computes it, for a
+ * frame of `w` x `h` pixels (radii are fractions of its diagonal).
+ */
+export function radialCoverage(
+  shape: Extract<MaskShape, { kind: "radial" }>,
+  p: Point,
+  w: number,
+  h: number,
+): number {
+  const diagonal = Math.hypot(w, h);
+  const [a, b] = [shape.radius[0] * diagonal, shape.radius[1] * diagonal];
+  const t = (shape.angle * Math.PI) / 180;
+  const [dx, dy] = [(p[0] - shape.centre[0]) * w, (p[1] - shape.centre[1]) * h];
+  const u = (dx * Math.cos(t) + dy * Math.sin(t)) / a;
+  const v = (-dx * Math.sin(t) + dy * Math.cos(t)) / b;
+  const d = Math.hypot(u, v);
+  const inner = 1 - shape.feather / 100;
+  if (inner >= 1) return d <= 1 ? 1 : 0;
+  const s = Math.min(1, Math.max(0, (d - inner) / (1 - inner)));
+  return 1 - s * s * (3 - 2 * s);
 }
