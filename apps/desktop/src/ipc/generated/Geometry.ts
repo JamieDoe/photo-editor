@@ -13,4 +13,14 @@ straighten: number, crop: CropRect,
 /**
  * The shape the crop keeps while it is edited.
  */
-aspect: AspectRatio, };
+aspect: AspectRatio, 
+/**
+ * Vertical perspective (ADR 0034), -100..100: positive widens the top, correcting
+ * buildings that lean back.
+ */
+vertical: number, 
+/**
+ * Horizontal perspective, -100..100: positive widens the right side, correcting a
+ * wall that recedes to the right.
+ */
+horizontal: number, };

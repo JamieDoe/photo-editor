@@ -157,7 +157,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
           )}
           {info && recipe && (
             <PanelSection title="Geometry" icon={<CropIcon />} edited={geometryEdited(recipe)} defaultOpen={false}>
-              <GeometryControls tool={crop} straighten={info.straighten} disabled={!image} />
+              <GeometryControls tool={crop} straighten={info.straighten} perspective={info.perspective} disabled={!image} />
             </PanelSection>
           )}
           <PanelSection title="Diagnostics" icon={<DiagnosticsIcon />} defaultOpen={false}>

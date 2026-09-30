@@ -51,5 +51,4 @@ that have nothing to level by: organic scenes and texture.
 ## Consequences
 
 - Scenes with strong perspective (converging verticals) can mislead it. Vertical
-  and Horizontal perspective correction (Phase 5, "Perspective & lens") will handle
-  those.
+  and Horizontal perspective correction (ADR 0034) fixes those by hand.

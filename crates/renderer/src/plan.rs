@@ -76,8 +76,9 @@ pub enum OutputTransform {
 /// Backend-agnostic description of a render.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderPlan {
-    /// Crop and straighten (ADR 0032), applied first: the source is resampled into the
-    /// output frame, and the stages run on that. `None` renders the whole source.
+    /// Crop, straighten and perspective (ADRs 0032, 0034), applied first: the source is
+    /// resampled into the output frame, and the stages run on that. `None` renders the
+    /// whole source.
     pub geometry: Option<Geometry>,
     pub stages: Vec<Stage>,
     pub output: OutputTransform,

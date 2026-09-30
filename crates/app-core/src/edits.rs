@@ -12,12 +12,11 @@ use crate::{EngineError, ErrorKind};
 pub enum SavedEdit {
     /// No edit: the photo looks as shot.
     None,
-    Recipe(EditRecipe),
+    /// Boxed: a recipe is much larger than the other variants.
+    Recipe(Box<EditRecipe>),
     /// Written by a newer version of the app. Shown unedited here, and never
     /// overwritten, so opening the library in an older version loses nothing.
-    TooNew {
-        version: u32,
-    },
+    TooNew { version: u32 },
 }
 
 impl SavedEdit {
@@ -33,7 +32,7 @@ impl SavedEdit {
         }
         match EditRecipe::from_json(&stored.json) {
             Ok(r) if r.is_identity() => Self::None,
-            Ok(r) => Self::Recipe(r),
+            Ok(r) => Self::Recipe(Box::new(r)),
             Err(renderer::RecipeError::UnsupportedVersion(version)) => Self::TooNew { version },
             Err(e) => {
                 // Unreadable: treat as unedited; the next save replaces it.
@@ -46,7 +45,7 @@ impl SavedEdit {
     /// The recipe to render, if the photo is edited (and readable).
     pub fn recipe(&self) -> Option<EditRecipe> {
         match self {
-            Self::Recipe(r) => Some(*r),
+            Self::Recipe(r) => Some(**r),
             Self::None | Self::TooNew { .. } => None,
         }
     }

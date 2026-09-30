@@ -125,7 +125,7 @@ export function AdjustmentPanel({ specs, mixerSpec, toneCurve, recipe, onChange,
  * revealing the rest above a dashed divider. Opens by itself when a hidden slider
  * is already edited, so an edit is never out of sight.
  */
-function GroupSliders({
+export function GroupSliders({
   specs,
   valueOf,
   format,

@@ -3,6 +3,7 @@ import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { SelfTestConfigDto } from "../../ipc/generated/SelfTestConfigDto";
+import { fitCropFor } from "../editor/cropGeometry";
 import { mixerOf, neutralRecipe } from "../editor/recipe";
 import type { DisplayedFrame, Editor } from "../editor/useEditor";
 
@@ -342,7 +343,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     const framesBeforeCrop = frames.length;
     driver.editor().setRecipe({
       ...beforeCrop,
-      geometry: { straighten: 0, crop: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, aspect: "free" },
+      geometry: { straighten: 0, crop: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }, aspect: "free", vertical: 0, horizontal: 0 },
     });
     const cropped = await waitFor(
       () => frames.slice(framesBeforeCrop).find((f) => f.frame.fullWidth === Math.round(fullW / 2)) ?? null,
@@ -360,6 +361,27 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       cropped.frame.fullHeight === Math.round(fullH / 2) &&
       Math.abs(cropped.frame.width / cropped.frame.height - fullW / fullH) < 0.02;
 
+    // Perspective (ADR 0034): the renderer fits the same crop as the crop tool.
+    const shape = { straighten: 0, vertical: 40, horizontal: -15 };
+    const fitted = fitCropFor(fullW / fullH, shape, fullW, fullH);
+    const framesBeforePerspective = frames.length;
+    driver.editor().setRecipe({ ...beforeCrop, geometry: { ...shape, crop: fitted, aspect: "original" } });
+    const corrected = await waitFor(
+      () =>
+        frames
+          .slice(framesBeforePerspective)
+          .find((f) => Math.abs(f.frame.fullWidth - fitted.w * fullW) <= 2 && !f.frame.cacheHit) ?? null,
+      10_000,
+      "perspective frame",
+    ).catch(() => null);
+    driver.editor().setRecipe(beforeCrop);
+    const perspective = {
+      expected: `${Math.round(fitted.w * fullW)}x${Math.round(fitted.h * fullH)}`,
+      fullSize: corrected ? `${corrected.frame.fullWidth}x${corrected.frame.fullHeight}` : null,
+      renderMs: corrected?.frame.renderMs ?? null,
+    };
+    const perspectiveOk = corrected !== null && Math.abs(corrected.frame.fullHeight - fitted.h * fullH) <= 2;
+
     const stats = driver.editor().schedulerStats();
     const checks = {
       exportFinished: finished.type === "finished",
@@ -375,6 +397,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       savedEdits: editsOk,
       toneCurve: toneCurveOk,
       crop: cropOk,
+      perspective: perspectiveOk,
       autoLevel: autoLevelOk,
     };
     // Named so that a failing run explains itself.
@@ -395,6 +418,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       reopen,
       toneCurve,
       crop,
+      perspective,
       autoLevel,
       quitGuard,
       indexing,

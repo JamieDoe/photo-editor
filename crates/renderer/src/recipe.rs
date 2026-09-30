@@ -27,7 +27,9 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 10: adds vignette and grain (ADR 0031); older recipes read them as 0.
 /// - 11: adds crop and straighten (ADR 0032), written only when used; older recipes
 ///   have none.
-pub const RECIPE_VERSION: u32 = 11;
+/// - 12: adds vertical and horizontal perspective to the geometry (ADR 0034); older
+///   geometry reads them as 0.
+pub const RECIPE_VERSION: u32 = 12;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -162,7 +164,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=11 => Ok(Self {
+            7..=12 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -294,7 +296,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":11,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":12,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -389,6 +391,8 @@ mod tests {
                     h: 0.8,
                 },
                 aspect: AspectRatio::Free,
+                vertical: 30.0,
+                horizontal: -12.5,
             }),
             ..Default::default()
         };
@@ -400,6 +404,14 @@ mod tests {
             EditRecipe::from_json(r#"{"version":10}"#).unwrap().geometry,
             None
         );
+        // Version 11 geometry has no perspective.
+        let v11 = EditRecipe::from_json(
+            r#"{"version":11,"geometry":{"straighten":1.0,"crop":{"x":0.0,"y":0.0,"w":1.0,"h":1.0},"aspect":"original"}}"#,
+        )
+        .unwrap()
+        .geometry
+        .unwrap();
+        assert_eq!((v11.vertical, v11.horizontal), (0.0, 0.0));
     }
 
     #[test]

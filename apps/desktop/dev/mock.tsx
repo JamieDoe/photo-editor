@@ -124,7 +124,7 @@ function counts() {
 mockIPC((cmd, payload) => {
   switch (cmd) {
     case "engine_info":
-      return { rendererVersion: 3, recipeVersion: 11, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs, mixer: mixerSpec, straighten: { key: "straighten", label: "Straighten", group: "Geometry", min: -15, max: 15, step: 0.1, default: 0, more: false, unit: "°" } };
+      return { rendererVersion: 3, recipeVersion: 12, decoders: ["zune-jpeg", "libraw"], extensions: [], librawVersion: "mock", renderBackend: "cpu", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", cpuThreads: 10, adjustments: specs, mixer: mixerSpec, straighten: { key: "straighten", label: "Straighten", group: "Geometry", min: -15, max: 15, step: 0.1, default: 0, more: false, unit: "°" }, perspective: ["vertical", "horizontal"].map((key) => ({ key, label: key === "vertical" ? "Vertical" : "Horizontal", group: "Geometry", min: -100, max: 100, step: 1, default: 0, more: true, unit: "" })) };
     case "open_image_dialog":
     case "open_image_path":
       openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";

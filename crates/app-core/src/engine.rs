@@ -87,6 +87,7 @@ impl Engine {
             adjustments: renderer::adjustments::specs(),
             mixer: renderer::adjustments::mixer_spec(),
             straighten: renderer::adjustments::STRAIGHTEN,
+            perspective: renderer::adjustments::PERSPECTIVE.to_vec(),
         }
     }
 

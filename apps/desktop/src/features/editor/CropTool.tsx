@@ -18,20 +18,30 @@ import {
   toView,
   viewRatio,
   type Handle,
+  type ViewShape,
 } from "./cropGeometry";
+import { GroupSliders } from "./AdjustmentPanel";
 import { Slider } from "./Slider";
 import { formatSliderValue } from "./sliderTrack";
 
-const NO_GEOMETRY: Geometry = { straighten: 0, crop: FULL, aspect: "original" };
+const NO_GEOMETRY: Geometry = { straighten: 0, crop: FULL, aspect: "original", vertical: 0, horizontal: 0 };
 
 export function geometryOf(r: EditRecipe): Geometry {
   return r.geometry ?? NO_GEOMETRY;
 }
 
-/** Whether the photo is cropped or straightened. */
+/** Whether the photo is cropped, straightened or perspective-corrected. */
 export function geometryEdited(r: EditRecipe): boolean {
   const g = geometryOf(r);
-  return g.straighten !== 0 || g.crop.x !== 0 || g.crop.y !== 0 || g.crop.w !== 1 || g.crop.h !== 1;
+  return (
+    g.straighten !== 0 ||
+    g.vertical !== 0 ||
+    g.horizontal !== 0 ||
+    g.crop.x !== 0 ||
+    g.crop.y !== 0 ||
+    g.crop.w !== 1 ||
+    g.crop.h !== 1
+  );
 }
 
 /**
@@ -55,17 +65,18 @@ export function useCropTool(opts: {
     return () => window.clearTimeout(t);
   }, [status]);
   const g = recipe ? geometryOf(recipe) : NO_GEOMETRY;
-  const view = size ? cropView(g.straighten, size.width, size.height) : FULL;
+  const view = size ? cropView(g, size.width, size.height) : FULL;
 
   useEffect(() => {
     if (!open || !size) {
       setViewTransform(null);
       return;
     }
-    // While cropping, render the whole straightened view and draw the crop over it.
+    // While cropping, render the whole straightened (and corrected) view and draw the
+    // crop over it.
     setViewTransform((r) => {
       const geo = geometryOf(r);
-      return { ...r, geometry: { straighten: geo.straighten, crop: cropView(geo.straighten, size.width, size.height), aspect: "free" } };
+      return { ...r, geometry: { ...geo, crop: cropView(geo, size.width, size.height), aspect: "free" } };
     });
     return () => setViewTransform(null);
   }, [open, size, setViewTransform]);
@@ -77,11 +88,15 @@ export function useCropTool(opts: {
     [recipe, onChange],
   );
 
-  const setStraighten = (straighten: number) => {
+  // A new view shape keeps the crop in the same place relative to the view, so it
+  // stays inside the photo.
+  const setShape = (change: Partial<ViewShape>) => {
     if (!size) return;
-    const next = cropView(straighten, size.width, size.height);
-    update({ ...g, straighten, crop: remap(g.crop, view, next) });
+    const shaped = { ...g, ...change };
+    const next = cropView(shaped, size.width, size.height);
+    update({ ...shaped, crop: remap(g.crop, view, next) });
   };
+  const setStraighten = (straighten: number) => setShape({ straighten });
 
   const ratioInView = (a: AspectRatio) => {
     const r = size ? aspectRatioOf(a, size.width, size.height) : null;
@@ -106,6 +121,10 @@ export function useCropTool(opts: {
       update({ ...g, aspect, crop });
     },
     setStraighten,
+    /** Vertical or Horizontal perspective (ADR 0034). */
+    setPerspective: (key: string, value: number) => {
+      if (key === "vertical" || key === "horizontal") setShape({ [key]: value });
+    },
     status,
     /** Levels the photo from its horizon or verticals, found by the renderer. */
     autoLevel: () => {
@@ -239,9 +258,19 @@ function AspectButtons({ tool, className }: { tool: CropTool; className: string 
   );
 }
 
-/** The panel's Geometry section body, as in the design: aspect ratio, Straighten and a
- *  way into the crop tool. */
-export function GeometryControls({ tool, straighten, disabled }: { tool: CropTool; straighten: AdjustmentSpec; disabled: boolean }) {
+/** The panel's Geometry section body, as in the design: aspect ratio, Straighten, a
+ *  way into the crop tool, and "More controls" headed "Perspective & lens". */
+export function GeometryControls({
+  tool,
+  straighten,
+  perspective,
+  disabled,
+}: {
+  tool: CropTool;
+  straighten: AdjustmentSpec;
+  perspective: AdjustmentSpec[];
+  disabled: boolean;
+}) {
   const value = tool.geometry.straighten;
   const shown = useMemo(
     () => formatSliderValue(value, straighten.min, straighten.step, straighten.unit),
@@ -278,6 +307,14 @@ export function GeometryControls({ tool, straighten, disabled }: { tool: CropToo
           {tool.status}
         </span>
       )}
+      <GroupSliders
+        specs={perspective}
+        valueOf={(s) => (s.key === "vertical" ? tool.geometry.vertical : s.key === "horizontal" ? tool.geometry.horizontal : s.default)}
+        format={(s, v) => formatSliderValue(v, s.min, s.step, s.unit)}
+        extra={{ edited: false, before: true, content: <div className="more-title">Perspective &amp; lens</div> }}
+        disabled={disabled}
+        onChange={tool.setPerspective}
+      />
     </>
   );
 }

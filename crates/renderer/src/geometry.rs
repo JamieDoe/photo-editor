@@ -98,12 +98,25 @@ pub struct Geometry {
     pub crop: CropRect,
     /// The shape the crop keeps while it is edited.
     pub aspect: AspectRatio,
+    /// Vertical perspective (ADR 0034), -100..100: positive widens the top, correcting
+    /// buildings that lean back.
+    pub vertical: f32,
+    /// Horizontal perspective, -100..100: positive widens the right side, correcting a
+    /// wall that recedes to the right.
+    pub horizontal: f32,
 }
 
 impl Geometry {
-    /// No rotation and the whole frame (whatever the aspect choice).
+    /// No rotation or perspective and the whole frame (whatever the aspect choice).
     pub fn is_identity(&self) -> bool {
-        self.straighten == 0.0 && self.crop == CropRect::FULL
+        self.straighten == 0.0
+            && self.vertical == 0.0
+            && self.horizontal == 0.0
+            && self.crop == CropRect::FULL
+    }
+
+    fn has_perspective(&self) -> bool {
+        self.vertical != 0.0 || self.horizontal != 0.0
     }
 
     pub fn sanitized(&self) -> Self {
@@ -112,10 +125,20 @@ impl Geometry {
         } else {
             0.0
         };
+        let amount = |v: f32| {
+            let v = if v.is_finite() {
+                v.clamp(-100.0, 100.0)
+            } else {
+                0.0
+            };
+            if v == 0.0 { 0.0 } else { v }
+        };
         Self {
             straighten: if s == 0.0 { 0.0 } else { s },
             crop: self.crop.sanitized(),
             aspect: self.aspect,
+            vertical: amount(self.vertical),
+            horizontal: amount(self.horizontal),
         }
     }
 
@@ -124,14 +147,15 @@ impl Geometry {
     pub fn effective_crop(&self, w: f32, h: f32) -> CropRect {
         let g = self.sanitized();
         let crop = g.crop;
-        if g.straighten == 0.0 || inside(&crop, g.straighten, w, h) {
+        let map = Mapping::new(&g, w, h);
+        if (g.straighten == 0.0 && !g.has_perspective()) || map.contains(&crop) {
             return crop;
         }
         // Scale about the frame's centre: at 0 it is a point there, which is inside.
         let (mut lo, mut hi) = (0.0f32, 1.0f32);
         for _ in 0..30 {
             let mid = 0.5 * (lo + hi);
-            if inside(&scaled_about_centre(&crop, mid), g.straighten, w, h) {
+            if map.contains(&scaled_about_centre(&crop, mid)) {
                 lo = mid;
             } else {
                 hi = mid;
@@ -161,29 +185,127 @@ fn scaled_about_centre(c: &CropRect, s: f32) -> CropRect {
     }
 }
 
-/// Maps a point of the straightened view (fractions of `w`, `h`) to source pixel
-/// coordinates.
-#[inline]
-fn view_to_source(vx: f32, vy: f32, cos: f32, sin: f32, w: f32, h: f32) -> (f32, f32) {
-    let (dx, dy) = ((vx - 0.5) * w, (vy - 0.5) * h);
-    // The view is the source turned anticlockwise (on screen) by the angle; undo it.
-    (w / 2.0 + dx * cos - dy * sin, h / 2.0 + dx * sin + dy * cos)
+/// Perspective at ±100: the virtual camera turns this many degrees.
+const MAX_PERSPECTIVE_DEGREES: f32 = 20.0;
+
+/// Where each point of the view (fractions of the source's width and height) comes
+/// from in the source (pixels): undo the straighten rotation, then the perspective.
+///
+/// The perspective is a homography: the source seen by a camera turned about its
+/// horizontal and vertical axes, with a focal length of the long edge (about a 50°
+/// field of view), so the effect does not depend on render size. It is shifted so the
+/// view's centre is the photo's centre.
+#[derive(Debug, Clone, Copy)]
+pub struct Mapping {
+    w: f32,
+    h: f32,
+    cos: f32,
+    sin: f32,
+    focal: f32,
+    /// Camera rotation, row-major, and where it takes the centre; `None` without
+    /// perspective.
+    rotation: Option<([f32; 9], (f32, f32))>,
 }
 
+impl Mapping {
+    pub fn new(g: &Geometry, w: f32, h: f32) -> Self {
+        let (sin, cos) = g.straighten.to_radians().sin_cos();
+        let rotation = g.has_perspective().then(|| {
+            // Negative angles about both axes push the top and the right side away,
+            // so they sample less of the photo and are widened.
+            let a = (-g.vertical / 100.0 * MAX_PERSPECTIVE_DEGREES).to_radians();
+            let b = (-g.horizontal / 100.0 * MAX_PERSPECTIVE_DEGREES).to_radians();
+            let (sa, ca) = a.sin_cos();
+            let (sb, cb) = b.sin_cos();
+            // Rx(a) * Ry(b)
+            let r = [cb, 0.0, sb, sa * sb, ca, -sa * cb, -ca * sb, sa, ca * cb];
+            (r, (r[2] / r[8], r[5] / r[8]))
+        });
+        Self {
+            w,
+            h,
+            cos,
+            sin,
+            focal: w.max(h),
+            rotation,
+        }
+    }
+
+    /// Source pixel coordinates of view point (`vx`, `vy`).
+    #[inline]
+    pub fn source(&self, vx: f32, vy: f32) -> (f32, f32) {
+        let (dx, dy) = ((vx - 0.5) * self.w, (vy - 0.5) * self.h);
+        // The view is turned anticlockwise (on screen) by the angle; undo it.
+        let (px, py) = (dx * self.cos - dy * self.sin, dx * self.sin + dy * self.cos);
+        let (px, py) = match &self.rotation {
+            None => (px, py),
+            Some((r, (cx, cy))) => {
+                let (u, v) = (px / self.focal, py / self.focal);
+                let x = r[0] * u + r[1] * v + r[2];
+                let y = r[3] * u + r[4] * v + r[5];
+                let z = (r[6] * u + r[7] * v + r[8]).max(1.0e-3);
+                ((x / z - cx) * self.focal, (y / z - cy) * self.focal)
+            }
+        };
+        (self.w / 2.0 + px, self.h / 2.0 + py)
+    }
+
+    /// Whether the crop lies inside the photo. Straight lines stay straight under the
+    /// mapping, so its corners inside the (convex) photo are enough.
+    pub fn contains(&self, c: &CropRect) -> bool {
+        [
+            (c.x, c.y),
+            (c.x + c.w, c.y),
+            (c.x, c.y + c.h),
+            (c.x + c.w, c.y + c.h),
+        ]
+        .iter()
+        .all(|&(vx, vy)| {
+            let (sx, sy) = self.source(vx, vy);
+            // A little tolerance for rounding.
+            sx >= -1e-3 && sx <= self.w + 1e-3 && sy >= -1e-3 && sy <= self.h + 1e-3
+        })
+    }
+}
+
+#[cfg(test)]
 fn inside(c: &CropRect, straighten: f32, w: f32, h: f32) -> bool {
-    let (sin, cos) = straighten.to_radians().sin_cos();
-    [
-        (c.x, c.y),
-        (c.x + c.w, c.y),
-        (c.x, c.y + c.h),
-        (c.x + c.w, c.y + c.h),
-    ]
-    .iter()
-    .all(|&(vx, vy)| {
-        let (sx, sy) = view_to_source(vx, vy, cos, sin, w, h);
-        // A little tolerance for rounding.
-        sx >= -1e-3 && sx <= w + 1e-3 && sy >= -1e-3 && sy <= h + 1e-3
-    })
+    let g = Geometry {
+        straighten,
+        ..Geometry::default()
+    };
+    Mapping::new(&g, w, h).contains(c)
+}
+
+/// The largest crop of `aspect`, centred in the view, inside the photo after all of
+/// `geometry`'s straighten and perspective (its own crop is ignored).
+pub fn fit_crop_for(aspect: AspectRatio, geometry: &Geometry, w: f32, h: f32) -> CropRect {
+    let g = geometry.sanitized();
+    if !g.has_perspective() {
+        return fit_crop(aspect, g.straighten, w, h);
+    }
+    let ratio = aspect.ratio(w, h).unwrap_or(w / h);
+    let map = Mapping::new(&g, w, h);
+    // Half-width in pixels, searched: the rectangle grows until a corner leaves.
+    let rect = |a: f32| {
+        let (cw, ch) = (2.0 * a / w, 2.0 * a / ratio / h);
+        CropRect {
+            x: 0.5 - cw / 2.0,
+            y: 0.5 - ch / 2.0,
+            w: cw,
+            h: ch,
+        }
+    };
+    let (mut lo, mut hi) = (0.0f32, 0.5 * w.max(h * ratio));
+    for _ in 0..40 {
+        let mid = 0.5 * (lo + hi);
+        if map.contains(&rect(mid)) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    rect(lo)
 }
 
 /// The largest crop of `aspect` (the source's own shape when `None`... see
@@ -215,10 +337,10 @@ pub fn resample(source: &LinearImage, geometry: &Geometry) -> LinearImage {
     let (w, h) = (source.width(), source.height());
     let (ow, oh) = geometry.output_size(w, h);
     let crop = geometry.effective_crop(w as f32, h as f32);
-    let angle = geometry.sanitized().straighten;
+    let g = geometry.sanitized();
     let mut data = vec![0u16; ow as usize * oh as usize * 3];
     let row_len = ow as usize * 3;
-    if angle == 0.0 {
+    if g.straighten == 0.0 && !g.has_perspective() {
         let x0 = ((crop.x * w as f32).round() as u32).min(w - ow);
         let y0 = ((crop.y * h as f32).round() as u32).min(h - oh);
         data.par_chunks_mut(row_len)
@@ -228,15 +350,14 @@ pub fn resample(source: &LinearImage, geometry: &Geometry) -> LinearImage {
                 out.copy_from_slice(&row[x0 as usize * 3..(x0 + ow) as usize * 3]);
             });
     } else {
-        let (sin, cos) = angle.to_radians().sin_cos();
-        let (wf, hf) = (w as f32, h as f32);
+        let map = Mapping::new(&g, w as f32, h as f32);
         data.par_chunks_mut(row_len)
             .enumerate()
             .for_each(|(r, out)| {
                 let vy = crop.y + (r as f32 + 0.5) / oh as f32 * crop.h;
                 for (i, px) in out.as_chunks_mut::<3>().0.iter_mut().enumerate() {
                     let vx = crop.x + (i as f32 + 0.5) / ow as f32 * crop.w;
-                    let (sx, sy) = view_to_source(vx, vy, cos, sin, wf, hf);
+                    let (sx, sy) = map.source(vx, vy);
                     *px = bilinear(source, sx - 0.5, sy - 0.5);
                 }
             });
@@ -439,6 +560,7 @@ mod tests {
                 h: 0.5,
             },
             aspect: AspectRatio::Free,
+            ..Geometry::default()
         }
         .sanitized();
         assert_eq!(g.straighten, MAX_STRAIGHTEN);
@@ -551,6 +673,7 @@ mod tests {
             straighten: a,
             crop: fit_crop(AspectRatio::Original, a, 600.0, 400.0),
             aspect: AspectRatio::Original,
+            ..Geometry::default()
         };
         let levelled = resample(&img, &g);
         let again = auto_level(&levelled).unwrap();
@@ -585,6 +708,7 @@ mod tests {
             straighten: 10.0,
             crop: CropRect::FULL,
             aspect: AspectRatio::Original,
+            ..Geometry::default()
         };
         let c = g.effective_crop(3000.0, 2000.0);
         assert!(c.w < 1.0 && inside(&c, 10.0, 3000.0, 2000.0));
@@ -616,6 +740,7 @@ mod tests {
             straighten: -5.0,
             crop: fit_crop(AspectRatio::Original, -5.0, w as f32, h as f32),
             aspect: AspectRatio::Original,
+            ..Geometry::default()
         };
         let out = resample(&src, &g);
         let (ow, oh) = (out.width() as usize, out.height() as usize);
@@ -627,5 +752,117 @@ mod tests {
         };
         let (l, r) = (brightest_row(ow / 3), brightest_row(2 * ow / 3));
         assert!(l.abs_diff(r) <= 1, "{l} vs {r}");
+    }
+
+    fn perspective(vertical: f32, horizontal: f32) -> Geometry {
+        Geometry {
+            vertical,
+            horizontal,
+            ..Geometry::default()
+        }
+    }
+
+    #[test]
+    fn perspective_widens_the_named_side_about_the_centre() {
+        let (w, h) = (6000.0, 4000.0);
+        // Vertical: the top samples a narrower span of the photo, so it is widened.
+        let up = Mapping::new(&perspective(50.0, 0.0), w, h);
+        let top = up.source(1.0, 0.0).0 - up.source(0.0, 0.0).0;
+        let bottom = up.source(1.0, 1.0).0 - up.source(0.0, 1.0).0;
+        assert!(top < 0.9 * bottom, "{top} vs {bottom}");
+        // Horizontal: the right side samples a shorter span, so it is taller.
+        let right = Mapping::new(&perspective(0.0, 50.0), w, h);
+        let r = right.source(1.0, 1.0).1 - right.source(1.0, 0.0).1;
+        let l = right.source(0.0, 1.0).1 - right.source(0.0, 0.0).1;
+        assert!(r < 0.9 * l, "{r} vs {l}");
+        // Both keep the centre where it is, and negative values do the opposite.
+        for g in [perspective(50.0, 0.0), perspective(-30.0, 70.0)] {
+            let (x, y) = Mapping::new(&g, w, h).source(0.5, 0.5);
+            assert!((x - w / 2.0).abs() < 0.01 && (y - h / 2.0).abs() < 0.01);
+        }
+        let down = Mapping::new(&perspective(-50.0, 0.0), w, h);
+        assert!(down.source(1.0, 0.0).0 - down.source(0.0, 0.0).0 > top);
+    }
+
+    #[test]
+    fn perspective_keeps_straight_lines_straight() {
+        let map = Mapping::new(
+            &Geometry {
+                straighten: 4.0,
+                ..perspective(60.0, -35.0)
+            },
+            3000.0,
+            2000.0,
+        );
+        for (a, b) in [((0.1, 0.2), (0.9, 0.7)), ((0.3, 0.0), (0.35, 1.0))] {
+            let p = map.source(a.0, a.1);
+            let q = map.source(b.0, b.1);
+            let m = map.source(0.5 * (a.0 + b.0), 0.5 * (a.1 + b.1));
+            // The midpoint's distance from the line through the ends.
+            let cross = (q.0 - p.0) * (m.1 - p.1) - (q.1 - p.1) * (m.0 - p.0);
+            let len = ((q.0 - p.0).powi(2) + (q.1 - p.1).powi(2)).sqrt();
+            assert!((cross / len).abs() < 0.05, "{}", cross / len);
+        }
+    }
+
+    #[test]
+    fn fitted_crops_with_perspective_are_the_largest_inside() {
+        let (w, h) = (6000.0, 4000.0);
+        for aspect in [AspectRatio::Original, AspectRatio::Square] {
+            for (v, hz, s) in [(40.0, 0.0, 0.0), (-100.0, 30.0, 5.0), (0.0, 100.0, -15.0)] {
+                let g = Geometry {
+                    straighten: s,
+                    ..perspective(v, hz)
+                };
+                let map = Mapping::new(&g, w, h);
+                let c = fit_crop_for(aspect, &g, w, h);
+                let ratio = (c.w * w) / (c.h * h);
+                assert!((ratio / aspect.ratio(w, h).unwrap() - 1.0).abs() < 1e-3);
+                assert!(map.contains(&c), "{v} {hz} {s}: {c:?}");
+                assert!(!map.contains(&scaled_about_centre(&c, 1.01)));
+                assert!(c.w > 0.4, "{v} {hz} {s}: {c:?}");
+            }
+        }
+        // Without perspective it is the closed form.
+        let g = Geometry {
+            straighten: 5.0,
+            ..Geometry::default()
+        };
+        assert_eq!(
+            fit_crop_for(AspectRatio::Original, &g, w, h),
+            fit_crop(AspectRatio::Original, 5.0, w, h)
+        );
+    }
+
+    #[test]
+    fn perspective_pulls_the_full_frame_in_and_resamples_it() {
+        let src = gradient(300, 200);
+        let g = perspective(50.0, 0.0);
+        let c = g.effective_crop(300.0, 200.0);
+        assert!(c.w < 1.0 && Mapping::new(&g, 300.0, 200.0).contains(&c));
+        let out = resample(&src, &g);
+        let (ow, oh) = g.output_size(300, 200);
+        assert_eq!((out.width(), out.height()), (ow, oh));
+        assert!(!perspective(0.0, 0.0).has_perspective() && !g.is_identity());
+    }
+
+    #[test]
+    fn perspective_is_clamped_when_sanitised() {
+        let g = perspective(250.0, f32::NAN).sanitized();
+        assert_eq!((g.vertical, g.horizontal), (100.0, 0.0));
+    }
+
+    #[test]
+    fn fit_crop_for_matches_the_ui() {
+        // The same case is in cropGeometry.test.ts.
+        let g = Geometry {
+            straighten: 3.0,
+            ..perspective(40.0, -20.0)
+        };
+        let c = fit_crop_for(AspectRatio::Original, &g, 6000.0, 4000.0);
+        assert!(
+            (c.w - 0.84362).abs() < 1e-4 && (c.h - 0.84362).abs() < 1e-4,
+            "{c:?}"
+        );
     }
 }

@@ -111,16 +111,16 @@ fn source_key(source: &LinearImage) -> SourceKey {
 
 type GainBits = [u32; 3];
 
-/// The most recent framed (cropped and straightened) source, so dragging other
+/// The most recent framed (cropped, straightened and perspective-corrected) source, so dragging other
 /// controls does not resample again, and the maps built from it stay cached (they key
 /// on its buffer). One entry.
 pub(super) fn cached_frame(source: &LinearImage, g: &Geometry) -> Arc<LinearImage> {
-    type Key = (SourceKey, [u32; 5]);
+    type Key = (SourceKey, [u32; 7]);
     static LAST: Mutex<Option<(Key, Arc<LinearImage>)>> = Mutex::new(None);
     let c = g.crop;
     let key: Key = (
         source_key(source),
-        [g.straighten, c.x, c.y, c.w, c.h].map(f32::to_bits),
+        [g.straighten, g.vertical, g.horizontal, c.x, c.y, c.w, c.h].map(f32::to_bits),
     );
     if let Some((k, frame)) = LAST.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
         && *k == key

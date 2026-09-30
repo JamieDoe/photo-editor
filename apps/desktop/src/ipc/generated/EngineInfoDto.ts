@@ -10,4 +10,8 @@ mixer: MixerSpec,
 /**
  * The Geometry section's Straighten slider (ADR 0032).
  */
-straighten: AdjustmentSpec, };
+straighten: AdjustmentSpec, 
+/**
+ * The Geometry section's Vertical and Horizontal sliders (ADR 0034).
+ */
+perspective: Array<AdjustmentSpec>, };

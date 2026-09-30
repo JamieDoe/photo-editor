@@ -124,6 +124,29 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                         320.0,
                     ),
                     aspect: renderer::AspectRatio::Square,
+                    ..Default::default()
+                }),
+                ..r
+            },
+        ),
+        (
+            "perspective",
+            EditRecipe {
+                geometry: Some({
+                    let g = renderer::Geometry {
+                        vertical: 40.0,
+                        horizontal: -20.0,
+                        ..Default::default()
+                    };
+                    renderer::Geometry {
+                        crop: renderer::geometry::fit_crop_for(
+                            renderer::AspectRatio::Original,
+                            &g,
+                            480.0,
+                            320.0,
+                        ),
+                        ..g
+                    }
                 }),
                 ..r
             },
