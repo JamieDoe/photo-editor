@@ -19,6 +19,7 @@ mod plan;
 pub mod presets;
 mod quality;
 mod recipe;
+pub mod settings;
 
 pub use backend::{RenderBackend, RenderError};
 pub use chromatic::ChromaticAberration;

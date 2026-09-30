@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ExportIcon, ImportIcon, MoreIcon, PencilIcon, RefreshIcon, TrashIcon } from "../../components/icons";
-import { Popover } from "../../components/Popover";
+import { Popover, PopoverHeader as SharedHeader, PopoverIcon } from "../../components/Popover";
 import * as ipc from "../../ipc/client";
 import type { PreviewFrame } from "../../ipc/frame";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
@@ -264,18 +264,10 @@ export function PresetStrip({ editor, recipe, disabled }: { editor: Editor; reci
   );
 }
 
-/** The popover's header, as the design's dialogs have it: a small picture, a title
- *  (or, while renaming, a field in its place) and a line under it. */
+/** The popover's header with a preset's (or the photo's) picture, or an icon. */
 function PopoverHeader({ frame, icon, title, sub }: { frame?: PreviewFrame | null; icon?: ReactNode; title: ReactNode; sub: string }) {
-  return (
-    <div className="popover-header">
-      {icon ? <span className="popover-thumb popover-icon">{icon}</span> : <PresetPreview frame={frame ?? null} className="popover-thumb" />}
-      <div className="popover-heading">
-        {title}
-        <span className="popover-sub">{sub}</span>
-      </div>
-    </div>
-  );
+  const visual = icon ? <PopoverIcon>{icon}</PopoverIcon> : <PresetPreview frame={frame ?? null} className="popover-thumb" />;
+  return <SharedHeader visual={visual} title={title} sub={sub} />;
 }
 
 /** Save… : names the photo's current look and saves it as a preset. */

@@ -95,6 +95,7 @@ impl Engine {
             mask: renderer::adjustments::mask_specs(),
             mask_feather: renderer::adjustments::MASK_FEATHER,
             mask_density: renderer::adjustments::MASK_DENSITY,
+            setting_groups: renderer::settings::setting_groups(),
         }
     }
 

@@ -7,6 +7,7 @@ import type { EngineInfoDto } from "../../ipc/generated/EngineInfoDto";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { ImageSummaryDto } from "../../ipc/generated/ImageSummaryDto";
 import { Autosaver, type SaveState } from "./autosave";
+import { defaultCopyGroups, pasteChanges, pasteEdits as pasteInto, type CopiedEdits } from "./copyPaste";
 import { EditHistory, describeChange } from "./history";
 import { PreviewScheduler, type FrameInfo, type SchedulerStats } from "./previewScheduler";
 import { defaultRecipe } from "./recipe";
@@ -57,6 +58,10 @@ export function useEditor() {
    *  applies when the photo is opened again. */
   const historiesRef = useRef(new Map<string, { history: EditHistory; recipe: EditRecipe }>());
   const historyRef = useRef<{ history: EditHistory; recipe: EditRecipe } | null>(null);
+  /** Copied edits (ADR 0048), kept while photos change; and which groups Copy takes
+   *  (the engine's defaults until the photographer chooses). */
+  const [copied, setCopied] = useState<CopiedEdits | null>(null);
+  const [copyChoice, setCopyChoice] = useState<string[] | null>(null);
   /** What Undo and Redo would change ("Exposure"), or null. */
   const [undoLabel, setUndoLabel] = useState<string | null>(null);
   const [redoLabel, setRedoLabel] = useState<string | null>(null);
@@ -214,6 +219,24 @@ export function useEditor() {
     },
     [commitRecipe],
   );
+  const copyGroups = copyChoice ?? (info ? defaultCopyGroups(info.settingGroups) : []);
+  /** Copies the open photo's edit, the chosen groups of it; false with no photo. */
+  const copyEdits = () => {
+    const r = recipeRef.current;
+    if (!r || !imageRef.current) return false;
+    setCopied({ recipe: r, groups: copyGroups });
+    return true;
+  };
+  /** Pastes the copied edits onto the open photo as one step. Resolves how it went:
+   *  pasted, nothing to paste, or already the same. */
+  const pasteEdits = (): "pasted" | "nothing" | "same" => {
+    const r = recipeRef.current;
+    if (!r || !copied || !info || !imageRef.current) return "nothing";
+    if (!pasteChanges(r, copied, info.settingGroups)) return "same";
+    setRecipe(pasteInto(r, copied, info.settingGroups), "Paste");
+    return "pasted";
+  };
+
   const undo = useCallback(() => stepHistory(-1), [stepHistory]);
   const redo = useCallback(() => stepHistory(1), [stepHistory]);
 
@@ -343,6 +366,12 @@ export function useEditor() {
     redo,
     undoLabel,
     redoLabel,
+    /** Copy and paste (ADR 0048). */
+    copied,
+    copyGroups,
+    setCopyGroups: setCopyChoice,
+    copyEdits,
+    pasteEdits,
     resetRecipe: () => info && setRecipe(defaultRecipe(info.recipeVersion, info.adjustments)),
     saveState,
     lastSaved,

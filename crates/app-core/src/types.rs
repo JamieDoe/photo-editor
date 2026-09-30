@@ -140,4 +140,5 @@ pub struct EngineInfo {
     pub mask: Vec<AdjustmentSpec>,
     pub mask_feather: AdjustmentSpec,
     pub mask_density: AdjustmentSpec,
+    pub setting_groups: Vec<renderer::settings::SettingGroup>,
 }

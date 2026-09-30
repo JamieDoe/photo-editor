@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { CompareIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, UndoIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
@@ -16,6 +16,7 @@ import { ChromaticAberrationToggle } from "./LensControls";
 import { Histogram } from "./Histogram";
 import { MaskOverlay, MaskToolbar, useMaskTool } from "./MaskTool";
 import { SelectiveControls } from "./SelectiveControls";
+import { PanelFooter } from "./PanelFooter";
 import { PanelSection } from "./PanelSection";
 import { PresetStrip } from "./PresetStrip";
 import { StatsPanel } from "./StatsPanel";
@@ -32,10 +33,12 @@ interface Props {
   /** Where the open photo sits in the Library view ("3 of 40"); null if not there. */
   position: { index: number; total: number } | null;
   onOpenFile: () => void;
+  /** Shows a short confirmation ("Edits copied"). */
+  notify: (message: string) => void;
 }
 
 /** The Edit mode: photograph in the centre, adjustments on the right. */
-export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }: Props) {
+export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, notify }: Props) {
   const { info, image, recipe, busy } = editor;
   // The histogram of what the viewer shows, for the panel's graph and the tone curve.
   const histogram = image && editor.displayed?.imageId === image.id ? editor.displayed.frame.histogram : null;
@@ -101,14 +104,31 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
     return () => window.removeEventListener("keydown", onKey);
   }, [marks, onMark, onStep, image, toggleCompare]);
 
-  // ⌘Z undoes, ⇧⌘Z (or ⌘Y) redoes (ADR 0044); text fields keep their own undo.
+  // Copy and paste (ADR 0048), confirmed as the design does.
+  const copyEdits = () => {
+    if (editor.copyEdits()) notify("Edits copied");
+  };
+  const pasteEdits = () => {
+    const done = editor.pasteEdits();
+    if (done === "pasted") notify("Pasted to 1 photo");
+    else if (done === "same") notify("This photo already has these edits");
+  };
+
+  // ⌘Z undoes, ⇧⌘Z (or ⌘Y) redoes (ADR 0044); ⇧⌘C and ⇧⌘V copy and paste edits, as in
+  // Lightroom (⌘C and ⌘V stay with text). Text fields keep their own keys.
   const { undo, redo } = editor;
+  const copyRef = useRef(copyEdits);
+  const pasteRef = useRef(pasteEdits);
+  copyRef.current = copyEdits;
+  pasteRef.current = pasteEdits;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!hasCommandModifier(e) || isTextEntry(e.target)) return;
       const key = e.key.toLowerCase();
       if (key === "z") (e.shiftKey ? redo : undo)();
       else if (key === "y") redo();
+      else if (key === "c" && e.shiftKey) copyRef.current();
+      else if (key === "v" && e.shiftKey) pasteRef.current();
       else return;
       e.preventDefault();
     };
@@ -149,7 +169,6 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
                 saving={image.editSaving}
                 state={editor.saveState}
                 edited={!isIdentity(recipe)}
-                onReset={editor.resetRecipe}
               />
             )}
             {image && (
@@ -306,6 +325,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile }
             <StatsPanel editor={editor} />
           </PanelSection>
         </div>
+        <PanelFooter editor={editor} edited={recipe !== null && !isIdentity(recipe)} copy={copyEdits} paste={pasteEdits} />
       </aside>
     </div>
   );
@@ -319,12 +339,10 @@ function EditStatus({
   saving,
   state,
   edited,
-  onReset,
 }: {
   saving: EditSavingDto;
   state: SaveState | null;
   edited: boolean;
-  onReset: () => void;
 }) {
   // Narrow stages show the short form (styles.css); the full note stays on hover.
   const note: { full: string; short?: string } | null =
@@ -356,11 +374,6 @@ function EditStatus({
             note.full
           )}
         </span>
-      )}
-      {edited && (
-        <button className="ghost small" onClick={onReset} title="Back to the original look (the file itself was never changed)">
-          Reset
-        </button>
       )}
     </span>
   );

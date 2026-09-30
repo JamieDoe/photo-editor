@@ -118,6 +118,34 @@ export const RefreshIcon = (p: IconProps) => (
   </Icon>
 );
 
+export const CheckIcon = (p: IconProps) => (
+  <Icon size={14} {...p}>
+    <path d="M3.5 8.5l3 3 6-7" />
+  </Icon>
+);
+
+export const CopyIcon = (p: IconProps) => (
+  <Icon size={14} {...p}>
+    <rect x="5" y="5" width="9" height="9" rx="1.5" />
+    <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5" />
+  </Icon>
+);
+
+export const PasteIcon = (p: IconProps) => (
+  <Icon size={14} {...p}>
+    <rect x="3" y="3" width="10" height="11.5" rx="1.5" />
+    <path d="M6 2h4v2.5H6z" />
+  </Icon>
+);
+
+/** The design's Reset: an arrow turning back. */
+export const ResetIcon = (p: IconProps) => (
+  <Icon size={14} {...p}>
+    <path d="M2.5 8a5.5 5.5 0 1 0 1.6-3.9" />
+    <path d="M2.5 2.5v3h3" />
+  </Icon>
+);
+
 export const PencilIcon = (p: IconProps) => (
   <Icon size={14} {...p}>
     <path d="M10.5 2.5l3 3-7.5 7.5H3v-3z" />

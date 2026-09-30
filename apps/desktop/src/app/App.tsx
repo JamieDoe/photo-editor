@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorBanner } from "../components/ErrorBanner";
+import { Toast, useToast } from "../components/Toast";
 import { BrandMark, ExportIcon, SettingsIcon } from "../components/icons";
 import { QuitDialog } from "../components/QuitDialog";
 import { EditView } from "../features/editor/EditView";
@@ -66,6 +67,8 @@ export function App() {
     editor.exportState !== null && (editor.exportState.last === null || editor.exportState.last.type === "progress");
   const context =
     mode === "settings" ? "Settings" : mode === "edit" ? (editor.image?.fileName ?? "") : (library.listing?.name ?? "");
+
+  const { toast, notify } = useToast();
 
   // One banner; the most relevant source first.
   const sources = [editor, library, settings];
@@ -139,6 +142,7 @@ export function App() {
               const next = library.neighbour(editPath, delta);
               if (next) openFromLibrary(next.path);
             }}
+            notify={notify}
             onOpenFile={() => {
               setEditPath(null);
               void editor.openDialog();
@@ -148,6 +152,7 @@ export function App() {
         {mode === "settings" && <SettingsView api={settings} />}
       </div>
       <QuitDialog />
+      <Toast toast={toast} />
     </div>
   );
 }

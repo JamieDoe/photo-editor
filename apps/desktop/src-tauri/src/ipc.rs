@@ -60,6 +60,8 @@ pub struct EngineInfoDto {
     pub mask_feather: AdjustmentSpec,
     /// A mask's Density (ADR 0043).
     pub mask_density: AdjustmentSpec,
+    /// The recipe's settings by panel section, for copying edits (ADR 0048).
+    pub setting_groups: Vec<renderer::settings::SettingGroup>,
 }
 
 impl From<EngineInfo> for EngineInfoDto {
@@ -81,6 +83,7 @@ impl From<EngineInfo> for EngineInfoDto {
             mask: i.mask,
             mask_feather: i.mask_feather,
             mask_density: i.mask_density,
+            setting_groups: i.setting_groups,
         }
     }
 }

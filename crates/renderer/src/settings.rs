@@ -1,0 +1,143 @@
+//! Setting groups (ADR 0048): the recipe's fields by the panel section they belong to,
+//! for copying an edit onto other photos a section at a time. Fields are named as in
+//! the recipe's JSON.
+
+use serde::Serialize;
+
+/// A group of settings that is copied, or not, as a whole.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct SettingGroup {
+    /// Stable, for remembering choices: `"light"`, `"masks"`, ...
+    pub id: &'static str,
+    pub label: &'static str,
+    /// The recipe fields it holds (JSON names).
+    pub fields: Vec<&'static str>,
+    /// Copied unless the photographer leaves it out. The crop and masks are drawn for
+    /// one photo, so they are left out unless chosen (as in Lightroom).
+    pub copied_by_default: bool,
+}
+
+/// Every recipe field but `version`, in exactly one group, in the panel's order.
+pub fn setting_groups() -> Vec<SettingGroup> {
+    let group = |id, label, fields: &[&'static str], copied_by_default| SettingGroup {
+        id,
+        label,
+        fields: fields.to_vec(),
+        copied_by_default,
+    };
+    vec![
+        group("exposure", "Exposure", &["exposure"], true),
+        group(
+            "light",
+            "Light and tone curve",
+            &[
+                "look",
+                "contrast",
+                "highlights",
+                "shadows",
+                "whites",
+                "blacks",
+                "dehaze",
+                "pointCurve",
+                "channelCurves",
+            ],
+            true,
+        ),
+        group(
+            "whiteBalance",
+            "White balance",
+            &["temperature", "tint"],
+            true,
+        ),
+        group(
+            "colour",
+            "Colour",
+            &["vibrance", "saturation", "mixer"],
+            true,
+        ),
+        group(
+            "detail",
+            "Detail and effects",
+            &[
+                "texture",
+                "clarity",
+                "sharpening",
+                "noiseReduction",
+                "vignette",
+                "grain",
+            ],
+            true,
+        ),
+        group(
+            "geometry",
+            "Crop, geometry and lens",
+            &["geometry", "chromaticAberration"],
+            false,
+        ),
+        group("masks", "Masks", &["masks"], false),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::EditRecipe;
+
+    #[test]
+    fn every_setting_is_in_exactly_one_group() {
+        // A recipe with every optional part present, so every field is written.
+        let r = EditRecipe {
+            mixer: Some(crate::ColourMixer {
+                red: crate::HslShift {
+                    hue: 5.0,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            geometry: Some(crate::Geometry {
+                straighten: 1.0,
+                ..Default::default()
+            }),
+            chromatic_aberration: Some(Default::default()),
+            point_curve: Some(crate::ops::point_curve::PointCurve::new(&[
+                [0.0, 0.1],
+                [1.0, 1.0],
+            ])),
+            channel_curves: Some(crate::ops::point_curve::ChannelCurves {
+                red: Some(crate::ops::point_curve::PointCurve::new(&[
+                    [0.0, 0.1],
+                    [1.0, 1.0],
+                ])),
+                ..Default::default()
+            }),
+            masks: vec![crate::masks::Mask::new(
+                1,
+                crate::masks::MaskShape::Brush {
+                    strokes: Vec::new(),
+                },
+                Default::default(),
+            )],
+            ..Default::default()
+        };
+        let json: serde_json::Value = serde_json::from_str(&r.to_json()).unwrap();
+        let mut fields: Vec<&str> = json
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        fields.retain(|f| *f != "version");
+        fields.sort();
+        let mut grouped: Vec<&str> = setting_groups()
+            .iter()
+            .flat_map(|g| g.fields.clone())
+            .collect();
+        grouped.sort();
+        assert_eq!(
+            grouped, fields,
+            "a setting is missing from the groups, or in two"
+        );
+    }
+}
