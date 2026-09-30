@@ -58,17 +58,35 @@ coverage can't be computed per pixel in closed form.
    - **Cursor:** the design's two rings follow the pointer, the outer one the size and
      the dashed inner one where the soft edge starts, with a minus sign when erasing.
      The system cursor is hidden over the photo.
-   - **Tint:** drawn in SVG from the strokes, in order.
-     - Paint strokes are round-capped paths at their flow, with a blur for their
-       feather.
-     - Each erase stroke masks out the layers before it, so the tint follows the
-       renderer's composition.
-     - An inverted brush's tint is the complement, drawn through a mask.
+   - **Tint:** drawn on a canvas from the strokes, as the renderer composes them
+     (`BrushTint`).
+     - Each stroke is its exact profile: nested round-capped lines (ten rings over the
+       soft edge, a solid core) whose stacked opacity follows the smoothstep to within
+       0.08 (tested), composed at the stroke's flow.
+     - Paint is drawn over what is there, and an erase stroke cuts it away
+       (`destination-out`), so it removes only what came before, as in the renderer.
+       An inverted brush's tint is the complement.
+     - Finished strokes are kept in a cached layer, so each update draws only the
+       stroke in progress.
+     - History of the tint:
+       - The first version drew SVG with blurred strokes. The blur made strokes wider
+         than the renderer's, so an erase cleared the tint while the photo kept the
+         edge of the effect.
+       - The second drew exact SVG profiles, but each erase stroke nested everything
+         before it in another SVG mask. Frames grew to 44, 83 and 186 ms after the
+         first, second and third erase.
+       - On the canvas, every stroke takes 17 ms frames, erases included.
+     - The brush rings are a separate layer, so moving the pointer draws only them.
    - **Mask card:** Paint/Erase, Clear, and Size (1–100, 100 being a quarter of the
      diagonal), Feather and Flow, plus a one-line hint. These are brush settings for
      the next stroke, not stored; each stroke keeps its own.
-6. **Self-test:** a −1 EV stroke across the middle of the Nikon sample darkens that
-   band by 38.5 levels and leaves the top unchanged.
+6. **Self-test:**
+   - A −1 EV stroke across the middle of the Nikon sample darkens that band by 38.5
+     levels and leaves the top unchanged.
+   - Painting and erasing through the mask UI itself (the Masks button, Add Brush,
+     pointer events on the photo, Option to erase) leaves the erased middle as without
+     the mask (−0.32 levels) and the rest of the stroke 39.7 levels darker.
+   - It also records the frame times while painting.
 
 ## Deviations from the design
 

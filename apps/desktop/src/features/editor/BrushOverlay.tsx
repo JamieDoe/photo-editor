@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import type { Mask } from "../../ipc/generated/Mask";
 import type { MaskShape } from "../../ipc/generated/MaskShape";
 import type { Stroke } from "../../ipc/generated/Stroke";
 import type { MaskTool } from "./MaskTool";
-import { fromShown, toShown, type Point } from "./masks";
+import { BrushTint } from "./brushTint";
+import { fromShown, type Point } from "./masks";
 
 type Brush = Extract<MaskShape, { kind: "brush" }>;
 
@@ -23,8 +24,8 @@ const round = (v: number) => Math.round(v * 10_000) / 10_000;
 /**
  * A brush mask on the photo (ADR 0042): paint by dragging (holding Option, or with
  * Erase chosen, takes paint away). The design's two rings follow the pointer: the
- * brush's size and, dashed, where its soft edge starts. The tint is drawn from the
- * strokes themselves, in order, as the renderer composes them.
+ * brush's size and, dashed, where its soft edge starts. The tint is drawn on a canvas
+ * from the strokes themselves, as the renderer composes them (see `BrushTint`).
  */
 export function BrushGuides({
   tool,
@@ -41,6 +42,39 @@ export function BrushGuides({
 }) {
   const { w: W, h: H, diagonal: D } = space;
   const [pointer, setPointer] = useState<Point | null>(null);
+  const tintRef = useRef<HTMLCanvasElement>(null);
+  const tint = useRef<BrushTint | null>(null);
+  // The canvas matches the photo's box on screen, in device pixels.
+  const [boxSize, setBoxSize] = useState({ width: 0, height: 0 });
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const dpr = window.devicePixelRatio;
+      setBoxSize({
+        width: Math.round(entry.contentRect.width * dpr),
+        height: Math.round(entry.contentRect.height * dpr),
+      });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [boxRef]);
+  const showTint = tool.overlay && !mask.hidden;
+  const { x: cx, y: cy, w: cw, h: ch } = space.crop;
+  useEffect(() => {
+    const canvas = tintRef.current;
+    if (!canvas || !showTint || boxSize.width === 0) return;
+    tint.current ??= new BrushTint();
+    const colour = getComputedStyle(canvas).getPropertyValue("--accent").trim() || "#f0b45e";
+    tint.current.draw(
+      canvas,
+      shape.strokes,
+      { width: boxSize.width, height: boxSize.height, crop: { x: cx, y: cy, w: cw, h: ch } },
+      colour,
+      mask.invert ?? false,
+    );
+  }, [shape.strokes, showTint, boxSize, cx, cy, cw, ch, mask.invert]);
   const [alt, setAlt] = useState(false);
   const drawing = useRef<{ base: Stroke[]; stroke: Stroke; last: [number, number]; frame: number | null } | null>(null);
   useEffect(
@@ -106,8 +140,6 @@ export function BrushGuides({
   const erasing = tool.brush.erase || alt;
   const r = tool.brush.size * D;
   const inner = r * (1 - tool.brush.feather / 100);
-  const prefix = `brush-${mask.id}`;
-  const { content, defs } = strokeLayers(shape.strokes, prefix, space);
   return (
     <div
       className="brush-surface"
@@ -117,23 +149,8 @@ export function BrushGuides({
       onPointerCancel={onPointerUp}
       onPointerLeave={() => setPointer(null)}
     >
+      {showTint && <canvas ref={tintRef} className="brush-tint-canvas" aria-hidden="true" />}
       <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
-        <defs>
-          {defs}
-          {mask.invert && (
-            <mask id={`${prefix}-invert`} maskUnits="userSpaceOnUse" x={0} y={0} width={W} height={H}>
-              <rect width={W} height={H} fill="white" />
-              <g style={{ color: "black" }}>{content}</g>
-            </mask>
-          )}
-        </defs>
-        {tool.overlay &&
-          !mask.hidden &&
-          (mask.invert ? (
-            <rect className="brush-tint" width={W} height={H} mask={`url(#${prefix}-invert)`} />
-          ) : (
-            <g className="brush-tint">{content}</g>
-          ))}
         {pointer && (
           <g className={erasing ? "brush-cursor erase" : "brush-cursor"}>
             <circle cx={pointer[0]} cy={pointer[1]} r={r} className="brush-ring" />
@@ -152,65 +169,4 @@ export function BrushGuides({
       </svg>
     </div>
   );
-}
-
-/**
- * The strokes as SVG, composed as the renderer does: paint strokes drawn over each
- * other at their flow, each erase stroke masking out everything painted before it.
- * Paint is `currentColor`, so the same layers draw the tint or an inverted mask.
- */
-function strokeLayers(strokes: Stroke[], prefix: string, space: Space): { content: ReactNode; defs: ReactNode[] } {
-  const { w: W, h: H, diagonal: D } = space;
-  const defs: ReactNode[] = [];
-  let content: ReactNode[] = [];
-  strokes.forEach((s, i) => {
-    if (s.points.length === 0) return;
-    const d = s.points
-      .map((p, k) => {
-        const q = toShown(p, space.crop);
-        return `${k ? "L" : "M"}${(q[0] * W).toFixed(1)} ${(q[1] * H).toFixed(1)}`;
-      })
-      .join(" ");
-    // A single point is a zero-length path: its round caps make the dab.
-    const path = s.points.length === 1 ? `${d} l0.01 0` : d;
-    const width = 2 * s.size * D;
-    const blur = (s.size * D * s.feather) / 100 / 2.5;
-    const filter = blur > 0.5 ? `${prefix}-blur-${i}` : null;
-    if (filter) {
-      defs.push(
-        <filter key={filter} id={filter} filterUnits="userSpaceOnUse" x={0} y={0} width={W} height={H}>
-          <feGaussianBlur stdDeviation={blur} />
-        </filter>,
-      );
-    }
-    const line = (colour: string) => (
-      <path
-        d={path}
-        fill="none"
-        stroke={colour}
-        strokeWidth={width}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        opacity={s.flow / 100}
-        filter={filter ? `url(#${filter})` : undefined}
-      />
-    );
-    if (!s.erase) {
-      content.push(<g key={i}>{line("currentColor")}</g>);
-      return;
-    }
-    const id = `${prefix}-erase-${i}`;
-    defs.push(
-      <mask key={id} id={id} maskUnits="userSpaceOnUse" x={0} y={0} width={W} height={H}>
-        <rect width={W} height={H} fill="white" />
-        {line("black")}
-      </mask>,
-    );
-    content = [
-      <g key={i} mask={`url(#${id})`}>
-        {content}
-      </g>,
-    ];
-  });
-  return { content, defs };
 }
