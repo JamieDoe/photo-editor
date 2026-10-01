@@ -1,4 +1,5 @@
 import * as ipc from "../../ipc/client";
+import type { ExportFileFormat } from "../../ipc/generated/ExportFileFormat";
 import type { ExportQueueEvent } from "../../ipc/generated/ExportQueueEvent";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
@@ -391,7 +392,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       if (!indexing) return null;
       const folder = config.exportPath.replace(/[^/\\]+$/, "");
       const photos = (await ipc.listFolder(indexing.folder)).photos.map((p) => p.path);
-      const run = async (items: string[], longEdge: number | undefined, cancelAfterStart: boolean) => {
+      const run = async (items: string[], longEdge: number | undefined, cancelAfterStart: boolean, format: ExportFileFormat = "jpeg") => {
         let progress = 0;
         let finished: Extract<ExportQueueEvent, { type: "finished" }> | null = null;
         const unlisten = await ipc.onExportQueueEvent((e) => {
@@ -401,14 +402,23 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
           } else finished = e;
         });
         const t0 = performance.now();
-        await ipc.startExport({ items: items.map((path) => ({ path })), longEdge, quality: 85, folder });
+        await ipc.startExport({ items: items.map((path) => ({ path })), longEdge, quality: 85, format, folder });
         const done = await waitFor(() => finished, 120_000, "export queue").catch(() => null);
         unlisten();
         return { done, progress, ms: Math.round(performance.now() - t0) };
       };
       const sized = await run(photos.slice(0, 3), 1350, false);
       const stopped = await run(photos, undefined, true);
+      // The other formats (ADR 0057): the test photo as a 16-bit TIFF and a PNG.
+      const output = async (format: ExportFileFormat) => {
+        const t = performance.now();
+        const r = await run([config.imagePath], 1350, false, format);
+        const o = r.done?.outputs[0];
+        return o ? { file: o.path.split(/[\\/]/).pop(), size: `${o.width}x${o.height}`, kb: Math.round(o.bytes / 1024), ms: Math.round(performance.now() - t) } : null;
+      };
+      const formats = { jpeg: sized.done?.outputs[0]?.bytes ?? null, tiff: await output("tiff"), png: await output("png") };
       return {
+        formats,
         exported: sized.done?.exported ?? null,
         longEdges: sized.done?.outputs.map((o) => Math.max(o.width, o.height)) ?? [],
         failed: sized.done?.failed.length ?? null,
@@ -419,6 +429,14 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         of: photos.length,
       };
     })();
+    const formatsOk =
+      exportQueue !== null &&
+      exportQueue.formats.tiff?.file?.endsWith(".tif") === true &&
+      exportQueue.formats.png?.file?.endsWith(".png") === true &&
+      [exportQueue.formats.tiff, exportQueue.formats.png].every((o) => o !== null && Math.max(...o.size.split("x").map(Number)) === 1350) &&
+      // A 16-bit TIFF is far larger than the PNG, which is larger than a JPEG.
+      exportQueue.formats.tiff!.kb > exportQueue.formats.png!.kb &&
+      exportQueue.formats.png!.kb * 1024 > (exportQueue.formats.jpeg ?? Infinity);
     const exportQueueOk =
       exportQueue !== null &&
       exportQueue.exported === 3 &&
@@ -1360,6 +1378,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       presets: presetOk,
       batch: batchOk,
       exportQueue: exportQueueOk,
+      exportFormats: formatsOk,
       whiteBalanceLight: lightOk,
       colourGrading: gradingOk,
       calibration: calibrationOk,

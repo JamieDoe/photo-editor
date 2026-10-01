@@ -32,8 +32,10 @@ impl Default for Histogram {
 const CHUNK_PIXELS: usize = 64 * 1024;
 
 impl Histogram {
-    /// Counts every pixel of `image` (alpha ignored).
+    /// Counts every pixel of `image` (alpha ignored). For the 8-bit frames shown on
+    /// screen; 16-bit export images are never counted.
     pub fn of(image: &OutputImage) -> Self {
+        debug_assert_eq!(image.format().bytes_per_sample(), 1, "8-bit images only");
         let channels = image.format().channels();
         image
             .data()

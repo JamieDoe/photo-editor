@@ -949,3 +949,45 @@ fn spots_are_applied_first_and_follow_the_photo() {
     assert_eq!(level(&render(&moved, &img), 20, 30), level(&before, 20, 30));
     assert_eq!(render(&healed, &img).data(), after.data());
 }
+
+#[test]
+fn sixteen_bit_output_matches_eight_bit_and_keeps_finer_steps() {
+    // A smooth dark ramp: 8-bit output bands it into few levels; 16-bit keeps them.
+    let w = 512u32;
+    let data: Vec<u16> = (0..w).flat_map(|x| [(x * 8) as u16; 3]).collect();
+    let img = LinearImage::new(w, 1, data).unwrap();
+    let recipe = EditRecipe {
+        sharpening: 0.0,
+        ..Default::default()
+    };
+    let plan = RenderPlan::from_recipe(&recipe, None);
+    let eight = CpuRenderer
+        .render(&plan, &img, PixelFormat::Rgb8, &NeverCancel)
+        .unwrap();
+    let sixteen = CpuRenderer
+        .render(&plan, &img, PixelFormat::Rgb16, &NeverCancel)
+        .unwrap();
+    assert_eq!(sixteen.data().len(), eight.data().len() * 2);
+    let deep = sixteen.samples16().unwrap();
+    for (a, b) in eight.data().iter().zip(&deep) {
+        assert!(
+            (f32::from(*a) - f32::from(*b) / 257.0).abs() <= 0.6,
+            "{a} vs {b}"
+        );
+    }
+    let levels = |v: Vec<u32>| {
+        let mut v = v;
+        v.dedup();
+        v.len()
+    };
+    let l8 = levels(
+        eight
+            .data()
+            .iter()
+            .step_by(3)
+            .map(|&v| u32::from(v))
+            .collect(),
+    );
+    let l16 = levels(deep.iter().step_by(3).map(|&v| u32::from(v)).collect());
+    assert!(l16 > l8 * 4, "16-bit {l16} levels, 8-bit {l8}");
+}

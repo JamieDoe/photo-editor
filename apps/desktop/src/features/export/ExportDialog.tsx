@@ -1,14 +1,30 @@
 import { useEffect, useRef } from "react";
 import { CloseIcon, FolderIcon } from "../../components/icons";
 import type { PreviewFrame } from "../../ipc/frame";
+import type { ExportFileFormat } from "../../ipc/generated/ExportFileFormat";
 import type { ExportSettings } from "../../ipc/generated/ExportSettings";
 
-/** The dialog's presets (ADR 0050): the design's Web and Social, and the full size. */
-export const EXPORT_PRESETS = [
-  { id: "web", label: "Web", sub: "JPEG · 2048 px", longEdge: 2048, quality: 85 },
-  { id: "social", label: "Social", sub: "JPEG · 1350 px", longEdge: 1350, quality: 90 },
-  { id: "full", label: "Full quality", sub: "JPEG · original size", longEdge: null, quality: 95 },
-] as const;
+/** The dialog's presets (ADRs 0050, 0057): the design's Web, Social and Full quality
+ *  (a 16-bit TIFF at the original size). */
+export const EXPORT_PRESETS: ReadonlyArray<{
+  id: string;
+  label: string;
+  sub: string;
+  format: ExportFileFormat;
+  longEdge: number | null;
+  quality: number;
+}> = [
+  { id: "web", label: "Web", sub: "JPEG · 2048 px", format: "jpeg", longEdge: 2048, quality: 85 },
+  { id: "social", label: "Social", sub: "JPEG · 1350 px", format: "jpeg", longEdge: 1350, quality: 90 },
+  { id: "full", label: "Full quality", sub: "TIFF · original", format: "tiff", longEdge: null, quality: 95 },
+];
+
+/** The design's Format choices; HEIC is not offered (ADR 0057). */
+const FORMATS: ReadonlyArray<{ id: ExportFileFormat; label: string; hint: string }> = [
+  { id: "jpeg", label: "JPEG", hint: "Small files for sharing and the web" },
+  { id: "tiff", label: "TIFF", hint: "16-bit, lossless: for printing and further editing" },
+  { id: "png", label: "PNG", hint: "8-bit, lossless" },
+];
 
 const SIZES: ReadonlyArray<{ label: string; longEdge: number | null }> = [
   { label: "Original", longEdge: null },
@@ -16,14 +32,16 @@ const SIZES: ReadonlyArray<{ label: string; longEdge: number | null }> = [
   { label: "1350 px", longEdge: 1350 },
 ];
 
-/** Settings changed by hand no longer match a preset. */
-function presetOf(longEdge: number | null, quality: number): string | null {
-  return EXPORT_PRESETS.find((p) => p.longEdge === longEdge && p.quality === quality)?.id ?? null;
+/** Settings changed by hand no longer match a preset (quality counts for JPEG only). */
+function presetOf(format: ExportFileFormat, longEdge: number | null, quality: number): string | null {
+  const matches = (p: (typeof EXPORT_PRESETS)[number]) =>
+    p.format === format && p.longEdge === longEdge && (format !== "jpeg" || p.quality === quality);
+  return EXPORT_PRESETS.find(matches)?.id ?? null;
 }
 
 /**
- * The design's export dialog: the photos, a preset, JPEG quality and size, the folder,
- * and Export. The choices are remembered (settings); the folder is chosen only in the
+ * The design's export dialog: the photos, a preset, the format, JPEG quality and size,
+ * the folder, and Export. The choices are remembered (settings); the folder is chosen only in the
  * system's dialog.
  */
 export function ExportDialog({
@@ -62,7 +80,9 @@ export function ExportDialog({
   }, [onClose]);
 
   const longEdge = settings.longEdge;
-  const set = (e: number | null, q: number) => onChange({ longEdge: e, jpegQuality: q, preset: presetOf(e, q) });
+  const format = settings.format;
+  const set = (f: ExportFileFormat, e: number | null, q: number) =>
+    onChange({ format: f, longEdge: e, jpegQuality: q, preset: presetOf(f, e, q) });
   const folderName = settings.folder?.split(/[\\/]/).filter(Boolean).pop() ?? null;
   const title = count === 1 ? "Export photo" : `Export ${count} photos`;
 
@@ -83,7 +103,7 @@ export function ExportDialog({
         </div>
         <div className="export-presets">
           {EXPORT_PRESETS.map((p) => (
-            <button key={p.id} className="export-preset" aria-pressed={settings.preset === p.id} onClick={() => set(p.longEdge, p.quality)}>
+            <button key={p.id} className="export-preset" aria-pressed={settings.preset === p.id} onClick={() => set(p.format, p.longEdge, p.quality)}>
               <span className="export-preset-label">{p.label}</span>
               <span className="export-preset-sub">{p.sub}</span>
             </button>
@@ -91,26 +111,39 @@ export function ExportDialog({
         </div>
         <div className="export-rows">
           <div className="export-row">
-            <label htmlFor="export-quality">Quality</label>
-            <div className="export-control">
-              <input
-                id="export-quality"
-                className="range export-range"
-                type="range"
-                min={50}
-                max={100}
-                step={1}
-                value={settings.jpegQuality}
-                onChange={(e) => set(longEdge, Number(e.target.value))}
-              />
-              <span className="export-value">{settings.jpegQuality}</span>
+            <span>Format</span>
+            <div className="segmented small" role="radiogroup" aria-label="Format">
+              {FORMATS.map((f) => (
+                <button key={f.id} role="radio" aria-checked={format === f.id} title={f.hint} onClick={() => set(f.id, longEdge, settings.jpegQuality)}>
+                  {f.label}
+                </button>
+              ))}
             </div>
           </div>
+          {/* Quality is JPEG's alone; TIFF and PNG are lossless. */}
+          {format === "jpeg" && (
+            <div className="export-row">
+              <label htmlFor="export-quality">Quality</label>
+              <div className="export-control">
+                <input
+                  id="export-quality"
+                  className="range export-range"
+                  type="range"
+                  min={50}
+                  max={100}
+                  step={1}
+                  value={settings.jpegQuality}
+                  onChange={(e) => set(format, longEdge, Number(e.target.value))}
+                />
+                <span className="export-value">{settings.jpegQuality}</span>
+              </div>
+            </div>
+          )}
           <div className="export-row">
             <span>Size</span>
             <div className="segmented small" role="radiogroup" aria-label="Size">
               {SIZES.map((s) => (
-                <button key={s.label} role="radio" aria-checked={longEdge === s.longEdge} onClick={() => set(s.longEdge, settings.jpegQuality)}>
+                <button key={s.label} role="radio" aria-checked={longEdge === s.longEdge} onClick={() => set(format, s.longEdge, settings.jpegQuality)}>
                   {s.label}
                 </button>
               ))}

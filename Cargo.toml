@@ -67,6 +67,8 @@ quick-xml = "0.42"
 zune-jpeg = "0.5"
 jpeg-encoder = "0.7"
 png = "0.18"
+# 16-bit TIFF export (ADR 0057). MIT; pure Rust, from the image-rs project like png.
+tiff = { version = "0.11", default-features = false, features = ["deflate"] }
 ts-rs = "12"
 cc = "1"
 libc = "0.2"

@@ -2,8 +2,8 @@
 //! source area it covers (partial pixels weighted by how much they cover), in linear
 //! light, so fine detail keeps its brightness. Two separable passes, rows in parallel.
 
-use image_core::OutputImage;
-use image_core::color::{linear_to_srgb, srgb8_to_linear16_table};
+use image_core::color::{linear_to_srgb, srgb_to_linear, srgb8_to_linear16_table};
+use image_core::{OutputImage, PixelFormat};
 use rayon::prelude::*;
 
 /// The size `width` x `height` becomes with its long edge at most `long_edge`: the
@@ -42,7 +42,7 @@ fn coverage(from: usize, to: usize) -> Vec<Vec<(usize, f32)>> {
         .collect()
 }
 
-/// `image` (RGB8 or RGBA8, sRGB) with its long edge at most `long_edge`.
+/// `image` (RGB8, RGBA8 or 16-bit RGB, sRGB) with its long edge at most `long_edge`.
 pub fn fit_long_edge(image: &OutputImage, long_edge: u32) -> OutputImage {
     let (w, h) = (image.width() as usize, image.height() as usize);
     let (ow, oh) = fitted_size(image.width(), image.height(), long_edge);
@@ -50,21 +50,79 @@ pub fn fit_long_edge(image: &OutputImage, long_edge: u32) -> OutputImage {
         return image.clone();
     }
     let (ow, oh) = (ow as usize, oh as usize);
-    let ch = image.format().channels();
-    let table = srgb8_to_linear16_table();
-    let to_linear: Vec<f32> = table.iter().map(|&v| f32::from(v) / 65535.0).collect();
-    // Back to sRGB through a fine table: 4096 steps are well under an 8-bit step.
-    const STEPS: usize = 4096;
-    let to_srgb: Vec<u8> = (0..=STEPS)
-        .map(|i| {
-            (linear_to_srgb(i as f32 / STEPS as f32) * 255.0)
-                .round()
-                .clamp(0.0, 255.0) as u8
+    let format = image.format();
+    let ch = format.channels();
+    // Samples into linear light (alpha, a coverage, as it is), and back.
+    let linear = if format == PixelFormat::Rgb16 {
+        let samples = image.samples16().unwrap_or_default();
+        let table: Vec<f32> = (0..=u16::MAX)
+            .map(|v| srgb_to_linear(f32::from(v) / 65535.0))
+            .collect();
+        resample(&samples, w, h, ow, oh, ch, |v: u16, _| {
+            table[usize::from(v)]
         })
-        .collect();
-    let src = image.data();
+    } else {
+        let to_linear: Vec<f32> = srgb8_to_linear16_table()
+            .iter()
+            .map(|&v| f32::from(v) / 65535.0)
+            .collect();
+        resample(image.data(), w, h, ow, oh, ch, |v: u8, c| {
+            if c == 3 {
+                f32::from(v) / 255.0
+            } else {
+                to_linear[usize::from(v)]
+            }
+        })
+    };
+    let data = if format == PixelFormat::Rgb16 {
+        let mut data = vec![0u8; ow * oh * 6];
+        data.par_chunks_mut(6 * 1024)
+            .zip(linear.par_chunks(3 * 1024))
+            .for_each(|(out, values)| {
+                for (o, v) in out.as_chunks_mut::<2>().0.iter_mut().zip(values) {
+                    let code = (linear_to_srgb(v.clamp(0.0, 1.0)) * 65535.0).round() as u16;
+                    *o = code.to_ne_bytes();
+                }
+            });
+        data
+    } else {
+        // Back to 8 bits through a fine table: 4096 steps are well under an 8-bit step.
+        const STEPS: usize = 4096;
+        let to_srgb: Vec<u8> = (0..=STEPS)
+            .map(|i| {
+                (linear_to_srgb(i as f32 / STEPS as f32) * 255.0)
+                    .round()
+                    .clamp(0.0, 255.0) as u8
+            })
+            .collect();
+        linear
+            .par_iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let v = v.clamp(0.0, 1.0);
+                if i % ch == 3 {
+                    (v * 255.0).round() as u8
+                } else {
+                    to_srgb[(v * STEPS as f32).round() as usize]
+                }
+            })
+            .collect()
+    };
+    OutputImage::from_raw(ow as u32, oh as u32, format, data).unwrap_or_else(|_| image.clone())
+}
 
-    // Rows first: every source row to the output width, in linear light.
+/// `src` (`w` x `h`, `ch` samples a pixel) averaged down to `ow` x `oh` in linear
+/// light, each sample made linear by `to_linear(sample, channel)`: rows first, then
+/// columns, in parallel.
+fn resample<T: Copy + Sync>(
+    src: &[T],
+    w: usize,
+    h: usize,
+    ow: usize,
+    oh: usize,
+    ch: usize,
+    to_linear: impl Fn(T, usize) -> f32 + Sync,
+) -> Vec<f32> {
     let across = coverage(w, ow);
     let mut rows = vec![0f32; h * ow * ch];
     rows.par_chunks_mut(ow * ch)
@@ -75,41 +133,24 @@ pub fn fit_long_edge(image: &OutputImage, long_edge: u32) -> OutputImage {
                 for c in 0..ch {
                     out[x * ch + c] = taps
                         .iter()
-                        .map(|&(i, wt)| {
-                            let v = line[i * ch + c];
-                            // Alpha is not a colour: averaged as it is.
-                            wt * if c == 3 {
-                                f32::from(v) / 255.0
-                            } else {
-                                to_linear[v as usize]
-                            }
-                        })
+                        .map(|&(i, wt)| wt * to_linear(line[i * ch + c], c))
                         .sum();
                 }
             }
         });
-
-    // Then columns, back to sRGB.
     let down = coverage(h, oh);
-    let mut data = vec![0u8; ow * oh * ch];
-    data.par_chunks_mut(ow * ch)
+    let mut out = vec![0f32; ow * oh * ch];
+    out.par_chunks_mut(ow * ch)
         .enumerate()
-        .for_each(|(y, out)| {
-            for (i, v) in out.iter_mut().enumerate() {
-                let linear: f32 = down[y]
+        .for_each(|(y, line)| {
+            for (i, v) in line.iter_mut().enumerate() {
+                *v = down[y]
                     .iter()
                     .map(|&(r, wt)| wt * rows[r * ow * ch + i])
                     .sum();
-                let linear = linear.clamp(0.0, 1.0);
-                *v = if i % ch == 3 {
-                    (linear * 255.0).round() as u8
-                } else {
-                    to_srgb[(linear * STEPS as f32).round() as usize]
-                };
             }
         });
-    OutputImage::from_raw(ow as u32, oh as u32, image.format(), data)
-        .unwrap_or_else(|_| image.clone())
+    out
 }
 
 #[cfg(test)]
@@ -162,5 +203,40 @@ mod tests {
     fn small_images_are_unchanged() {
         let img = solid(50, 40, 90);
         assert_eq!(fit_long_edge(&img, 2048).data(), img.data());
+    }
+
+    #[test]
+    fn sixteen_bit_images_resize_in_linear_light_keeping_their_depth() {
+        // A flat colour stays exactly that colour; a fine checker of black and white
+        // averages to linear mid grey (sRGB 0.735), not sRGB 0.5.
+        let flat: Vec<u8> = (0..64 * 64)
+            .flat_map(|_| [40000u16, 1234, 65535])
+            .flat_map(u16::to_ne_bytes)
+            .collect();
+        let img = OutputImage::from_raw(64, 64, PixelFormat::Rgb16, flat).unwrap();
+        let small = fit_long_edge(&img, 16);
+        assert_eq!(
+            (small.width(), small.height(), small.format()),
+            (16, 16, PixelFormat::Rgb16)
+        );
+        for px in small.samples16().unwrap().chunks(3) {
+            assert!(
+                (i32::from(px[0]) - 40000).abs() <= 2 && (i32::from(px[1]) - 1234).abs() <= 2,
+                "{px:?}"
+            );
+        }
+        let checker: Vec<u8> = (0..64 * 64)
+            .flat_map(|i| {
+                [if (i % 64 + i / 64) % 2 == 0 {
+                    0u16
+                } else {
+                    65535
+                }; 3]
+            })
+            .flat_map(u16::to_ne_bytes)
+            .collect();
+        let img = OutputImage::from_raw(64, 64, PixelFormat::Rgb16, checker).unwrap();
+        let grey = fit_long_edge(&img, 8).samples16().unwrap()[0];
+        assert!((f32::from(grey) / 65535.0 - 0.735).abs() < 0.005, "{grey}");
     }
 }

@@ -759,3 +759,29 @@ frame. Release self-test, Nikon Z 6, preview level:
 | Without spots (exposure +0.3) | 4.3 ms |
 | First render with one spot (retouches) | 5.8 ms |
 | With the spot cached, exposure +0.3 | 4.4 ms |
+
+## 39. TIFF and PNG export (ADR 0057)
+
+Full size (6064×4040), release build, machine load 7–10. The encodes use a synthetic
+photo-like image of smooth gradients with slight noise; real photos compress less, so
+their files are larger and slower.
+
+| Step | Time | Size |
+|---|---|---|
+| Render, 8-bit output (default look) | 23 ms | — |
+| Render, 16-bit output (exact sRGB curve) | 56 ms | — |
+| Encode JPEG q85 (libjpeg-turbo) | 64 ms | 0.7 MB |
+| Encode PNG (8-bit, balanced Deflate) | 862 ms | 3.1 MB |
+| Encode TIFF (16-bit, Deflate, horizontal predictor) | 542 ms | 2.3 MB |
+
+Release self-test, Nikon Z 6, 1,350 px through the export queue (decode included):
+
+| Format | File size | Time |
+|---|---|---|
+| JPEG | 267 KB | — |
+| PNG | 1.5 MB | 0.62 s |
+| 16-bit TIFF | 5.9 MB | 0.56 s |
+
+The JPEG time is not measured separately in this step.
+
+All of this runs on the background export lane; the editor stays interactive.

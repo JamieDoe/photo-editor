@@ -16,6 +16,8 @@ turbojpeg = ["dep:jpeg-turbo"]
 image-core.workspace = true
 platform.workspace = true
 jpeg-encoder.workspace = true
+png.workspace = true
+tiff.workspace = true
 rayon.workspace = true
 jpeg-turbo = { workspace = true, optional = true }
 

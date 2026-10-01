@@ -79,7 +79,8 @@ impl CpuRenderer {
         let kernels = compile(plan, source, frame);
         let width = source.width() as usize;
         let height = source.height() as usize;
-        let channels = out.format().channels();
+        let format = out.format();
+        let bytes = format.bytes_per_pixel();
         let rows_per_chunk = (CHUNK_PIXELS / width)
             .max(min_chunk_rows(&kernels))
             .min(height)
@@ -87,7 +88,7 @@ impl CpuRenderer {
         let src = source.data();
 
         out.data_mut()
-            .par_chunks_mut(rows_per_chunk * width * channels)
+            .par_chunks_mut(rows_per_chunk * width * bytes)
             .enumerate()
             .try_for_each_init(
                 || (Vec::new(), KernelScratch::default()),
@@ -96,7 +97,7 @@ impl CpuRenderer {
                         return Err(RenderError::Cancelled);
                     }
                     let first = i * rows_per_chunk * width * 3;
-                    let src_chunk = &src[first..first + out_chunk.len() / channels * 3];
+                    let src_chunk = &src[first..first + out_chunk.len() / bytes * 3];
                     let span = RowSpan {
                         first_row: i * rows_per_chunk,
                         width,
@@ -109,7 +110,7 @@ impl CpuRenderer {
                         scratch,
                         kernel_scratch,
                         out_chunk,
-                        channels,
+                        format,
                         span,
                     );
                     Ok(())
@@ -144,7 +145,7 @@ fn process_chunk(
     scratch: &mut Vec<f32>,
     kernel_scratch: &mut KernelScratch,
     out: &mut [u8],
-    channels: usize,
+    format: PixelFormat,
     span: RowSpan<'_>,
 ) {
     const INV: f32 = 1.0 / 65535.0;
@@ -153,9 +154,21 @@ fn process_chunk(
     for k in kernels {
         k.apply(scratch, span, kernel_scratch);
     }
-    let lut = output_lut();
     let pixels = scratch.as_chunks::<3>().0;
-    if channels == 4 {
+    if format == PixelFormat::Rgb16 {
+        // 16-bit exports (ADR 0057): the sRGB curve worked out exactly, as no table
+        // is finer than 16 bits everywhere (the curve is steepest near black).
+        for (px, o) in pixels.iter().zip(out.as_chunks_mut::<6>().0) {
+            for (c, v) in px.iter().enumerate() {
+                let code =
+                    (image_core::color::linear_to_srgb(v.clamp(0.0, 1.0)) * 65535.0).round() as u16;
+                o[c * 2..c * 2 + 2].copy_from_slice(&code.to_ne_bytes());
+            }
+        }
+        return;
+    }
+    let lut = output_lut();
+    if format.channels() == 4 {
         for (px, o) in pixels.iter().zip(out.as_chunks_mut::<4>().0) {
             o[0] = lut.encode(px[0]);
             o[1] = lut.encode(px[1]);
