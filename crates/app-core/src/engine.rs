@@ -365,6 +365,7 @@ impl Engine {
                 recipe: req.recipe,
                 destination: req.destination,
                 format: req.format,
+                sharpening: req.sharpening,
                 long_edge: None,
             },
             progress,
@@ -598,6 +599,8 @@ impl Shared {
             Some(edge) => export::resize::fit_long_edge(&rendered, edge),
             None => rendered,
         };
+        // Sharpened for its medium at the size it is written (ADR 0059).
+        let rendered = export::sharpen::sharpen(&rendered, req.sharpening);
         let render_ms = ms(t);
 
         progress(ExportProgress {

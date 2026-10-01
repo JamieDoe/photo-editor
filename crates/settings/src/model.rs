@@ -127,6 +127,8 @@ pub struct BackupSettings {
 pub struct ExportSettings {
     /// What exports are written as (ADR 0057).
     pub format: ExportFileFormat,
+    /// What exports are sharpened for (ADR 0059).
+    pub sharpen: OutputSharpening,
     /// JPEG quality, 1-100.
     pub jpeg_quality: u8,
     /// The folder exports are saved to (ADR 0050). Set only through the native folder
@@ -163,6 +165,30 @@ impl<'de> Deserialize<'de> for ExportFileFormat {
     }
 }
 
+/// What an export is sharpened for (ADR 0059): nothing, a screen, matte or glossy paper.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum OutputSharpening {
+    None,
+    #[default]
+    Screen,
+    Matte,
+    Glossy,
+}
+
+impl<'de> Deserialize<'de> for OutputSharpening {
+    /// A choice this version does not know (written by a newer one) reads as Screen.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(match serde_json::Value::deserialize(d)?.as_str() {
+            Some("none") => Self::None,
+            Some("matte") => Self::Matte,
+            Some("glossy") => Self::Glossy,
+            _ => Self::Screen,
+        })
+    }
+}
+
 impl ExportSettings {
     pub const JPEG_QUALITY_MIN: u8 = 50;
     pub const JPEG_QUALITY_MAX: u8 = 100;
@@ -176,6 +202,7 @@ impl Default for ExportSettings {
     fn default() -> Self {
         Self {
             format: ExportFileFormat::Jpeg,
+            sharpen: OutputSharpening::Screen,
             jpeg_quality: 85,
             folder: None,
             long_edge: Some(2048),
@@ -281,6 +308,16 @@ mod tests {
         let s: Settings =
             serde_json::from_str(r#"{"version":7,"export":{"format":"tiff"}}"#).unwrap();
         assert_eq!(s.export.format, ExportFileFormat::Tiff);
+        let s: Settings =
+            serde_json::from_str(r#"{"version":7,"export":{"sharpen":"glossy"}}"#).unwrap();
+        assert_eq!(s.export.sharpen, OutputSharpening::Glossy);
+        let s: Settings =
+            serde_json::from_str(r#"{"version":7,"export":{"sharpen":"canvas"}}"#).unwrap();
+        assert_eq!(
+            s.export.sharpen,
+            OutputSharpening::Screen,
+            "unknown: the default"
+        );
     }
 
     #[test]

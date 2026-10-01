@@ -3,20 +3,26 @@ import { CloseIcon, FolderIcon } from "../../components/icons";
 import type { PreviewFrame } from "../../ipc/frame";
 import type { ExportFileFormat } from "../../ipc/generated/ExportFileFormat";
 import type { ExportSettings } from "../../ipc/generated/ExportSettings";
+import type { OutputSharpening } from "../../ipc/generated/OutputSharpening";
 
-/** The dialog's presets (ADRs 0050, 0057): the design's Web, Social and Full quality
- *  (a 16-bit TIFF at the original size). */
-export const EXPORT_PRESETS: ReadonlyArray<{
-  id: string;
-  label: string;
-  sub: string;
-  format: ExportFileFormat;
-  longEdge: number | null;
-  quality: number;
-}> = [
-  { id: "web", label: "Web", sub: "JPEG · 2048 px", format: "jpeg", longEdge: 2048, quality: 85 },
-  { id: "social", label: "Social", sub: "JPEG · 1350 px", format: "jpeg", longEdge: 1350, quality: 90 },
-  { id: "full", label: "Full quality", sub: "TIFF · original", format: "tiff", longEdge: null, quality: 95 },
+/** The settings a preset sets. */
+type Choice = { format: ExportFileFormat; longEdge: number | null; jpegQuality: number; sharpen: OutputSharpening };
+
+/** The dialog's presets (ADRs 0050, 0057, 0059): the design's Web, Social and Full
+ *  quality (a 16-bit TIFF at the original size), each sharpened for the screen as the
+ *  design has them. */
+export const EXPORT_PRESETS: ReadonlyArray<{ id: string; label: string; sub: string } & Choice> = [
+  { id: "web", label: "Web", sub: "JPEG · 2048 px", format: "jpeg", longEdge: 2048, jpegQuality: 85, sharpen: "screen" },
+  { id: "social", label: "Social", sub: "JPEG · 1350 px", format: "jpeg", longEdge: 1350, jpegQuality: 90, sharpen: "screen" },
+  { id: "full", label: "Full quality", sub: "TIFF · original", format: "tiff", longEdge: null, jpegQuality: 95, sharpen: "screen" },
+];
+
+/** The design's Sharpen for choices, and None for files that will be edited further. */
+const SHARPENING: ReadonlyArray<{ id: OutputSharpening; label: string; hint: string }> = [
+  { id: "none", label: "None", hint: "No output sharpening: for further editing" },
+  { id: "screen", label: "Screen", hint: "Light and fine, for viewing at this size" },
+  { id: "matte", label: "Matte", hint: "For printing on matte paper (300 ppi)" },
+  { id: "glossy", label: "Glossy", hint: "For printing on glossy paper (300 ppi)" },
 ];
 
 /** The design's Format choices; HEIC is not offered (ADR 0057). */
@@ -33,15 +39,18 @@ const SIZES: ReadonlyArray<{ label: string; longEdge: number | null }> = [
 ];
 
 /** Settings changed by hand no longer match a preset (quality counts for JPEG only). */
-function presetOf(format: ExportFileFormat, longEdge: number | null, quality: number): string | null {
-  const matches = (p: (typeof EXPORT_PRESETS)[number]) =>
-    p.format === format && p.longEdge === longEdge && (format !== "jpeg" || p.quality === quality);
+function presetOf(c: Choice): string | null {
+  const matches = (p: Choice) =>
+    p.format === c.format &&
+    p.longEdge === c.longEdge &&
+    p.sharpen === c.sharpen &&
+    (c.format !== "jpeg" || p.jpegQuality === c.jpegQuality);
   return EXPORT_PRESETS.find(matches)?.id ?? null;
 }
 
 /**
- * The design's export dialog: the photos, a preset, the format, JPEG quality and size,
- * the folder, and Export. The choices are remembered (settings); the folder is chosen only in the
+ * The design's export dialog: the photos, a preset, the format, JPEG quality, size and
+ * output sharpening, the folder, and Export. The choices are remembered (settings); the folder is chosen only in the
  * system's dialog.
  */
 export function ExportDialog({
@@ -81,8 +90,11 @@ export function ExportDialog({
 
   const longEdge = settings.longEdge;
   const format = settings.format;
-  const set = (f: ExportFileFormat, e: number | null, q: number) =>
-    onChange({ format: f, longEdge: e, jpegQuality: q, preset: presetOf(f, e, q) });
+  const current: Choice = { format, longEdge, jpegQuality: settings.jpegQuality, sharpen: settings.sharpen };
+  const set = (change: Partial<Choice>) => {
+    const next = { ...current, ...change };
+    onChange({ ...next, preset: presetOf(next) });
+  };
   const folderName = settings.folder?.split(/[\\/]/).filter(Boolean).pop() ?? null;
   const title = count === 1 ? "Export photo" : `Export ${count} photos`;
 
@@ -103,7 +115,7 @@ export function ExportDialog({
         </div>
         <div className="export-presets">
           {EXPORT_PRESETS.map((p) => (
-            <button key={p.id} className="export-preset" aria-pressed={settings.preset === p.id} onClick={() => set(p.format, p.longEdge, p.quality)}>
+            <button key={p.id} className="export-preset" aria-pressed={settings.preset === p.id} onClick={() => set({ format: p.format, longEdge: p.longEdge, jpegQuality: p.jpegQuality, sharpen: p.sharpen })}>
               <span className="export-preset-label">{p.label}</span>
               <span className="export-preset-sub">{p.sub}</span>
             </button>
@@ -114,7 +126,7 @@ export function ExportDialog({
             <span>Format</span>
             <div className="segmented small" role="radiogroup" aria-label="Format">
               {FORMATS.map((f) => (
-                <button key={f.id} role="radio" aria-checked={format === f.id} title={f.hint} onClick={() => set(f.id, longEdge, settings.jpegQuality)}>
+                <button key={f.id} role="radio" aria-checked={format === f.id} title={f.hint} onClick={() => set({ format: f.id })}>
                   {f.label}
                 </button>
               ))}
@@ -133,7 +145,7 @@ export function ExportDialog({
                   max={100}
                   step={1}
                   value={settings.jpegQuality}
-                  onChange={(e) => set(format, longEdge, Number(e.target.value))}
+                  onChange={(e) => set({ jpegQuality: Number(e.target.value) })}
                 />
                 <span className="export-value">{settings.jpegQuality}</span>
               </div>
@@ -143,8 +155,18 @@ export function ExportDialog({
             <span>Size</span>
             <div className="segmented small" role="radiogroup" aria-label="Size">
               {SIZES.map((s) => (
-                <button key={s.label} role="radio" aria-checked={longEdge === s.longEdge} onClick={() => set(format, s.longEdge, settings.jpegQuality)}>
+                <button key={s.label} role="radio" aria-checked={longEdge === s.longEdge} onClick={() => set({ longEdge: s.longEdge })}>
                   {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="export-row">
+            <span>Sharpen for</span>
+            <div className="segmented small" role="radiogroup" aria-label="Sharpen for">
+              {SHARPENING.map((o) => (
+                <button key={o.id} role="radio" aria-checked={settings.sharpen === o.id} title={o.hint} onClick={() => set({ sharpen: o.id })}>
+                  {o.label}
                 </button>
               ))}
             </div>

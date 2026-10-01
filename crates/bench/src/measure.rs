@@ -178,6 +178,7 @@ pub fn file(path: &Path, iterations: usize) -> Value {
         recipe: bench_recipe(i),
         destination: out_dir.join(format!("export-{i}.jpg")),
         format: ExportFormat::Jpeg { quality: 92 },
+        sharpening: app_core::OutputSharpening::None,
     };
     let mut exports = Vec::new();
     for i in 0..full_iters {
@@ -335,6 +336,7 @@ pub fn memory(path: &Path) -> Value {
         recipe: bench_recipe(0),
         destination: out.clone(),
         format: ExportFormat::Jpeg { quality: 92 },
+        sharpening: app_core::OutputSharpening::None,
     };
     engine.export(export, |_| {}).wait().expect("export");
     let _ = std::fs::remove_file(out);

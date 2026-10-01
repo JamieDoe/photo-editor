@@ -57,6 +57,7 @@ pub async fn export_image(
             recipe: request.recipe,
             destination: destination.clone(),
             format: single_format(&state),
+            sharpening: output_sharpening(state.settings.get().export.sharpen),
         },
         move |p| {
             let event = ExportEvent::Progress {
@@ -100,6 +101,16 @@ pub(crate) fn export_format(format: settings::ExportFileFormat, quality: u8) -> 
         settings::ExportFileFormat::Jpeg => ExportFormat::Jpeg { quality },
         settings::ExportFileFormat::Tiff => ExportFormat::Tiff,
         settings::ExportFileFormat::Png => ExportFormat::Png,
+    }
+}
+
+/// The output sharpening for the remembered settings' choice (ADR 0059).
+pub(crate) fn output_sharpening(s: settings::OutputSharpening) -> app_core::OutputSharpening {
+    match s {
+        settings::OutputSharpening::None => app_core::OutputSharpening::None,
+        settings::OutputSharpening::Screen => app_core::OutputSharpening::Screen,
+        settings::OutputSharpening::Matte => app_core::OutputSharpening::Matte,
+        settings::OutputSharpening::Glossy => app_core::OutputSharpening::Glossy,
     }
 }
 
@@ -196,6 +207,7 @@ pub async fn start_export(
         settings::ExportSettings::JPEG_QUALITY_MAX,
     );
     let format = export_format(batch.format.unwrap_or_default(), quality);
+    let sharpening = output_sharpening(batch.sharpen.unwrap_or_default());
     let long_edge = batch.long_edge.map(|e| {
         e.clamp(
             settings::ExportSettings::LONG_EDGE_MIN,
@@ -248,6 +260,7 @@ pub async fn start_export(
                 folder: folder.clone(),
                 long_edge,
                 format,
+                sharpening,
             }),
             Err(f) => refused.push(f),
         }
