@@ -119,6 +119,25 @@ pub async fn auto_level(state: State<'_, AppState>, image_id: u64) -> IpcResult<
     wait(state.engine.auto_level(ImageId(image_id))).await
 }
 
+/// A new heal or clone spot (ADR 0054) at `at` (fractions of the photo) of `radius`
+/// (a fraction of its long edge), its source found nearby, or null when none fits.
+#[tauri::command]
+pub async fn new_spot(
+    state: State<'_, AppState>,
+    image_id: u64,
+    kind: renderer::retouch::SpotKind,
+    at: [f32; 2],
+    radius: f32,
+    avoid: Vec<renderer::retouch::Spot>,
+) -> IpcResult<Option<renderer::retouch::Spot>> {
+    wait(
+        state
+            .engine
+            .new_spot(ImageId(image_id), kind, at, radius, avoid),
+    )
+    .await
+}
+
 /// Remove chromatic aberration (ADR 0035): the correction measured on the open photo,
 /// or null when it has too few clean edges to measure.
 #[tauri::command]

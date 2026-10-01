@@ -151,6 +151,32 @@ impl Engine {
         })
     }
 
+    /// A new heal or clone spot (ADR 0054) on the open photo, its source found nearby;
+    /// `None` when no source fits. Searched on a preview level of about 1500 px, on the
+    /// interactive lane (a few milliseconds).
+    pub fn new_spot(
+        &self,
+        image: ImageId,
+        kind: renderer::retouch::SpotKind,
+        at: [f32; 2],
+        radius: f32,
+        avoid: Vec<renderer::retouch::Spot>,
+    ) -> JobHandle<Option<renderer::retouch::Spot>, EngineError> {
+        let Some(image) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        let level = Arc::clone(&image.pyramid.levels()[image.pyramid.select_index(1500)]);
+        let spec = JobSpec::new(Lane::Interactive, Priority::Interactive, "new-spot");
+        self.jobs.submit(spec, move |_token| {
+            Ok(renderer::retouch::new_spot(
+                &level, kind, at[0], at[1], radius, &avoid,
+            ))
+        })
+    }
+
     /// Remove chromatic aberration (ADR 0035): the correction measured on the open
     /// photo, or `None` when it has too few clean edges to measure reliably. Measured on
     /// the level nearest 2000 px or above (about a quarter of a second), on the

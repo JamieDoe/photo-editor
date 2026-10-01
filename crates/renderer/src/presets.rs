@@ -145,19 +145,20 @@ pub fn from_file(text: &str) -> Result<(String, EditRecipe), PresetFileError> {
 
 impl EditRecipe {
     /// This recipe's look alone, as a preset holds it: without the exposure,
-    /// geometry, lens corrections and masks, which belong to the photo.
+    /// geometry, lens corrections, masks and spots, which belong to the photo.
     pub fn look_only(&self) -> EditRecipe {
         EditRecipe {
             exposure: 0.0,
             geometry: None,
             chromatic_aberration: None,
             masks: Vec::new(),
+            spots: Vec::new(),
             ..self.clone()
         }
     }
 
     /// This photo's recipe with `preset`'s look: the preset's settings, keeping this
-    /// recipe's exposure, geometry, lens corrections and masks.
+    /// recipe's exposure, geometry, lens corrections, masks and spots.
     pub fn with_look_of(&self, preset: &EditRecipe) -> EditRecipe {
         EditRecipe {
             version: self.version,
@@ -165,6 +166,7 @@ impl EditRecipe {
             geometry: self.geometry,
             chromatic_aberration: self.chromatic_aberration,
             masks: self.masks.clone(),
+            spots: self.spots.clone(),
             ..preset.look_only()
         }
     }
@@ -195,6 +197,10 @@ mod tests {
                     ..Default::default()
                 },
             )],
+            spots: vec![crate::retouch::Spot {
+                source_x: 0.7,
+                ..Default::default()
+            }],
             ..Default::default()
         }
     }
@@ -206,7 +212,7 @@ mod tests {
             (look.exposure, look.contrast, look.clarity),
             (0.0, 40.0, -20.0)
         );
-        assert!(look.geometry.is_none() && look.masks.is_empty());
+        assert!(look.geometry.is_none() && look.masks.is_empty() && look.spots.is_empty());
     }
 
     #[test]
@@ -219,6 +225,7 @@ mod tests {
         assert_eq!(r.exposure, 0.7);
         assert_eq!(r.geometry, photo().geometry);
         assert_eq!(r.masks, photo().masks);
+        assert_eq!(r.spots, photo().spots);
         // Applying twice changes nothing more.
         assert_eq!(r.with_look_of(&mono.recipe), r);
     }

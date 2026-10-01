@@ -39,6 +39,8 @@ exceed white, so `u16` storage loses nothing.
 RAW decode (LibRaw)            camera WB (as shot), demosaic, camera matrix -> linear sRGB
     │                          (JPEG: sRGB decode + linearise via LUT)
     ▼
+Heal and clone spots           on the source, in its own coordinates; the retouched
+                               copy is cached (ADR 0054)
 Turn/flip, crop, straighten,   the source resampled into the output frame, cached
   perspective, chromatic       (ADRs 0032, 0034, 0035, 0039); every stage below runs
   aberration                   on that frame
@@ -53,6 +55,8 @@ Tone (highlights, shadows,     local gains from an edge-aware surroundings map, 
 Detail (texture, clarity,      local contrast at two scales, no halos (ADR 0026), and
         sharpening)            capture sharpening, default 40 (ADR 0027)
 Vignette                       gain towards the corners, by frame position (ADR 0031)
+Calibration                    the primaries as one 3x3 matrix, and Shadow Tint
+                               (ADR 0053)
 Contrast                       S-curve around mid grey (scene-referred)
 Base look (Standard)           camera-like tone curve: lift, toe, shoulder (ADR 0022)
 Tone curve                     the photographer's points, per channel on display
@@ -60,6 +64,7 @@ Tone curve                     the photographer's points, per channel on display
                                blue curves, one table per channel (ADR 0038)
 Colour mixer                   hue/saturation/luminance per colour band (ADR 0025)
 Colour (vibrance, saturation)  chroma scale around Rec.709 luminance
+Colour grading                 tints by lightness range, tabulated (ADR 0052)
 Grain                          film grain in frame coordinates, midtones (ADR 0031)
     ▼
 Output transform               clip [0,1], sRGB OETF, 8-bit quantise
@@ -153,7 +158,9 @@ from the recipe's points; it replaced the display of the Light controls' respons
 Rows are split into chunks of ~64K pixels and processed in parallel (rayon). Each
 chunk converts its `u16` source rows into a per-thread reusable `f32` scratch buffer,
 runs all kernels while the data is in cache, and writes encoded bytes straight into
-the output. **No full-size intermediate image is allocated for any stage.**
+the output. **No full-size intermediate image is allocated for any stage.** The
+exceptions come before the stages and are cached while other controls change: the
+framed source (geometry) and the retouched source (spots, ADR 0054).
 Cancellation is checked once per chunk.
 
 `render_into` accepts a caller-owned output buffer for reuse.

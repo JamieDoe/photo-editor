@@ -113,6 +113,7 @@ fn main() {
             commands::images::open_image_path,
             commands::images::render_preview,
             commands::images::auto_level,
+            commands::images::new_spot,
             commands::images::measure_chromatic_aberration,
             commands::export::export_image,
             commands::export::choose_export_folder,

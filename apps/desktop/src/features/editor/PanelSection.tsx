@@ -9,12 +9,18 @@ interface Props {
   /** A count beside the title (the design's number of masks). */
   count?: string;
   defaultOpen?: boolean;
+  /** Controlled open state, for a section whose being open changes the photo (the
+   *  Retouch section puts the photo in retouch mode). */
+  open?: boolean;
+  onToggle?: (open: boolean) => void;
   children: ReactNode;
 }
 
 /** A collapsible section of the right-hand panel. */
-export function PanelSection({ title, icon, edited = false, count, defaultOpen = true, children }: Props) {
-  const [open, setOpen] = useState(defaultOpen);
+export function PanelSection({ title, icon, edited = false, count, defaultOpen = true, open: controlled, onToggle, children }: Props) {
+  const [own, setOwn] = useState(defaultOpen);
+  const open = controlled ?? own;
+  const setOpen = (next: boolean) => (onToggle ? onToggle(next) : setOwn(next));
   return (
     <section className="panel-section">
       <button className="section-header" aria-expanded={open} onClick={() => setOpen(!open)}>

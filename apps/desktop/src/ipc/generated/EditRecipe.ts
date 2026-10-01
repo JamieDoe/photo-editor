@@ -9,6 +9,7 @@ import type { Geometry } from "./Geometry";
 import type { Look } from "./Look";
 import type { Mask } from "./Mask";
 import type { ParametricCurve } from "./ParametricCurve";
+import type { Spot } from "./Spot";
 
 /**
  * A non-destructive edit: parameters only, never pixels.
@@ -141,6 +142,11 @@ channelCurves?: ChannelCurves,
  * (and omitted from the JSON) without any.
  */
 masks?: Array<Mask>, 
+/**
+ * Heal and clone spots (ADR 0054), in the order made. Empty (and omitted from the
+ * JSON) without any.
+ */
+spots?: Array<Spot>, 
 /**
  * The base look the adjustments start from.
  */

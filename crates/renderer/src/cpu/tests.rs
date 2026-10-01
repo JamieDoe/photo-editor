@@ -887,3 +887,65 @@ fn the_cached_surroundings_map_never_leaks_between_images() {
         assert!(max_diff <= 1, "max diff {max_diff}");
     }
 }
+
+#[test]
+fn spots_are_applied_first_and_follow_the_photo() {
+    // A dark dot on grey, healed from the right; with a quarter turn the dot is still
+    // gone (spots are in the source's coordinates, applied before framing).
+    let (w, h) = (80u32, 60u32);
+    let data: Vec<u16> = (0..h)
+        .flat_map(|y| (0..w).map(move |x| (x, y)))
+        .flat_map(|(x, y)| {
+            let dot = (x as f32 - 20.0).hypot(y as f32 - 30.0) < 3.0;
+            [if dot { 500 } else { 20000 }; 3]
+        })
+        .collect();
+    let img = LinearImage::new(w, h, data).unwrap();
+    let spot = crate::retouch::Spot {
+        x: 20.5 / 80.0,
+        y: 30.5 / 60.0,
+        source_x: 50.5 / 80.0,
+        source_y: 30.5 / 60.0,
+        radius: 5.0 / 80.0,
+        ..Default::default()
+    };
+    let plain = EditRecipe {
+        sharpening: 0.0,
+        ..Default::default()
+    };
+    let healed = EditRecipe {
+        spots: vec![spot],
+        ..plain.clone()
+    };
+    let level = |o: &OutputImage, x: usize, y: usize| o.data()[(y * o.width() as usize + x) * 3];
+    let before = render(&plain, &img);
+    let after = render(&healed, &img);
+    assert!(level(&before, 20, 30) + 20 < level(&after, 20, 30));
+    assert_eq!(level(&after, 20, 30), level(&after, 60, 10));
+    // Turned a quarter: the dot's place moves, and it is still healed.
+    let turned = EditRecipe {
+        geometry: Some(crate::Geometry {
+            rotation: 1,
+            ..Default::default()
+        }),
+        ..healed.clone()
+    };
+    let out = render(&turned, &img);
+    assert_eq!((out.width(), out.height()), (60, 80));
+    let min = out.data().iter().copied().min().unwrap();
+    assert!(
+        min + 3 >= level(&after, 60, 10),
+        "a dark pixel is left: {min}"
+    );
+    // Moving the spot away renders the dot again (no stale cache).
+    let moved = EditRecipe {
+        spots: vec![crate::retouch::Spot {
+            x: 60.5 / 80.0,
+            source_x: 70.5 / 80.0,
+            ..spot
+        }],
+        ..plain.clone()
+    };
+    assert_eq!(level(&render(&moved, &img), 20, 30), level(&before, 20, 30));
+    assert_eq!(render(&healed, &img).data(), after.data());
+}

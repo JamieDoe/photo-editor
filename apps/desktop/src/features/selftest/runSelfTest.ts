@@ -1122,6 +1122,50 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       calibrationCheck.magentaLift !== null &&
       calibrationCheck.magentaLift > 0.5;
 
+    // Retouch (ADR 0054) on the real raw file: the engine finds a source for a heal
+    // spot; the spot changes its disc and nothing outside it; with the spot cached, an
+    // exposure change renders about as fast as without spots.
+    const retouchCheck = await (async () => {
+      const base = { ...beforeCrop, masks: undefined, geometry: undefined, spots: undefined };
+      const plain = await show(base, "unretouched frame");
+      const made = await ipc.newSpot(driver.editor().image!.id, "heal", [0.5, 0.45], 0.02, []).catch(() => null);
+      if (!plain || !made) return { made: made !== null, insideChange: null, outsideChange: null, renderMs: null, cachedMs: null, plainMs: null };
+      const healed = await show({ ...base, spots: [made] }, "healed frame", plain);
+      const cached = await show({ ...base, spots: [made], exposure: base.exposure + 0.3 }, "exposure with a spot", plain);
+      const brighter = await show({ ...base, exposure: base.exposure + 0.3 }, "exposure without spots", plain);
+      if (!healed) return { made: true, insideChange: null, outsideChange: null, renderMs: null, cachedMs: null, plainMs: null };
+      const { width: w, height: h } = plain.frame;
+      const [cx, cy, r] = [made.x * w, made.y * h, made.radius * Math.max(w, h)];
+      const [p, q] = [plain.frame.pixels, healed.frame.pixels];
+      let [inside, insideCount, outside] = [0, 0, 0];
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const d = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+          const i = (y * w + x) * 4;
+          const change = Math.abs(p[i]! - q[i]!) + Math.abs(p[i + 1]! - q[i + 1]!) + Math.abs(p[i + 2]! - q[i + 2]!);
+          if (d < r * 0.9) {
+            inside += change / 3;
+            insideCount++;
+          } else if (d > r * 1.1) outside = Math.max(outside, change);
+        }
+      }
+      return {
+        made: true,
+        sourceDistance: Math.round(Math.hypot((made.sourceX - made.x) * w, (made.sourceY - made.y) * h) / r * 10) / 10,
+        insideChange: Math.round((inside / Math.max(insideCount, 1)) * 10) / 10,
+        outsideChange: outside,
+        renderMs: healed.frame.renderMs,
+        cachedMs: cached?.frame.renderMs ?? null,
+        plainMs: brighter?.frame.renderMs ?? null,
+      };
+    })();
+    driver.editor().setRecipe(beforeCrop);
+    const retouchOk =
+      retouchCheck.made &&
+      retouchCheck.insideChange !== null &&
+      retouchCheck.insideChange > 0.2 &&
+      retouchCheck.outsideChange === 0;
+
     // Shapes combined (ADR 0043): -1 EV over the top, less a hard circle at its
     // middle. Inside the circle unchanged, beside it darker.
     const combinedFrame = await show(
@@ -1277,6 +1321,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       whiteBalanceLight: lightOk,
       colourGrading: gradingOk,
       calibration: calibrationOk,
+      retouch: retouchOk,
       copyPaste: copyPasteOk,
       crop: cropOk,
       perspective: perspectiveOk,
@@ -1311,6 +1356,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       whiteBalanceLight: lightCheck,
       colourGrading: gradingCheck,
       calibration: calibrationCheck,
+      retouch: retouchCheck,
       copyPaste: copyPasteCheck,
       crop,
       perspective,

@@ -47,7 +47,8 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   written only when set.
 /// - 22: adds colour grading (ADR 0052), written only when set.
 /// - 23: adds calibration (ADR 0053), written only when set.
-pub const RECIPE_VERSION: u32 = 23;
+/// - 24: adds heal and clone spots (ADR 0054), written only when there are some.
+pub const RECIPE_VERSION: u32 = 24;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -145,6 +146,11 @@ pub struct EditRecipe {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::masks::Mask>>", optional))]
     pub masks: Vec<crate::masks::Mask>,
+    /// Heal and clone spots (ADR 0054), in the order made. Empty (and omitted from the
+    /// JSON) without any.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::retouch::Spot>>", optional))]
+    pub spots: Vec<crate::retouch::Spot>,
     /// The base look the adjustments start from.
     pub look: Look,
 }
@@ -180,6 +186,7 @@ impl Default for EditRecipe {
             calibration: None,
             channel_curves: None,
             masks: Vec::new(),
+            spots: Vec::new(),
             look: Look::Standard,
         }
     }
@@ -232,7 +239,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=23 => Ok(Self {
+            7..=24 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -297,6 +304,7 @@ impl EditRecipe {
                 .iter()
                 .map(crate::masks::Mask::sanitized)
                 .collect(),
+            spots: self.spots.iter().map(|s| s.sanitized()).collect(),
             look: self.look,
         }
     }
@@ -354,6 +362,7 @@ impl EditRecipe {
             && s.calibration.is_none()
             && s.channel_curves.is_none()
             && s.masks.is_empty()
+            && s.spots.is_empty()
             && s.look == Look::default()
     }
 }
@@ -397,7 +406,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":23,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":24,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
