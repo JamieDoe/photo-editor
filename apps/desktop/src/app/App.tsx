@@ -101,7 +101,7 @@ export function App() {
     ];
     if (items.length === 0) return;
     setExportOpen(false);
-    await exports.start({ items, longEdge: s?.longEdge ?? undefined, quality: s?.jpegQuality ?? 85 });
+    await exports.start({ items, longEdge: s?.longEdge ?? undefined, quality: s?.jpegQuality ?? 85, format: s?.format ?? "jpeg" });
   };
 
   // One banner; the most relevant source first.

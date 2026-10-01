@@ -23,6 +23,10 @@ pub struct ExportBatchDto {
     pub long_edge: Option<u32>,
     /// JPEG quality, 50-100.
     pub quality: u8,
+    /// What to write (ADR 0057); JPEG when left out.
+    #[serde(default)]
+    #[ts(optional)]
+    pub format: Option<settings::ExportFileFormat>,
     /// The folder to export to, for the self-test only; otherwise the one chosen in
     /// the folder dialog (settings).
     #[ts(optional)]
@@ -37,6 +41,9 @@ pub struct ExportedFileDto {
     pub path: String,
     pub width: u32,
     pub height: u32,
+    /// The file's size in bytes.
+    #[ts(type = "number")]
+    pub bytes: u64,
 }
 
 /// One photo to export: the photo open in the editor (by its image id, with its edit

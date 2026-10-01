@@ -3,4 +3,8 @@
 /**
  * A file an export wrote.
  */
-export type ExportedFileDto = { path: string, width: number, height: number, };
+export type ExportedFileDto = { path: string, width: number, height: number, 
+/**
+ * The file's size in bytes.
+ */
+bytes: number, };

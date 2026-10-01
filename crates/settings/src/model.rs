@@ -125,6 +125,8 @@ pub struct BackupSettings {
 #[serde(rename_all = "camelCase", default)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct ExportSettings {
+    /// What exports are written as (ADR 0057).
+    pub format: ExportFileFormat,
     /// JPEG quality, 1-100.
     pub jpeg_quality: u8,
     /// The folder exports are saved to (ADR 0050). Set only through the native folder
@@ -135,6 +137,30 @@ pub struct ExportSettings {
     /// The export preset last chosen ("web", "social", "full"), if the settings still
     /// match it.
     pub preset: Option<String>,
+}
+
+/// An export's file format (ADR 0057): JPEG for sharing, TIFF (16-bit) for printing and
+/// further editing, PNG (lossless 8-bit).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum ExportFileFormat {
+    #[default]
+    Jpeg,
+    Tiff,
+    Png,
+}
+
+impl<'de> Deserialize<'de> for ExportFileFormat {
+    /// A format this version does not know (written by a newer one) reads as JPEG,
+    /// rather than failing the whole settings file.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(match serde_json::Value::deserialize(d)?.as_str() {
+            Some("tiff") => Self::Tiff,
+            Some("png") => Self::Png,
+            _ => Self::Jpeg,
+        })
+    }
 }
 
 impl ExportSettings {
@@ -149,6 +175,7 @@ impl Default for ExportSettings {
     /// As the design's Web preset: 2048 px, quality 85.
     fn default() -> Self {
         Self {
+            format: ExportFileFormat::Jpeg,
             jpeg_quality: 85,
             folder: None,
             long_edge: Some(2048),
@@ -246,6 +273,14 @@ mod tests {
         )
         .unwrap();
         assert_eq!(s.export.jpeg_quality, 80);
+        assert_eq!(
+            s.export.format,
+            ExportFileFormat::Jpeg,
+            "unknown format: the default"
+        );
+        let s: Settings =
+            serde_json::from_str(r#"{"version":7,"export":{"format":"tiff"}}"#).unwrap();
+        assert_eq!(s.export.format, ExportFileFormat::Tiff);
     }
 
     #[test]
