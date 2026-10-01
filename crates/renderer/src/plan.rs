@@ -117,6 +117,23 @@ pub struct RenderPlan {
 }
 
 impl RenderPlan {
+    /// Whether colours may leave sRGB on the way (an adjustment that can push them
+    /// past it is in the plan), so the output compresses them back smoothly (ADR
+    /// 0060). Without one, output is encoded exactly as before: compression always
+    /// eases colours right at sRGB's edge a little, which plain photos and graphics
+    /// should not see.
+    pub fn compresses_output(&self) -> bool {
+        self.stages.iter().any(|s| {
+            matches!(
+                s,
+                Stage::ColourMixer { .. }
+                    | Stage::Vibrance { .. }
+                    | Stage::Saturation { .. }
+                    | Stage::ColourGrading { .. }
+            )
+        })
+    }
+
     pub fn new(stages: Vec<Stage>) -> Self {
         Self {
             spots: Vec::new(),

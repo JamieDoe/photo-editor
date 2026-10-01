@@ -7,9 +7,11 @@ pub fn factor_for(amount: f32) -> f32 {
     1.0 + amount / 100.0
 }
 
+/// Colours pushed past sRGB keep their negative channels here; they are brought back
+/// smoothly on output (ADR 0060) rather than clipped channel by channel.
 pub fn apply(rgb: [f32; 3], factor: f32) -> [f32; 3] {
     let y = rgb[0] * REC709_LUMA[0] + rgb[1] * REC709_LUMA[1] + rgb[2] * REC709_LUMA[2];
-    rgb.map(|c| (y + (c - y) * factor).max(0.0))
+    rgb.map(|c| y + (c - y) * factor)
 }
 
 #[cfg(test)]
@@ -35,8 +37,20 @@ mod tests {
     }
 
     #[test]
-    fn never_negative() {
-        let out = apply([1.0, 0.0, 0.0], factor_for(100.0));
-        assert!(out.iter().all(|&c| c >= 0.0));
+    fn colours_pushed_past_srgb_are_compressed_on_output_keeping_their_hue() {
+        // An orange pushed hard: blue goes below zero here (ADR 0060) ...
+        let orange = [0.6, 0.25, 0.05];
+        let pushed = apply(orange, factor_for(100.0));
+        assert!(pushed[2] < 0.0, "{pushed:?}");
+        // ... and the output's compression brings it back inside, keeping the ratio
+        // of red to green (its hue) where clipping blue at zero would not.
+        let out = image_core::gamut::compress(pushed, &image_core::gamut::ON_OUTPUT);
+        assert!(out.iter().all(|&c| c >= -1e-4), "{out:?}");
+        assert_eq!((out[0], out[1]), (pushed[0], pushed[1]));
+        // Pushed further than the compression reaches, the encoder's clamp still
+        // keeps it in range.
+        let extreme = apply([1.0, 0.0, 0.0], factor_for(100.0));
+        let out = image_core::gamut::compress(extreme, &image_core::gamut::ON_OUTPUT);
+        assert!(out.iter().all(|c| c.is_finite()));
     }
 }

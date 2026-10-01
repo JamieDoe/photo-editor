@@ -195,7 +195,9 @@ pub fn apply(rgb: [f32; 3], table: &MixerTable) -> [f32; 3] {
     let mut out = [0.0f32; 3];
     for i in 0..3 {
         let v = m + (c[i] * cos + cross[i] * sin) * chroma_scale;
-        out[i] = v.max(0.0) * v.max(0.0);
+        // Squared back to linear, keeping the sign: a channel pushed past sRGB stays
+        // negative, for the output's compression (ADR 0060).
+        out[i] = v * v.abs();
     }
     // Hue and saturation keep luminance; the luminance control is a plain gain.
     let y0 = luma(rgb);

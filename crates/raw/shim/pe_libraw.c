@@ -86,15 +86,17 @@ int pe_raw_decode(const char *path, uint32_t min_long_edge, uint32_t max_threads
     libraw_set_progress_handler(lr, progress_cb, ctx);
     limit_openmp_threads(max_threads);
 
-    /* Scene-linear 16-bit output in sRGB primaries with as-shot white balance.
+    /* Scene-linear 16-bit output in Rec.2020 primaries with as-shot white balance.
      * gamma (1,1) + no_auto_bright keeps values proportional to sensor data, with the
-     * sensor clip point at 65535. Tone and display encoding happen in our renderer. */
+     * sensor clip point at 65535. Rec.2020 holds the colours cameras record beyond
+     * sRGB; the Rust side compresses them softly into the sRGB working space (ADR
+     * 0060). Tone and display encoding happen in our renderer. */
     lr->params.output_bps = 16;
     lr->params.gamm[0] = 1.0;
     lr->params.gamm[1] = 1.0;
     lr->params.no_auto_bright = 1;
     lr->params.use_camera_wb = 1;
-    lr->params.output_color = 1; /* sRGB primaries */
+    lr->params.output_color = 8; /* Rec.2020 primaries */
     lr->params.highlight = 0;    /* clip */
 
     int rc = libraw_open_file(lr, path);

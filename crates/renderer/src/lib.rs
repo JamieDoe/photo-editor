@@ -41,4 +41,8 @@ pub use recipe::{EditRecipe, RECIPE_VERSION, RecipeError};
 /// - 2: the Standard base look (ADR 0022).
 /// - 3: Temperature is relative to each photo's as-shot light instead of a fixed
 ///   6500 K reference (ADR 0024), so existing temperature edits shift slightly.
-pub const RENDERER_VERSION: u32 = 3;
+/// - 4: Soft gamut compression (ADR 0060): raw files are decoded in Rec.2020 and
+///   their colours beyond sRGB brought in smoothly, and colours that edits push past
+///   sRGB are compressed on output instead of clipped channel by channel. Only the
+///   most saturated colours change.
+pub const RENDERER_VERSION: u32 = 4;
