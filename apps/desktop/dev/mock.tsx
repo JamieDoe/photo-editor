@@ -52,6 +52,14 @@ let mockBackups = { enabled: true, count: 5, totalBytes: 11_800_000, latestAtMs:
 const mockEdits = new Map<string, Record<string, number>>();
 let openedPath = "/mock.nef";
 const mockMarks = new Map<string, { rating: number; flag: "none" | "pick" | "reject" }>();
+/** Dev-only albums: name and member paths, by id. */
+const mockAlbums = new Map<number, { name: string; paths: string[] }>([[1, { name: "Portfolio", paths: [] }]]);
+let nextAlbum = 2;
+const albumDto = (id: number) => {
+  const a = mockAlbums.get(id)!;
+  return { id, name: a.name, count: a.paths.length, cover: a.paths[0] ?? null };
+};
+const albumList = () => [...mockAlbums.keys()].map(albumDto).sort((x, y) => x.name.localeCompare(y.name));
 const marksOf = (path: string, i: number) =>
   mockMarks.get(path) ?? { rating: i % 9 === 0 ? 4 : i % 13 === 0 ? 2 : 0, flag: i % 7 === 0 ? ("pick" as const) : i % 17 === 0 ? ("reject" as const) : ("none" as const) };
 let lastListing: ReturnType<typeof mockListing> | null = null;
@@ -301,6 +309,39 @@ mockIPC((cmd, payload) => {
     case "stop_backup_copies":
       mockBackups = { ...mockBackups, copy: null };
       return mockBackups;
+    case "list_albums":
+      return albumList();
+    case "create_album": {
+      const { name, paths } = payload as { name: string; paths: string[] };
+      mockAlbums.set(nextAlbum, { name: name.trim(), paths: [...new Set(paths)] });
+      return albumDto(nextAlbum++);
+    }
+    case "rename_album": {
+      const { id, name } = payload as { id: number; name: string };
+      mockAlbums.get(id)!.name = name.trim();
+      return albumDto(id);
+    }
+    case "delete_album":
+      mockAlbums.delete((payload as { id: number }).id);
+      return null;
+    case "add_to_album": {
+      const { id, paths } = payload as { id: number; paths: string[] };
+      const a = mockAlbums.get(id)!;
+      a.paths = [...new Set([...a.paths, ...paths])];
+      return albumDto(id);
+    }
+    case "remove_from_album": {
+      const { id, paths } = payload as { id: number; paths: string[] };
+      const a = mockAlbums.get(id)!;
+      a.paths = a.paths.filter((p) => !paths.includes(p));
+      return albumDto(id);
+    }
+    case "album_photos": {
+      const { id } = payload as { id: number };
+      const all = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");
+      const members = new Set(mockAlbums.get(id)!.paths);
+      return { album: albumDto(id), photos: all.photos.map((p, i) => ({ ...p, marks: marksOf(p.path, i) })).filter((p) => members.has(p.path)) };
+    }
     case "library_collection": {
       const kind = (payload as { kind: "picks" | "rated" | "rejected" }).kind;
       const all = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");

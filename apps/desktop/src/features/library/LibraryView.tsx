@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useRef } from "react";
-import { FolderIcon, ImportIcon, PhotosIcon, PickIcon, RatingStar, RefreshIcon, RejectIcon, StarIcon } from "../../components/icons";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
+import { AlbumIcon, CloseIcon, FolderIcon, ImportIcon, MoreIcon, PhotosIcon, PickIcon, RatingStar, RefreshIcon, RejectIcon, StarIcon } from "../../components/icons";
 import type { CollectionKindDto } from "../../ipc/generated/CollectionKindDto";
 import * as ipc from "../../ipc/client";
 import { formatDateRange } from "../../lib/format";
 import { hasCommandModifier, isTextEntry } from "../../lib/keyboard";
 import type { SettingsApi } from "../settings/useSettings";
+import { AddToAlbum, AlbumSettings, AlbumsNav, photosText, setDraggedPaths } from "./Albums";
 import { indexStatusText } from "./indexStatus";
+import { NavGroup } from "./NavGroup";
 import { COLLECTION_NAMES, FILTERS, markChangeForKey, type LibraryFilter } from "./marks";
 import { PhotoGrid } from "./PhotoGrid";
 import { PhotoList } from "./PhotoList";
@@ -15,6 +17,7 @@ interface Props {
   library: LibraryApi;
   settings: SettingsApi;
   onOpenPhoto: (path: string) => void;
+  notify: (message: string) => void;
 }
 
 let defaultFolderTried = false;
@@ -22,7 +25,7 @@ let defaultFolderTried = false;
 const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 
 /** Library mode: browse granted folders and open a photo. */
-export function LibraryView({ library, settings, onOpenPhoto }: Props) {
+export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
   const { listing, loading } = library;
   const s = settings.settings;
   const defaultFolder = s?.library.defaultFolder ?? null;
@@ -55,7 +58,19 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
   const onColumns = useCallback((n: number) => {
     columnsRef.current = n;
   }, []);
-  const { visible, selected, setSelected, setMarks, collection } = library;
+  const { visible, selected, setSelected, setMarks, collection, album } = library;
+  const [popover, setPopover] = useState<{ kind: "add" | "album"; anchor: HTMLElement } | null>(null);
+  const ticked = new Set(library.batch);
+  const targets = library.targets();
+  /** ⌘-click ticks a photo, ⇧-click the range to it (the filmstrip's ticks, ADR 0049);
+   *  a plain click selects it. */
+  const pick = (path: string, e: MouseEvent) => {
+    if (e.metaKey || e.ctrlKey) library.toggleBatch(path);
+    else if (e.shiftKey) library.tickRange(path);
+    else setSelected(path);
+  };
+  /** Dragging one of the selected and ticked photos drags them all; another, just it. */
+  const drag = (path: string, e: DragEvent) => setDraggedPaths(e, targets.includes(path) ? targets : [path], path);
 
   // Keyboard: arrows move the selection, Enter opens, 0–5 / P / X / U mark it.
   useEffect(() => {
@@ -123,21 +138,22 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
             {collectionRow("rated", <RatingStar filled={false} />, counts?.rated)}
             {collectionRow("rejected", <RejectIcon size={16} />, counts?.rejected)}
           </section>
-          <section className="nav-section" aria-label="Folders">
-            <div className="nav-label">
-              Folders
+          <NavGroup
+            label="Folders"
+            action={
               <button className="icon-button" aria-label="Add folder" title="Add folder" onClick={() => void choose()}>
                 <svg className="icon" width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
                   <path d="M8 3v10M3 8h10" />
                 </svg>
               </button>
-            </div>
+            }
+          >
             {recent.length === 0 && <p className="nav-empty">No folders yet.</p>}
             {recent.map((f) => (
               <button
                 key={f}
                 className="nav-row"
-                aria-current={!collection && currentRoot === f ? "true" : undefined}
+                aria-current={!collection && !album && currentRoot === f ? "true" : undefined}
                 title={f}
                 onClick={() => void library.openFolder(f)}
               >
@@ -150,7 +166,8 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
                 )}
               </button>
             ))}
-          </section>
+          </NavGroup>
+          <AlbumsNav library={library} notify={notify} />
         </div>
         <div className="sidebar-footer">
           <button className="block" onClick={() => void choose()}>
@@ -166,7 +183,7 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
 
       <section className="library-main">
         {library.status?.notice && <p className="notice library-notice">{library.status.notice}</p>}
-        {!listing && !collection ? (
+        {!listing && !collection && !album ? (
           <div className="empty-state">
             {loading ? (
               <p>Loading…</p>
@@ -185,7 +202,7 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
           <>
             <header className="page-header">
               <div className="page-title">
-                {!collection && listing && listing.breadcrumbs.length > 1 && (
+                {!collection && !album && listing && listing.breadcrumbs.length > 1 && (
                   <nav className="crumbs" aria-label="Folder">
                     {listing.breadcrumbs.slice(0, -1).map((c) => (
                       <span key={c.path}>
@@ -198,8 +215,9 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
                   </nav>
                 )}
                 {collection && <span className="crumbs">Across all folders</span>}
+                {album && <span className="crumbs">Album</span>}
                 <div className="page-title-row">
-                  <h1>{collection ? COLLECTION_NAMES[collection.kind] : listing?.name}</h1>
+                  <h1>{album ? album.album.name : collection ? COLLECTION_NAMES[collection.kind] : listing?.name}</h1>
                   <span className="subtle">
                     {[photoCount, dateRange].filter(Boolean).join(" · ")}
                     {loading ? " · loading…" : ""}
@@ -208,7 +226,51 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
               </div>
               <div className="page-actions">
                 {indexText && <span className="index-status">{indexText}</span>}
-                {!collection && listing && (
+                {library.batch.length > 0 && (
+                  <span className="ticked-count">
+                    {photosText(targets.length)} selected
+                    <button className="icon-button" aria-label="Clear selection" title="Clear selection" onClick={library.clearBatch}>
+                      <CloseIcon size={12} />
+                    </button>
+                  </span>
+                )}
+                {album && targets.length > 0 && (
+                  <button
+                    className="ghost"
+                    onClick={async () => {
+                      const n = targets.length;
+                      if (await library.removeFromAlbum(album.album.id, targets)) {
+                        library.clearBatch();
+                        notify(`Removed ${photosText(n)} from ${album.album.name}`);
+                      }
+                    }}
+                  >
+                    Remove from album
+                  </button>
+                )}
+                {targets.length > 0 && (
+                  <button
+                    className="ghost"
+                    aria-expanded={popover?.kind === "add"}
+                    title="Add the selected or ticked photos to an album"
+                    onClick={(e) => setPopover({ kind: "add", anchor: e.currentTarget })}
+                  >
+                    <AlbumIcon />
+                    Add to album
+                  </button>
+                )}
+                {album && (
+                  <button
+                    className="icon-button"
+                    aria-label="Rename or delete this album"
+                    title="Rename or delete this album"
+                    aria-expanded={popover?.kind === "album"}
+                    onClick={(e) => setPopover({ kind: "album", anchor: e.currentTarget })}
+                  >
+                    <MoreIcon />
+                  </button>
+                )}
+                {!collection && !album && listing && (
                   <>
                     <button className="ghost" onClick={() => void library.refresh()}>
                       <RefreshIcon />
@@ -239,8 +301,12 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
             </header>
 
             {/* Keyed by view: a newly opened folder or collection starts at the top. */}
-            <div className="library-scroll scroll" ref={scrollRef} key={collection ? `collection:${collection.kind}` : listing?.path}>
-              {!collection && listing && listing.folders.length > 0 && (
+            <div
+              className="library-scroll scroll"
+              ref={scrollRef}
+              key={album ? `album:${album.album.id}` : collection ? `collection:${collection.kind}` : listing?.path}
+            >
+              {!collection && !album && listing && listing.folders.length > 0 && (
                 <div className="chips">
                   {listing.folders.map((f) => (
                     <button key={f.path} className="chip" onClick={() => void library.openFolder(f.path)}>
@@ -251,26 +317,48 @@ export function LibraryView({ library, settings, onOpenPhoto }: Props) {
                 </div>
               )}
               {visible.length === 0 ? (
-                <p className="muted empty-note">{emptyMessage(library.photos.length, library.filter, collection?.kind ?? null)}</p>
+                <p className="muted empty-note">
+                  {album
+                    ? library.photos.length === 0
+                      ? "Nothing here yet. Drag photos onto the album in the sidebar, or select some and use Add to album."
+                      : "No photos match this filter."
+                    : emptyMessage(library.photos.length, library.filter, collection?.kind ?? null)}
+                </p>
               ) : library.layout === "grid" ? (
                 <PhotoGrid
                   photos={visible}
                   scrollRef={scrollRef}
                   selected={selected}
-                  onSelect={setSelected}
+                  onPick={pick}
                   onOpen={onOpenPhoto}
+                  ticked={ticked}
+                  onDrag={drag}
                   onColumns={onColumns}
                 />
               ) : (
-                <PhotoList photos={visible} scrollRef={scrollRef} selected={selected} onSelect={setSelected} onOpen={onOpenPhoto} />
+                <PhotoList
+                  photos={visible}
+                  scrollRef={scrollRef}
+                  selected={selected}
+                  onPick={pick}
+                  onOpen={onOpenPhoto}
+                  ticked={ticked}
+                  onDrag={drag}
+                />
               )}
-              {!collection && listing && listing.skipped > 0 && (
+              {!collection && !album && listing && listing.skipped > 0 && (
                 <p className="muted">{listing.skipped} item(s) couldn’t be read and are not shown.</p>
               )}
             </div>
           </>
         )}
       </section>
+      {popover?.kind === "add" && (
+        <AddToAlbum library={library} paths={targets} anchor={popover.anchor} onClose={() => setPopover(null)} notify={notify} />
+      )}
+      {popover?.kind === "album" && album && (
+        <AlbumSettings library={library} album={album.album} anchor={popover.anchor} onClose={() => setPopover(null)} />
+      )}
     </div>
   );
 }

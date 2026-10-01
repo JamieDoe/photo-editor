@@ -268,6 +268,47 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       marks.counts.picks >= 1 &&
       marks.cleared.picks === marks.counts.picks - 1;
 
+    // Albums (ADR 0055) through the real commands and catalogue: make one with two
+    // photos, add a third (and one again), list it, take one out, rename and delete it.
+    const albums = await (async () => {
+      if (!indexing) return null;
+      const paths = (await ipc.listFolder(indexing.folder)).photos.map((p) => p.path).slice(0, 3);
+      if (paths.length < 3) return null;
+      const made = await ipc.createAlbum("  Self-test   album ", paths.slice(0, 2));
+      const added = await ipc.addToAlbum(made.id, [paths[2]!, paths[0]!]);
+      const listed = await ipc.albumPhotos(made.id);
+      const removed = await ipc.removeFromAlbum(made.id, [paths[1]!]);
+      const renamed = await ipc.renameAlbum(made.id, "Renamed");
+      const before = (await ipc.listAlbums()).some((a) => a.id === made.id);
+      await ipc.deleteAlbum(made.id);
+      const after = (await ipc.listAlbums()).some((a) => a.id === made.id);
+      const stillIndexed = (await ipc.listFolder(indexing.folder)).photos.filter((p) => paths.includes(p.path)).length;
+      return {
+        name: made.name,
+        made: made.count,
+        added: added.count,
+        listed: listed.photos.length,
+        cover: listed.album.cover !== null,
+        removed: removed.count,
+        renamed: renamed.name,
+        listedBefore: before,
+        listedAfterDelete: after,
+        photosKept: stillIndexed,
+      };
+    })();
+    const albumsOk =
+      albums !== null &&
+      albums.name === "Self-test album" &&
+      albums.made === 2 &&
+      albums.added === 3 &&
+      albums.listed === 3 &&
+      albums.cover &&
+      albums.removed === 2 &&
+      albums.renamed === "Renamed" &&
+      albums.listedBefore &&
+      !albums.listedAfterDelete &&
+      albums.photosKept === 3;
+
     // Saved edits through the real commands, catalogue and editor: save a recipe,
     // see it in the listing and the thumbnail, reopen the photo with it, then reset.
     const edits = await (async () => {
@@ -1311,6 +1352,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       viewerSizeStableOnOpen: reopen.sizeStable,
       libraryThumbnails: thumbnailsOk,
       ratingsAndFlags: marksOk,
+      albums: albumsOk,
       savedEdits: editsOk,
       toneCurve: toneCurveOk,
       history: historyOk,
@@ -1373,6 +1415,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       indexing,
       thumbnails,
       marks,
+      albums,
       edits,
       detailFrame: { size: `${detail.frame.width}x${detail.frame.height}`, rustRenderMs: detail.frame.renderMs, roundTripMs: detail.info.roundTripMs },
       baselineUiFrameGapMs: summarise(baselineGaps),

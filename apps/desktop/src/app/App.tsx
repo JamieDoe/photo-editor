@@ -179,6 +179,7 @@ export function App() {
             library={library}
             settings={settings}
             onOpenPhoto={openFromLibrary}
+            notify={notify}
           />
         )}
         {mode === "edit" && (

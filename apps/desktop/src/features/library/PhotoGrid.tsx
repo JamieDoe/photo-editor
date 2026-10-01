@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, type DragEvent, type MouseEvent, type RefObject } from "react";
 import { PickIcon } from "../../components/icons";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import { formatCaptured } from "../../lib/format";
@@ -12,17 +12,23 @@ interface Props {
   photos: PhotoEntryDto[];
   scrollRef: RefObject<HTMLElement | null>;
   selected: string | null;
-  onSelect: (path: string) => void;
+  /** A click: with ⌘ or ⇧ it ticks rather than selects (the caller decides). */
+  onPick: (path: string, e: MouseEvent) => void;
   onOpen: (path: string) => void;
+  /** Photos ticked for batch actions (ADR 0049). */
+  ticked: ReadonlySet<string>;
+  /** A photo dragged (onto an album, ADR 0055). */
+  onDrag: (path: string, e: DragEvent) => void;
   /** Reports the column count, for up/down keyboard movement. */
   onColumns: (columns: number) => void;
 }
 
 /**
  * Thumbnail grid (3:2 cards, as in the design). Only rows near the view are rendered.
- * Click selects, double-click opens.
+ * Click selects, double-click opens; ⌘-click ticks, ⇧-click ticks a range; drag onto
+ * an album to add.
  */
-export function PhotoGrid({ photos, scrollRef, selected, onSelect, onOpen, onColumns }: Props) {
+export function PhotoGrid({ photos, scrollRef, selected, onPick, onOpen, ticked, onDrag, onColumns }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const width = useWidth(listRef);
   const { columns, rowHeight } = gridLayout(width);
@@ -41,9 +47,12 @@ export function PhotoGrid({ photos, scrollRef, selected, onSelect, onOpen, onCol
         {photos.slice(r * columns, (r + 1) * columns).map((p) => (
           <button
             key={p.path}
-            className={p.marks.flag === "reject" ? "card rejected" : "card"}
+            className={["card", p.marks.flag === "reject" && "rejected", ticked.has(p.path) && "ticked"].filter(Boolean).join(" ")}
             aria-pressed={p.path === selected}
-            onClick={() => onSelect(p.path)}
+            data-photo-path={p.path}
+            draggable
+            onDragStart={(e) => onDrag(p.path, e)}
+            onClick={(e) => onPick(p.path, e)}
             onDoubleClick={() => onOpen(p.path)}
             title={[p.name, p.details?.camera, formatCaptured(p.details?.capturedAt), "Double-click to edit"].filter(Boolean).join("\n")}
           >

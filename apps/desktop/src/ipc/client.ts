@@ -10,6 +10,8 @@ import type { BackupStatusDto } from "./generated/BackupStatusDto";
 import type { ClientErrorReport } from "./generated/ClientErrorReport";
 import type { CollectionCountsDto } from "./generated/CollectionCountsDto";
 import type { CollectionKindDto } from "./generated/CollectionKindDto";
+import type { AlbumDto } from "./generated/AlbumDto";
+import type { AlbumListingDto } from "./generated/AlbumListingDto";
 import type { CollectionListingDto } from "./generated/CollectionListingDto";
 import type { DiagnosticsDto } from "./generated/DiagnosticsDto";
 import type { EditRecipe } from "./generated/EditRecipe";
@@ -141,6 +143,16 @@ export const showBackups = () => invoke<void>("show_backups");
 export const chooseBackupCopyFolder = () => invoke<BackupStatusDto | null>("choose_backup_copy_folder");
 export const stopBackupCopies = () => invoke<BackupStatusDto>("stop_backup_copies");
 
+/** Albums (ADR 0055): the photographer's own groups of photos, by name. */
+export const listAlbums = () => invoke<AlbumDto[]>("list_albums");
+/** A new album holding the photos at `paths` (which may be none). */
+export const createAlbum = (name: string, paths: string[]) => invoke<AlbumDto>("create_album", { name, paths });
+export const renameAlbum = (id: number, name: string) => invoke<AlbumDto>("rename_album", { id, name });
+/** Deletes an album; its photos are untouched. */
+export const deleteAlbum = (id: number) => invoke<void>("delete_album", { id });
+export const addToAlbum = (id: number, paths: string[]) => invoke<AlbumDto>("add_to_album", { id, paths });
+export const removeFromAlbum = (id: number, paths: string[]) => invoke<AlbumDto>("remove_from_album", { id, paths });
+export const albumPhotos = (id: number) => invoke<AlbumListingDto>("album_photos", { id });
 export const libraryCollection = (kind: CollectionKindDto) =>
   invoke<CollectionListingDto>("library_collection", { kind });
 

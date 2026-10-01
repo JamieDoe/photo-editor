@@ -17,6 +17,8 @@
   --accent: #f0b45e;
   --accent-text: #f6cb8a;
   --accent-soft: rgb(240 180 94 / 12%);
+  --accent-ring-hover: #b98543; /* a ticked photo's ring, hovered */
+  --text-ring-hover: #9fa0a6; /* the selected photo's ring, hovered */
   --success: #6fbf8a;
   --danger: #e5675c;
   --danger-soft: rgb(229 103 92 / 12%);
@@ -53,6 +55,7 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --canvas: #ececef; --surface: #f8f8f9; --raised: #ffffff; --control: #ffffff;
+    --accent-ring-hover: #9a6415; --text-ring-hover: #55565c;
     --hairline: rgb(0 0 0 / 8%); --hairline-strong: rgb(0 0 0 / 12%);
     --hover: rgb(0 0 0 / 4%); --hover-strong: rgb(0 0 0 / 7%); --fill-quiet: rgb(0 0 0 / 4%);
     --text: #16171b; --text-2: #55565c; --text-3: #7d7f86;
@@ -72,6 +75,7 @@
 }
 :root[data-theme="light"] {
   --canvas: #ececef; --surface: #f8f8f9; --raised: #ffffff; --control: #ffffff;
+  --accent-ring-hover: #9a6415; --text-ring-hover: #55565c;
   --hairline: rgb(0 0 0 / 8%); --hairline-strong: rgb(0 0 0 / 12%);
   --hover: rgb(0 0 0 / 4%); --hover-strong: rgb(0 0 0 / 7%); --fill-quiet: rgb(0 0 0 / 4%);
   --text: #16171b; --text-2: #55565c; --text-3: #7d7f86;
@@ -196,12 +200,13 @@ button.nav-row:hover:not(:disabled) { background: var(--hover); color: var(--tex
 .empty-state { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; color: var(--text-2); }
 .empty-state h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
 .empty-state p { margin: 0; max-width: 360px; font-size: 12.5px; }
-.page-header { min-height: 64px; flex-shrink: 0; padding: 10px 24px 6px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
-.page-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.page-header { min-height: 64px; flex-shrink: 0; padding: 10px 24px 6px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 16px; }
+.page-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 220px; }
 .page-title-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .page-title h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.page-title .subtle { font-size: 12.5px; white-space: nowrap; }
-.page-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.page-title .subtle { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* On a narrow window the actions wrap onto their own rows, under the title. */
+.page-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 4px; margin-left: auto; min-width: 0; }
 .page-actions .segmented { margin-left: 6px; }
 .page-actions button { height: 28px; font-size: 12.5px; }
 .crumbs { display: flex; align-items: center; flex-wrap: wrap; font-size: 11.5px; color: var(--text-3); }
@@ -229,6 +234,10 @@ button.card:hover:not(:disabled) { background: none; }
 }
 button.card[aria-pressed="true"] .card-frame { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
 button.card.rejected { opacity: 0.38; }
+/* Ticked for batch actions (ADRs 0049, 0055): the accent ring, as in the filmstrip. */
+button.card.ticked .card-frame { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent); }
+button.card.ticked[aria-pressed="true"] .card-frame { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent), 0 0 0 6px var(--text); }
+.list-row.ticked { box-shadow: inset 3px 0 0 var(--accent); }
 .card-badge {
   position: absolute; right: 8px; top: 8px; width: 22px; height: 22px; border-radius: 6px;
   background: rgb(11 12 14 / 60%); color: #ededef; display: flex; align-items: center; justify-content: center;
@@ -237,7 +246,13 @@ button.card.rejected { opacity: 0.38; }
 .card-name + .card-edited { margin-right: auto; }
 .card-edited { width: 5px; height: 5px; border-radius: 3px; background: var(--text); flex-shrink: 0; }
 .card-image img { width: 100%; height: 100%; object-fit: contain; transition: transform 0.35s var(--ease); animation: fade-in 0.2s ease; }
-button.card:hover:not([aria-pressed="true"]) .card-frame { box-shadow: 0 0 0 1px var(--hairline-strong); }
+button.card:hover:not([aria-pressed="true"]):not(.ticked) .card-frame { box-shadow: 0 0 0 1px var(--hairline-strong); }
+/* Hovering a selected or ticked photo keeps its ring, a little darker. */
+button.card[aria-pressed="true"]:hover .card-frame { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--text-ring-hover); }
+button.card.ticked:hover .card-frame { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent-ring-hover); }
+button.card.ticked[aria-pressed="true"]:hover .card-frame {
+  box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent-ring-hover), 0 0 0 6px var(--text-ring-hover);
+}
 button.card:hover .card-image img { transform: scale(1.015); }
 .card-caption { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 2px; height: 18px; }
 .card-name { font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -806,3 +821,46 @@ button.batch-export:hover:not(:disabled) { background: var(--hover-strong); colo
 .calibration { display: flex; flex-direction: column; gap: 16px; }
 .calibration-group { display: flex; flex-direction: column; gap: 10px; }
 .calibration-heading { margin: 0; font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+
+/* Albums (ADR 0055): the sidebar's rows with a small cover (the design's swatch), the
+   new-album field, a row lit while photos are dragged over it; the header's tick count. */
+.album-cover { width: 16px; height: 16px; flex-shrink: 0; border-radius: 4px; overflow: hidden; background: linear-gradient(135deg, #f3ad73, #6e6a8a); }
+.album-cover-image, span.popover-thumb { display: block; overflow: hidden; }
+.album-cover-image { width: 100%; height: 100%; }
+.album-cover-image img, span.popover-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.nav-row.album-row.drop { background: var(--hover-strong); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.nav-new { padding: 2px 0 4px; }
+.nav-new .text-input { width: 100%; height: 30px; font-size: 13px; }
+/* Dragging several photos (ADR 0055): a stack of up to three cards, fanned a little, the
+   dragged photo on top, with the count in the accent colour. Shown for an instant under
+   the pointer while the drag image is taken. */
+.drag-stack { position: fixed; z-index: 100; width: 112px; height: 88px; pointer-events: none; }
+.drag-card {
+  position: absolute; left: 12px; top: 14px; width: 84px; height: 56px; border-radius: 6px; overflow: hidden;
+  background: var(--raised); box-shadow: 0 0 0 1.5px var(--canvas), 0 6px 16px rgb(0 0 0 / 45%);
+}
+.drag-card img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.drag-card.depth-0 { box-shadow: 0 0 0 2px var(--accent), 0 8px 18px rgb(0 0 0 / 50%); }
+.drag-card.depth-1 { transform: translate(7px, -5px) rotate(5deg); }
+.drag-card.depth-2 { transform: translate(-6px, -4px) rotate(-6deg); }
+.drag-count {
+  position: absolute; right: 4px; top: 2px; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; background: var(--accent); color: #0b0c0e;
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 2px 6px rgb(0 0 0 / 40%);
+}
+.ticked-count { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); }
+.popover-menu.album-menu { max-height: 240px; overflow-y: auto; }
+.album-menu .popover-item .grow { flex: 1 1 auto; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.album-menu .popover-item .count { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+button.album-delete { margin-right: auto; gap: 6px; color: var(--danger); }
+.popover-actions .grow { flex: 1 1 auto; align-self: center; }
+
+/* Folding sidebar groups (Folders, Albums), the albums' empty state and New album row. */
+button.nav-toggle { height: 22px; padding: 0 4px 0 0; margin-left: -4px; gap: 4px; background: transparent; border: 0; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
+button.nav-toggle:hover:not(:disabled) { background: transparent; color: var(--text-2); }
+button.nav-toggle .chevron { width: 12px; height: 12px; }
+.nav-empty-card { margin: 2px 4px 6px; padding: 12px; border-radius: 9px; border: 1px dashed var(--hairline-strong); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; color: var(--text-3); }
+.nav-empty-card p { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.nav-empty-card button { gap: 5px; margin-left: -8px; color: var(--text); }
+button.nav-row.nav-add { color: var(--text-3); }
+button.nav-row.nav-add:hover:not(:disabled) { color: var(--text); }

@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::CatalogueError;
 
 /// Schema version this build creates and understands.
-pub const SCHEMA_VERSION: i64 = 6;
+pub const SCHEMA_VERSION: i64 = 7;
 
 const MIGRATIONS: &[&str] = &[
     // 1: library folders, photos, files.
@@ -97,6 +97,23 @@ const MIGRATIONS: &[&str] = &[
         created_at_ms  INTEGER NOT NULL,
         updated_at_ms  INTEGER NOT NULL
     );
+    "#,
+    // 7: albums (ADR 0055): the photographer's own groups of photos, as references to
+    // photos (never copies), so they follow a photo when its file moves.
+    r#"
+    CREATE TABLE albums (
+        id            INTEGER PRIMARY KEY,
+        name          TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+    );
+    CREATE TABLE album_photos (
+        album_id    INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+        photo_id    INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+        added_at_ms INTEGER NOT NULL,
+        PRIMARY KEY (album_id, photo_id)
+    ) WITHOUT ROWID;
+    CREATE INDEX album_photos_by_photo ON album_photos(photo_id);
     "#,
 ];
 

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toAppError, type AppError } from "../../app/errors";
 import * as ipc from "../../ipc/client";
+import type { AlbumDto } from "../../ipc/generated/AlbumDto";
+import type { AlbumListingDto } from "../../ipc/generated/AlbumListingDto";
 import type { CollectionKindDto } from "../../ipc/generated/CollectionKindDto";
 import type { CollectionListingDto } from "../../ipc/generated/CollectionListingDto";
 import type { FolderListingDto } from "../../ipc/generated/FolderListingDto";
@@ -38,6 +40,9 @@ export function useLibrary() {
   const [thumbRevs, setThumbRevs] = useState<Record<string, number>>({});
   /** A library-wide collection being viewed instead of a folder. */
   const [collection, setCollection] = useState<CollectionListingDto | null>(null);
+  /** The albums (ADR 0055), and the one being viewed instead of a folder. */
+  const [albums, setAlbums] = useState<AlbumDto[]>([]);
+  const [album, setAlbum] = useState<AlbumListingDto | null>(null);
   const requestRef = useRef(0);
   const listingRef = useRef<FolderListingDto | null>(null);
   listingRef.current = listing;
@@ -74,8 +79,13 @@ export function useLibrary() {
     }
   }, []);
 
+  const refreshAlbums = useCallback(() => {
+    ipc.listAlbums().then(setAlbums, () => undefined);
+  }, []);
+
   useEffect(() => {
     refreshStatus();
+    refreshAlbums();
     const unlisten = ipc
       .onIndexEvent((e) => {
         if (e.type === "progress") {
@@ -86,6 +96,7 @@ export function useLibrary() {
         if (e.type === "finished") {
           setLastIndex(e);
           refreshStatus();
+          refreshAlbums();
           // The open folder may have gained or lost photos.
           const open = listingRef.current;
           if (open && open.breadcrumbs[0]?.path === e.root) void load(() => ipc.listFolder(open.path));
@@ -95,7 +106,7 @@ export function useLibrary() {
       })
       .catch(() => () => {});
     return () => void unlisten.then((u) => u());
-  }, [load, refreshStatus]);
+  }, [load, refreshStatus, refreshAlbums]);
 
   const chooseFolder = useCallback(async () => {
     const result = await load(ipc.chooseFolder);
@@ -106,7 +117,10 @@ export function useLibrary() {
   const openFolder = useCallback(
     async (path: string) => {
       const result = await load(() => ipc.listFolder(path));
-      if (result) setCollection(null);
+      if (result) {
+        setCollection(null);
+        setAlbum(null);
+      }
       return result;
     },
     [load],
@@ -117,6 +131,7 @@ export function useLibrary() {
     requestRef.current++; // a folder listing still in flight must not replace this view
     try {
       setCollection(await ipc.libraryCollection(kind));
+      setAlbum(null);
       setError(null);
     } catch (e) {
       setError(await toAppError(e));
@@ -125,8 +140,43 @@ export function useLibrary() {
     }
   }, []);
 
-  /** The photos of the current view (collection or folder), before filtering. */
-  const photos: PhotoEntryDto[] = collection?.photos ?? listing?.photos ?? [];
+  const openAlbum = useCallback(async (id: number) => {
+    setLoading(true);
+    requestRef.current++; // a folder listing still in flight must not replace this view
+    try {
+      const listing = await ipc.albumPhotos(id);
+      setAlbum(listing);
+      setCollection(null);
+      setAlbums((all) => all.map((a) => (a.id === id ? listing.album : a)));
+      setError(null);
+    } catch (e) {
+      setError(await toAppError(e));
+      refreshAlbums();
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshAlbums]);
+
+  /** Runs an album change; the albums (and the album shown, if it is the one changed)
+   *  are refreshed after. Errors are shown; returns the album, or null. */
+  const albumChange = useCallback(
+    async (change: () => Promise<AlbumDto>): Promise<AlbumDto | null> => {
+      try {
+        const changed = await change();
+        refreshAlbums();
+        setAlbum((shown) => shown && shown.album.id === changed.id ? { ...shown, album: changed } : shown);
+        return changed;
+      } catch (e) {
+        setError(await toAppError(e));
+        refreshAlbums();
+        return null;
+      }
+    },
+    [refreshAlbums],
+  );
+
+  /** The photos of the current view (album, collection or folder), before filtering. */
+  const photos: PhotoEntryDto[] = album?.photos ?? collection?.photos ?? listing?.photos ?? [];
   const photosRef = useRef(photos);
   photosRef.current = photos;
   /** What the grid shows: the view's photos after the filter (and collection membership). */
@@ -157,6 +207,7 @@ export function useLibrary() {
         ps.map((p) => (targets.has(p.path) ? { ...p, marks: applyChange(p.marks, change) } : p));
       setListing((l) => (l ? { ...l, photos: update(l.photos) } : l));
       setCollection((c) => (c ? { ...c, photos: update(c.photos) } : c));
+      setAlbum((a) => (a ? { ...a, photos: update(a.photos) } : a));
       try {
         const collections = await ipc.setPhotoMarks(paths, change);
         setStatus((s) => (s ? { ...s, collections } : s));
@@ -175,6 +226,7 @@ export function useLibrary() {
     const update = (ps: PhotoEntryDto[]) => ps.map((p) => (p.path === path && p.edited !== edited ? { ...p, edited } : p));
     setListing((l) => (l ? { ...l, photos: update(l.photos) } : l));
     setCollection((c) => (c ? { ...c, photos: update(c.photos) } : c));
+    setAlbum((a) => (a ? { ...a, photos: update(a.photos) } : a));
     setThumbRevs((r) => ({ ...r, [path]: (r[path] ?? 0) + 1 }));
   }, []);
 
@@ -225,6 +277,41 @@ export function useLibrary() {
     setSelected,
     collection,
     openCollection,
+    albums,
+    album,
+    openAlbum,
+    /** A new album holding `paths`; opened when `open` is set. */
+    createAlbum: async (name: string, paths: string[], open = false) => {
+      const made = await albumChange(() => ipc.createAlbum(name, paths));
+      if (made && open) void openAlbum(made.id);
+      return made;
+    },
+    renameAlbum: (id: number, name: string) => albumChange(() => ipc.renameAlbum(id, name)),
+    deleteAlbum: async (id: number) => {
+      try {
+        await ipc.deleteAlbum(id);
+        setAlbum((shown) => (shown?.album.id === id ? null : shown));
+      } catch (e) {
+        setError(await toAppError(e));
+      }
+      refreshAlbums();
+    },
+    addToAlbum: (id: number, paths: string[]) => albumChange(() => ipc.addToAlbum(id, paths)),
+    /** Takes `paths` out of an album; out of the view too when it is the one shown. */
+    removeFromAlbum: async (id: number, paths: string[]) => {
+      const changed = await albumChange(() => ipc.removeFromAlbum(id, paths));
+      if (changed) {
+        const gone = new Set(paths);
+        setAlbum((shown) => (shown?.album.id === id ? { album: changed, photos: shown.photos.filter((p) => !gone.has(p.path)) } : shown));
+      }
+      return changed;
+    },
+    /** The photos an action applies to: the selected one (if in view) and the ticked
+     *  ones, as one selection (click one, ⌘-click others, as in the Finder). */
+    targets: (): string[] => {
+      const inView = selected !== null && photos.some((p) => p.path === selected);
+      return inView && !batchInView.includes(selected) ? [selected, ...batchInView] : batchInView;
+    },
     photos,
     visible,
     neighbour,
