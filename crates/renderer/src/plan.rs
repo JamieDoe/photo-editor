@@ -58,6 +58,10 @@ pub enum Stage {
     Vibrance { amount: f32 },
     /// Blend towards/away from Rec.709 luminance.
     Saturation { factor: f32 },
+    /// Colour grading (ADR 0052), after Saturation so black and white can be toned.
+    ColourGrading {
+        grading: Box<crate::ops::colour_grading::ColourGrading>,
+    },
     /// Film grain (ADR 0031), 0..100, on the finished image.
     Grain { amount: f32 },
 }
@@ -79,6 +83,7 @@ impl Stage {
             Self::ColourMixer { .. } => "colour_mixer",
             Self::Vibrance { .. } => "vibrance",
             Self::Saturation { .. } => "saturation",
+            Self::ColourGrading { .. } => "colour_grading",
         }
     }
 }
@@ -226,6 +231,11 @@ impl RenderPlan {
         if r.saturation != 0.0 {
             stages.push(Stage::Saturation {
                 factor: saturation::factor_for(r.saturation),
+            });
+        }
+        if let Some(grading) = r.colour_grading.filter(|g| !g.is_identity()) {
+            stages.push(Stage::ColourGrading {
+                grading: Box::new(grading),
             });
         }
         if r.grain != 0.0 {

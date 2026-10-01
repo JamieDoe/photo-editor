@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CompareIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, UndoIcon } from "../../components/icons";
+import { ColourIcon, CompareIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, UndoIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../../ipc/generated/MarksDto";
@@ -22,6 +22,8 @@ import { SelectiveControls } from "./SelectiveControls";
 import { Filmstrip } from "./Filmstrip";
 import { PanelFooter } from "./PanelFooter";
 import { PanelSection } from "./PanelSection";
+import { ColourGradingControls } from "./ColourGradingControls";
+import { gradingEdited } from "./colourGrading";
 import { PresetStrip } from "./PresetStrip";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
@@ -333,6 +335,11 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
               disabled={!image}
               temperatureScale={image?.temperatureScale ?? null}
             />
+          )}
+          {info && recipe && (
+            <PanelSection title="Colour grading" icon={<ColourIcon />} edited={gradingEdited(recipe)} defaultOpen={false}>
+              <ColourGradingControls specs={info.grading} recipe={recipe} onChange={editor.setRecipe} disabled={!image} />
+            </PanelSection>
           )}
           {info && recipe && (
             <PanelSection title="Geometry" icon={<CropIcon />} edited={geometryEdited(recipe)} defaultOpen={false}>

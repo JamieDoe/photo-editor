@@ -713,3 +713,17 @@ Release self-test, Nikon Z 6 fixture folder, machine load 6–8:
   which cuts both time and memory.
 - Cancelling at the first progress event stopped a full-size run before its first
   photo finished.
+
+## 35. Colour grading (ADR 0052)
+
+A full render of a 1516×1010 frame (default look) with shadows and highlights graded,
+median of 40, three rounds, machine load 5–7. An ungraded render takes 3.3–3.5 ms.
+
+| Approach | Graded render | Added |
+|---|---|---|
+| Oklab round trip per pixel | 14.3–14.5 ms | +11 ms |
+| Shift tabulated over lightness, Oklab per pixel | 9.1–9.2 ms | +5.9 ms |
+| As above, with a fast cube root | 8.6–8.8 ms | +5.3 ms |
+| A grey's grading tabulated: gain plus tint (kept) | 4.7–5.1 ms | +1.4–1.7 ms |
+
+Release self-test, Nikon Z 6: a split-toned black and white frame rendered in 7.3 ms.

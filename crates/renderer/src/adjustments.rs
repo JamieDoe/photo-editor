@@ -295,6 +295,44 @@ pub const CURVE_REGIONS: [AdjustmentSpec; 4] = {
     ]
 };
 
+/// Colour grading's sliders (ADR 0052): a wheel's brightness, and the ranges'
+/// Blending and Balance. Keys are `GradeWheel` / `ColourGrading` fields.
+pub const GRADING: [AdjustmentSpec; 3] = [
+    AdjustmentSpec {
+        key: "luminance",
+        label: "Luminance",
+        group: "Colour grading",
+        min: -100.0,
+        max: 100.0,
+        step: 1.0,
+        default: 0.0,
+        more: false,
+        unit: "",
+    },
+    AdjustmentSpec {
+        key: "blending",
+        label: "Blending",
+        group: "Colour grading",
+        min: 0.0,
+        max: 100.0,
+        step: 1.0,
+        default: 50.0,
+        more: false,
+        unit: "",
+    },
+    AdjustmentSpec {
+        key: "balance",
+        label: "Balance",
+        group: "Colour grading",
+        min: -100.0,
+        max: 100.0,
+        step: 1.0,
+        default: 0.0,
+        more: false,
+        unit: "",
+    },
+];
+
 pub const PERSPECTIVE: [AdjustmentSpec; 2] = [
     AdjustmentSpec {
         key: "vertical",

@@ -382,7 +382,7 @@ mod tests {
         assert!(got.from_lightroom);
         assert_eq!(got.preset.name, "Soft & Warm");
         assert_eq!(got.preset.recipe.contrast, 18.0);
-        assert_eq!(got.left_out, ["Color Grading", "Masks and healing"]);
+        assert_eq!(got.left_out, ["Masks and healing"]);
         assert_eq!(list_presets(&cat).unwrap().len(), 7);
     }
 

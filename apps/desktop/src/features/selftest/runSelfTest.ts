@@ -967,7 +967,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       presetCheck.files.roundTrip &&
       presetCheck.files.lightroom?.name === "Soft & Warm" &&
       presetCheck.files.lightroom.contrast === 18 &&
-      presetCheck.files.lightroom.leftOut.includes("Color Grading") &&
+      presetCheck.files.lightroom.leftOut.join() === "Masks and healing" &&
       presetCheck.files.failed.join() === "missing.xmp" &&
       presetCheck.files.lrtemplate?.name === 'Faded "Film"' &&
       presetCheck.files.lrtemplate.kelvin === 5200;
@@ -1043,6 +1043,43 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       Math.abs(lightCheck.sameChange) < 0.5 &&
       lightCheck.warmerRedLift !== null &&
       lightCheck.warmerRedLift > 3;
+
+    // Colour grading (ADR 0052) on the real raw file: black and white stays grey
+    // until split-toned; toned, its shadows and highlights carry colour.
+    const gradingCheck = await (async () => {
+      const mono = { ...beforeCrop, masks: undefined, saturation: -100 };
+      const plain = await show(mono, "black and white frame");
+      const toned = await show(
+        {
+          ...mono,
+          colourGrading: {
+            shadows: { hue: 210, saturation: 40, luminance: 0 },
+            midtones: { hue: 0, saturation: 0, luminance: 0 },
+            highlights: { hue: 35, saturation: 40, luminance: 0 },
+            global: { hue: 0, saturation: 0, luminance: 0 },
+            blending: 50,
+            balance: 0,
+          },
+        },
+        "split-toned frame",
+        plain,
+      );
+      // Mean channel spread: 0 for grey.
+      const spread = (f: RenderedFrame | null) => {
+        if (!f) return null;
+        const px = f.frame.pixels;
+        let sum = 0;
+        for (let i = 0; i < px.length; i += 4) sum += Math.abs(px[i]! - px[i + 2]!);
+        return Math.round((sum / (px.length / 4)) * 10) / 10;
+      };
+      return { greySpread: spread(plain), tonedSpread: spread(toned), renderMs: toned?.frame.renderMs ?? null };
+    })();
+    driver.editor().setRecipe(beforeCrop);
+    const gradingOk =
+      gradingCheck.greySpread !== null &&
+      gradingCheck.tonedSpread !== null &&
+      gradingCheck.greySpread < 1 &&
+      gradingCheck.tonedSpread > 5;
 
     // Shapes combined (ADR 0043): -1 EV over the top, less a hard circle at its
     // middle. Inside the circle unchanged, beside it darker.
@@ -1197,6 +1234,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       batch: batchOk,
       exportQueue: exportQueueOk,
       whiteBalanceLight: lightOk,
+      colourGrading: gradingOk,
       copyPaste: copyPasteOk,
       crop: cropOk,
       perspective: perspectiveOk,
@@ -1229,6 +1267,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       batch,
       exportQueue,
       whiteBalanceLight: lightCheck,
+      colourGrading: gradingCheck,
       copyPaste: copyPasteCheck,
       crop,
       perspective,

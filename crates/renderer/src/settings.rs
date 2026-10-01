@@ -54,8 +54,8 @@ pub fn setting_groups() -> Vec<SettingGroup> {
         ),
         group(
             "colour",
-            "Colour",
-            &["vibrance", "saturation", "mixer"],
+            "Colour and grading",
+            &["vibrance", "saturation", "mixer", "colourGrading"],
             true,
         ),
         group(
@@ -181,6 +181,14 @@ mod tests {
                 ..Default::default()
             }),
             chromatic_aberration: Some(Default::default()),
+            colour_grading: Some(crate::ops::colour_grading::ColourGrading {
+                global: crate::ops::colour_grading::GradeWheel {
+                    hue: 40.0,
+                    saturation: 10.0,
+                    luminance: 0.0,
+                },
+                ..Default::default()
+            }),
             parametric_curve: Some(crate::ops::parametric_curve::ParametricCurve {
                 darks: 20.0,
                 ..Default::default()

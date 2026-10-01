@@ -2,6 +2,7 @@
 import type { AbsoluteWhiteBalance } from "./AbsoluteWhiteBalance";
 import type { ChannelCurves } from "./ChannelCurves";
 import type { ChromaticAberration } from "./ChromaticAberration";
+import type { ColourGrading } from "./ColourGrading";
 import type { ColourMixer } from "./ColourMixer";
 import type { Geometry } from "./Geometry";
 import type { Look } from "./Look";
@@ -119,6 +120,11 @@ pointCurve?: Array<[number, number]>,
  * point curve. `None` (and omitted from the JSON) while its sliders are at zero.
  */
 parametricCurve?: ParametricCurve, 
+/**
+ * Colour grading (ADR 0052): tints for the shadows, midtones, highlights and the
+ * whole picture. `None` (and omitted from the JSON) while no wheel is set.
+ */
+colourGrading?: ColourGrading, 
 /**
  * Red, green and blue tone curves, after the RGB one. `None` (and omitted from
  * the JSON) while all three are the diagonal.

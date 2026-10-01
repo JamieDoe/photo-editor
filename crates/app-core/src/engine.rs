@@ -97,6 +97,7 @@ impl Engine {
             mask_density: renderer::adjustments::MASK_DENSITY,
             setting_groups: renderer::settings::setting_groups(),
             curve_regions: renderer::adjustments::CURVE_REGIONS.to_vec(),
+            grading: renderer::adjustments::GRADING.to_vec(),
         }
     }
 
