@@ -759,3 +759,23 @@ frame. Release self-test, Nikon Z 6, preview level:
 | Without spots (exposure +0.3) | 4.3 ms |
 | First render with one spot (retouches) | 5.8 ms |
 | With the spot cached, exposure +0.3 | 4.4 ms |
+
+## 38. Search and Recently imported (ADR 0056)
+
+In-memory catalogue of 20,000 photos (paths like `Library/2019/Trip 42/DSC_01234.NEF`,
+with camera, lens and capture time), release build, median of 7:
+
+| Query | Results | Time |
+|---|---|---|
+| "trip 42" | 797 | 41.8 ms |
+| "z 6 2019" | 667 | 23.5 ms |
+| "september 12" | 195 | 22.7 ms |
+| "nothing-here" | 0 | 21.4 ms |
+| "dsc_01" | 1,000 | 22.4 ms |
+| Recently imported (all 20,000) | 20,000 | 27.8 ms |
+| Collection counts (with recent) | — | 5.0 ms |
+
+A search runs on a blocking thread 180 ms after typing pauses, and only the newest
+query's results are shown. Its cost is a `LIKE` scan, about 1–2 µs per photo, so a
+100,000-photo library would take about 0.1–0.2 s. A full-text index is the next step if
+that becomes noticeable.

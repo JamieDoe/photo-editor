@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::CatalogueError;
 
 /// Schema version this build creates and understands.
-pub const SCHEMA_VERSION: i64 = 7;
+pub const SCHEMA_VERSION: i64 = 8;
 
 const MIGRATIONS: &[&str] = &[
     // 1: library folders, photos, files.
@@ -114,6 +114,10 @@ const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (album_id, photo_id)
     ) WITHOUT ROWID;
     CREATE INDEX album_photos_by_photo ON album_photos(photo_id);
+    "#,
+    // 8: Recently imported (ADR 0056) reads photos by when they joined the library.
+    r#"
+    CREATE INDEX photos_by_created ON photos(created_at_ms);
     "#,
 ];
 

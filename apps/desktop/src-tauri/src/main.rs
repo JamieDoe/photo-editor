@@ -95,6 +95,7 @@ fn main() {
             commands::library::cancel_thumbnail,
             commands::marks::set_photo_marks,
             commands::marks::library_collection,
+            commands::marks::search_library,
             commands::albums::list_albums,
             commands::albums::create_album,
             commands::albums::rename_album,

@@ -149,7 +149,7 @@ export function AlbumsNav({ library, notify }: { library: LibraryApi; notify: (m
         <button
           key={a.id}
           className={over === a.id ? "nav-row album-row drop" : "nav-row album-row"}
-          aria-current={library.album?.album.id === a.id ? "true" : undefined}
+          aria-current={!library.search && library.album?.album.id === a.id ? "true" : undefined}
           title={a.name}
           onClick={() => void library.openAlbum(a.id)}
           onDragOver={(e) => {

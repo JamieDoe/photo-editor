@@ -12,7 +12,7 @@ use super::library::{folder_unavailable, library_photo, raw_extensions};
 use crate::AppState;
 use crate::ipc::{
     CollectionCountsDto, CollectionKindDto, CollectionListingDto, IpcError, MarkChangeDto,
-    PhotoDetailsDto, PhotoEntryDto,
+    PhotoDetailsDto, PhotoEntryDto, SearchResultsDto,
 };
 
 /// Applies `change` to the photos at `paths` and returns the new collection counts.
@@ -94,6 +94,38 @@ pub async fn library_collection(
         })
         .collect();
     Ok(CollectionListingDto { kind, photos })
+}
+
+/// The present photos inside granted folders whose file (from the library folder
+/// down), camera, lens or capture date match every word of `query` (ADR 0056).
+#[tauri::command]
+pub async fn search_library(
+    state: State<'_, AppState>,
+    query: String,
+) -> IpcResult<SearchResultsDto> {
+    let catalogue = Arc::clone(&state.catalogue);
+    let q = query.clone();
+    let entries = tauri::async_runtime::spawn_blocking(move || catalogue.search(&q))
+        .await
+        .map_err(IpcError::internal)?
+        .map_err(IpcError::internal)?;
+    let raw = raw_extensions(&state.engine.info().extensions);
+    let photos = entries
+        .into_iter()
+        .filter(|e| state.folders.check(&e.path).is_some())
+        .map(|e| {
+            entry_dto(
+                &e.path,
+                e.size,
+                e.modified_ns,
+                &raw,
+                e.details.as_ref(),
+                e.marks,
+                e.edited,
+            )
+        })
+        .collect();
+    Ok(SearchResultsDto { query, photos })
 }
 
 pub(super) fn entry_dto(

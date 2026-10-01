@@ -136,6 +136,7 @@ function counts() {
     picks: all.filter((m) => m.flag === "pick").length,
     rated: all.filter((m) => m.rating > 0).length,
     rejected: all.filter((m) => m.flag === "reject").length,
+    recent: 64,
   };
 }
 
@@ -342,12 +343,22 @@ mockIPC((cmd, payload) => {
       const members = new Set(mockAlbums.get(id)!.paths);
       return { album: albumDto(id), photos: all.photos.map((p, i) => ({ ...p, marks: marksOf(p.path, i) })).filter((p) => members.has(p.path)) };
     }
-    case "library_collection": {
-      const kind = (payload as { kind: "picks" | "rated" | "rejected" }).kind;
+    case "search_library": {
+      // Dev-only stand-in: file names containing every word.
+      const { query } = payload as { query: string };
+      const words = query.toLowerCase().split(/\s+/).filter(Boolean);
       const all = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");
       const photos = all.photos
         .map((p, i) => ({ ...p, marks: marksOf(p.path, i) }))
-        .filter((p) => (kind === "picks" ? p.marks.flag === "pick" : kind === "rejected" ? p.marks.flag === "reject" : p.marks.rating > 0));
+        .filter((p) => words.every((w) => p.path.toLowerCase().includes(w)));
+      return new Promise((r) => setTimeout(() => r({ query, photos }), 40));
+    }
+    case "library_collection": {
+      const kind = (payload as { kind: "picks" | "rated" | "rejected" | "recent" }).kind;
+      const all = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");
+      const photos = all.photos
+        .map((p, i) => ({ ...p, marks: marksOf(p.path, i) }))
+        .filter((p, i) => (kind === "recent" ? i < 64 : kind === "picks" ? p.marks.flag === "pick" : kind === "rejected" ? p.marks.flag === "reject" : p.marks.rating > 0));
       return { kind, photos };
     }
     case "library_thumbnail":

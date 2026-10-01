@@ -271,6 +271,14 @@ export const CloseIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** The design's search magnifier. */
+export const SearchIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="7" cy="7" r="4.5" />
+    <path d="M10.5 10.5 14 14" />
+  </Icon>
+);
+
 /** An album (ADR 0055): two photos stacked. */
 export const AlbumIcon = (p: IconProps) => (
   <Icon {...p}>
