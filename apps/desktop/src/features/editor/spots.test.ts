@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { Spot } from "../../ipc/generated/Spot";
-import { frameToSource, moveSpot, sourceToFrame, spotAt, spotsOf, withSpots } from "./spots";
+import { frameToSource, moveSpot, sourceToFrame, spotAt, spotsOf, stillToFix, withSpots, withoutSpots } from "./spots";
 
 const flat = { straighten: 0, vertical: 0, horizontal: 0, rotation: 0, flip: false };
 const spot = (x: number, y: number, radius = 0.05): Spot => ({ kind: "heal", x, y, sourceX: x + 0.2, sourceY: y, radius, feather: 30, opacity: 100 });
@@ -61,5 +61,14 @@ describe("spots", () => {
     const s = spot(0.3, 0.5);
     expect(moveSpot(s, [0.1, -0.1], "spot")).toMatchObject({ x: 0.4, y: 0.4, sourceX: 0.5 });
     expect(moveSpot(s, [0.6, 0], "source")).toMatchObject({ x: 0.3, sourceX: 1 });
+  });
+
+  it("know which dust is still to fix, and undo a Fix all", () => {
+    const found = [spot(0.2, 0.2, 0.01), spot(0.6, 0.4, 0.01)];
+    const byHand = spot(0.205, 0.2, 0.02);
+    expect(stillToFix(found, [byHand], 1.5)).toEqual([found[1]]);
+    expect(stillToFix(found, [], 1.5)).toEqual(found);
+    const after = [byHand, ...found];
+    expect(withoutSpots(after, found)).toEqual([byHand]);
   });
 });

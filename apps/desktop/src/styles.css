@@ -807,12 +807,22 @@ button.batch-export:hover:not(:disabled) { background: var(--hover-strong); colo
 .retouch { display: flex; flex-direction: column; gap: 14px; }
 .segmented.small.retouch-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .retouch-hint { margin: -4px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-3); }
+/* The design's dust banner: found (amber card, Fix all), then fixed (Undo). */
+.dust-found { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-radius: 10px; background: var(--accent-soft); border: 1px solid rgb(240 180 94 / 18%); font-size: 12px; line-height: 1.4; color: var(--text); }
+.dust-found .dust-icon { color: var(--accent); }
+button.dust-fix { height: 26px; padding: 0 10px; border-radius: 7px; background: var(--accent); border: 0; color: #0b0c0e; font-size: 12px; font-weight: 600; }
+button.dust-fix:hover:not(:disabled) { background: var(--accent); filter: brightness(1.06); }
+.dust-fixed { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); }
+.dust-fixed .icon { color: var(--success); }
+.dust-fixed .link-button { padding: 0; border: 0; background: none; height: auto; font-size: 12px; color: var(--accent); }
 .retouch-count { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-2); }
 .retouch-count .link-button { padding: 0; border: 0; background: none; font-size: 12px; color: var(--accent); }
 .retouch-count .link-button:hover:not(:disabled) { text-decoration: underline; }
 .retouch-surface { position: absolute; inset: 0; cursor: crosshair; touch-action: none; }
 .retouch-surface svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
-.spot-ring { fill: none; stroke: #f0b45e; stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgb(0 0 0 / 70%)); }
+/* Spots made: a quiet white ring; the design's dashed amber is for dust found (ADR 0058). */
+.spot-ring { fill: none; stroke: rgb(255 255 255 / 55%); stroke-width: 1.5; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgb(0 0 0 / 70%)); }
+.dust-ring { fill: rgb(240 180 94 / 8%); stroke: #f0b45e; stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgb(0 0 0 / 70%)); }
 .spot-ring.selected { stroke: #ffffff; stroke-width: 2.5; stroke-dasharray: none; }
 .spot-ring.source { stroke: #ffffff; stroke-width: 1.5; stroke-dasharray: 5 4; }
 .spot-link { stroke: #ffffff; stroke-width: 1.5; opacity: 0.8; vector-effect: non-scaling-stroke; }

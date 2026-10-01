@@ -8,6 +8,7 @@
 //! Each file runs in a child process so peak memory (max RSS) is per file. Results
 //! are printed as a markdown table and written as JSON for comparison over time.
 
+mod dust_bench;
 mod index_bench;
 mod look;
 mod measure;
@@ -46,6 +47,14 @@ fn main() {
             "--index-links" => index_links = it.next().and_then(|v| v.parse().ok()),
             "--thumbnails" => thumbnails = true,
             "--look" => look = true,
+            "--dust" => {
+                let result = dust_bench::run(&camera_files());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&result).expect("serialisable result")
+                );
+                return;
+            }
             "--flat" => args_flat = true,
             "-h" | "--help" => {
                 println!("bench [--iterations N] [--out DIR] [FILE|DIR ...]");

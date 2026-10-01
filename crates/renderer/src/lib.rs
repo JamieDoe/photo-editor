@@ -11,6 +11,7 @@ pub mod adjustments;
 mod backend;
 pub mod chromatic;
 pub mod cpu;
+pub mod dust;
 pub mod geometry;
 pub mod histogram;
 pub mod masks;

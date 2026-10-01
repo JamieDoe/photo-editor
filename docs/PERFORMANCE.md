@@ -805,3 +805,20 @@ Release self-test, Nikon Z 6, 1,350 px through the export queue (decode included
 The JPEG time is not measured separately in this step.
 
 All of this runs on the background export lane; the editor stays interactive.
+
+## 40. Finding sensor dust (ADR 0058)
+
+`bench --dust`: each camera file opened in the engine, then dust found on the preview
+level of about 2000 px. Median of 3, release build, machine load 7–10.
+
+| File | Found | Before parallel blurs | After |
+|---|---|---|---|
+| Canon EOS R6 (CR3) | 0 | 152 ms | 51 ms |
+| Fujifilm X-T3 (RAF) | 0 | 256 ms | 44 ms |
+| Nikon Z 6 (NEF) | 0 | 194 ms | 43 ms |
+| Ricoh GR III (DNG) | 1 | 201 ms | 54 ms |
+| Sony A7 III (ARW) | 0 | 208 ms | 54–66 ms |
+| Sony A7R IV (ARW) | 0 | 110 ms | 31 ms |
+
+Release self-test: Nikon Z 6, 53 ms; Ricoh GR III, 70 ms (with the call over IPC).
+It runs once per photo when Retouch opens, on the interactive lane.
