@@ -867,9 +867,9 @@ button.nav-row.nav-add:hover:not(:disabled) { color: var(--text); }
 
 /* The design's search box at the top of the Library sidebar (ADR 0056). */
 .sidebar-search { padding: 12px 12px 4px; }
-.search-field { height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 10px; border-radius: 8px; background: var(--canvas); border: 1px solid var(--hairline); color: var(--text-3); }
+.search-field { height: 34px; display: flex; align-items: center; gap: 7px; padding: 0 5px 0 9px; border-radius: 8px; background: var(--canvas); border: 1px solid var(--hairline); color: var(--text-3); }
 .search-field:focus-within { border-color: var(--hairline-strong); }
-.search-field input { flex-grow: 1; min-width: 0; height: 100%; background: transparent; border: 0; outline: none; color: var(--text); font-size: 12.5px; }
+.search-field input { flex-grow: 1; min-width: 0; height: 100%; padding: 0; background: transparent; border: 0; outline: none; color: var(--text); font-size: 12px; text-overflow: ellipsis; }
 .search-field input::placeholder { color: var(--text-3); }
 .search-field input::-webkit-search-cancel-button { display: none; }
 button.search-clear { width: 20px; height: 20px; padding: 0; border-radius: 10px; background: var(--hover-strong); border: 0; color: var(--text-2); }
