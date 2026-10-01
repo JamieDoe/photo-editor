@@ -102,23 +102,11 @@ impl StopsLut {
     }
 }
 
-/// Identifies the source buffer: address, size, and a fingerprint of sampled pixels,
-/// so a new image at a reused address is never mistaken for the old one.
-type SourceKey = (usize, usize, u32, u32, u64);
+/// Identifies the source image exactly (images are immutable, each with its own id).
+type SourceKey = u64;
 
 fn source_key(source: &LinearImage) -> SourceKey {
-    let data = source.data();
-    let mut fingerprint: u64 = 0xcbf2_9ce4_8422_2325;
-    for v in data.iter().step_by(997) {
-        fingerprint = (fingerprint ^ u64::from(*v)).wrapping_mul(0x0100_0000_01b3);
-    }
-    (
-        data.as_ptr() as usize,
-        data.len(),
-        source.width(),
-        source.height(),
-        fingerprint,
-    )
+    source.id()
 }
 
 type GainBits = [u32; 3];

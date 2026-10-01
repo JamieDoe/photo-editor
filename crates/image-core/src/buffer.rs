@@ -28,11 +28,22 @@ impl std::error::Error for ImageError {}
 /// 8-bit sources). Values are stored as integers to halve memory relative to `f32`;
 /// the renderer converts to `f32` per row chunk, so processing precision is not
 /// limited to 16 bits.
-#[derive(Clone, PartialEq)]
+///
+/// Images are immutable once made, and each one made gets its own [`id`](Self::id)
+/// (a clone keeps it, having the same pixels), so caches can key on it exactly.
+#[derive(Clone)]
 pub struct LinearImage {
     width: u32,
     height: u32,
     data: Vec<u16>,
+    id: u64,
+}
+
+impl PartialEq for LinearImage {
+    /// Equal pixels, whatever the ids.
+    fn eq(&self, other: &Self) -> bool {
+        (self.width, self.height) == (other.width, other.height) && self.data == other.data
+    }
 }
 
 impl LinearImage {
@@ -50,11 +61,19 @@ impl LinearImage {
                 actual: data.len(),
             });
         }
+        static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         Ok(Self {
             width,
             height,
             data,
+            id: NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
         })
+    }
+
+    /// This image's identity: different for every image made, so a cache keyed on it
+    /// never mistakes one image for another (even one made at the same address).
+    pub fn id(&self) -> u64 {
+        self.id
     }
 
     pub fn width(&self) -> u32 {
