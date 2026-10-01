@@ -3,6 +3,7 @@
 //! Handlers never do heavy work themselves. They submit engine jobs and await the
 //! result on Tauri's blocking pool, so the main (UI) thread is never blocked.
 
+pub mod albums;
 pub mod backups;
 pub mod edits;
 pub mod export;

@@ -190,18 +190,27 @@ impl Catalogue {
     /// Present photos in `collection` across the whole library, oldest capture first
     /// (then by path; photos without a capture time last).
     pub fn collection(&self, collection: Collection) -> Result<Vec<CollectionEntry>> {
+        self.entries(collection.condition(), [])
+    }
+
+    /// Present photos meeting `condition` (SQL over `p`, the photo, and `f`, its file),
+    /// oldest capture first (then by path; photos without a capture time last).
+    pub(crate) fn entries(
+        &self,
+        condition: &str,
+        params: impl rusqlite::Params,
+    ) -> Result<Vec<CollectionEntry>> {
         let conn = self.conn();
         let sql = format!(
             "SELECT p.id, f.path, f.size, f.modified_ns, p.rating, p.flag, p.metadata_version,
                     EXISTS(SELECT 1 FROM edits e WHERE e.photo_id = p.id), {}
              FROM photos p JOIN files f ON f.photo_id = p.id
-             WHERE f.missing = 0 AND {}
+             WHERE f.missing = 0 AND {condition}
              ORDER BY p.captured_at IS NULL, p.captured_at, f.path",
             crate::details::COLUMNS,
-            collection.condition()
         );
         let mut stmt = conn.prepare(&sql)?;
-        let rows = stmt.query_map([], |r| {
+        let rows = stmt.query_map(params, |r| {
             let indexed: i64 = r.get(6)?;
             Ok(CollectionEntry {
                 photo: PhotoId(r.get(0)?),

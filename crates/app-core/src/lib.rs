@@ -4,6 +4,7 @@
 //! Every operation returns a [`jobs::JobHandle`] immediately; the work runs on the
 //! job system, never on the caller's thread.
 
+mod albums;
 mod config;
 mod edits;
 mod engine;
@@ -16,10 +17,11 @@ mod session;
 mod thumbnails;
 mod types;
 
+pub use albums::{MAX_ALBUM_NAME, album_not_found, clean_album_name};
 pub use catalogue::{
-    BackupInfo, BackupKind, BackupStore, Catalogue, CatalogueError, Collection, CollectionCounts,
-    CollectionEntry, FileStatus, Flag, MarkChange, Marks, PhotoDetails, PhotoId, PresetId, Rating,
-    SourceIdentity, StoredEdit, newest_valid,
+    Album, AlbumId, BackupInfo, BackupKind, BackupStore, Catalogue, CatalogueError, Collection,
+    CollectionCounts, CollectionEntry, FileStatus, Flag, MarkChange, Marks, PhotoDetails, PhotoId,
+    PresetId, Rating, SourceIdentity, StoredEdit, newest_valid,
 };
 pub use catalogue::{SCHEMA_VERSION, schema_version_of};
 pub use config::EngineConfig;

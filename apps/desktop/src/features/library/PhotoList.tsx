@@ -1,4 +1,4 @@
-import { useRef, type RefObject } from "react";
+import { useRef, type DragEvent, type MouseEvent, type RefObject } from "react";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import { PickIcon, RejectIcon } from "../../components/icons";
 import { formatBytes, formatCaptured, formatDateTime } from "../../lib/format";
@@ -11,15 +11,17 @@ interface Props {
   photos: PhotoEntryDto[];
   scrollRef: RefObject<HTMLElement | null>;
   selected: string | null;
-  onSelect: (path: string) => void;
+  onPick: (path: string, e: MouseEvent) => void;
   onOpen: (path: string) => void;
+  ticked: ReadonlySet<string>;
+  onDrag: (path: string, e: DragEvent) => void;
 }
 
 const ROW_HEIGHT = 66;
 
 /** Details list: one row per photo with capture time, camera and marks. Virtualised.
- * Click selects, double-click opens. */
-export function PhotoList({ photos, scrollRef, selected, onSelect, onOpen }: Props) {
+ * Click selects, double-click opens; ⌘- and ⇧-click tick; drag onto an album. */
+export function PhotoList({ photos, scrollRef, selected, onPick, onOpen, ticked, onDrag }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const { first, end } = useVirtualRows(scrollRef, listRef, ROW_HEIGHT, photos.length, 4);
   const selectedIndex = selected ? photos.findIndex((p) => p.path === selected) : -1;
@@ -42,12 +44,14 @@ export function PhotoList({ photos, scrollRef, selected, onSelect, onOpen }: Pro
           {photos.slice(first, end).map((p, i) => (
             <div
               key={p.path}
-              className={["list-row", p.path === selected ? "selected" : "", p.marks.flag === "reject" ? "rejected" : ""].join(" ")}
+              className={["list-row", p.path === selected ? "selected" : "", p.marks.flag === "reject" ? "rejected" : "", ticked.has(p.path) ? "ticked" : ""].join(" ")}
               role="row"
               aria-rowindex={first + i + 2}
               aria-selected={p.path === selected}
               style={{ height: ROW_HEIGHT }}
-              onClick={() => onSelect(p.path)}
+              draggable
+              onDragStart={(e) => onDrag(p.path, e)}
+              onClick={(e) => onPick(p.path, e)}
               onDoubleClick={() => onOpen(p.path)}
             >
               <span role="cell">

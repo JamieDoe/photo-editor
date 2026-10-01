@@ -229,6 +229,10 @@ button.card:hover:not(:disabled) { background: none; }
 }
 button.card[aria-pressed="true"] .card-frame { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--text); }
 button.card.rejected { opacity: 0.38; }
+/* Ticked for batch actions (ADRs 0049, 0055): the accent ring, as in the filmstrip. */
+button.card.ticked .card-frame { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent); }
+button.card.ticked[aria-pressed="true"] .card-frame { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent), 0 0 0 6px var(--text); }
+.list-row.ticked { box-shadow: inset 3px 0 0 var(--accent); }
 .card-badge {
   position: absolute; right: 8px; top: 8px; width: 22px; height: 22px; border-radius: 6px;
   background: rgb(11 12 14 / 60%); color: #ededef; display: flex; align-items: center; justify-content: center;
@@ -806,3 +810,19 @@ button.batch-export:hover:not(:disabled) { background: var(--hover-strong); colo
 .calibration { display: flex; flex-direction: column; gap: 16px; }
 .calibration-group { display: flex; flex-direction: column; gap: 10px; }
 .calibration-heading { margin: 0; font-size: 11px; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+
+/* Albums (ADR 0055): the sidebar's rows with a small cover (the design's swatch), the
+   new-album field, a row lit while photos are dragged over it; the header's tick count. */
+.album-cover { width: 16px; height: 16px; flex-shrink: 0; border-radius: 4px; overflow: hidden; background: linear-gradient(135deg, #f3ad73, #6e6a8a); }
+.album-cover-image, span.popover-thumb { display: block; overflow: hidden; }
+.album-cover-image { width: 100%; height: 100%; }
+.album-cover-image img, span.popover-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.nav-row.album-row.drop { background: var(--hover-strong); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.nav-new { padding: 2px 0 4px; }
+.nav-new .text-input { width: 100%; height: 30px; font-size: 13px; }
+.ticked-count { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); }
+.popover-menu.album-menu { max-height: 240px; overflow-y: auto; }
+.album-menu .popover-item .grow { flex: 1 1 auto; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.album-menu .popover-item .count { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+button.album-delete { margin-right: auto; gap: 6px; color: var(--danger); }
+.popover-actions .grow { flex: 1 1 auto; align-self: center; }

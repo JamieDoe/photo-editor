@@ -738,6 +738,29 @@ pub struct CollectionListingDto {
     pub photos: Vec<PhotoEntryDto>,
 }
 
+/// An album (ADR 0055) as the library shows it.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AlbumDto {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub name: String,
+    /// Its photos whose files are present.
+    pub count: usize,
+    /// Its first photo's file, for a cover; null when empty or not granted.
+    pub cover: Option<String>,
+}
+
+/// An album and its photos.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct AlbumListingDto {
+    pub album: AlbumDto,
+    pub photos: Vec<PhotoEntryDto>,
+}
+
 /// Photo details read from file headers during indexing.
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

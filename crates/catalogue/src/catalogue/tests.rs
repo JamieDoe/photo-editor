@@ -647,3 +647,71 @@ fn collections_say_which_photos_are_edited() {
     l.cat.set_edit(photo, Some((1, "{}"))).unwrap();
     assert!(l.cat.collection(Collection::Rated).unwrap()[0].edited);
 }
+
+#[test]
+fn albums_hold_photos_follow_moves_and_skip_missing_files() {
+    let l = library("cat-albums");
+    let rec = |name: &str, seed: u8, scan: i64| {
+        l.cat
+            .record_file(
+                l.folder,
+                &write(&l.root.join(name), &photo_bytes(seed)),
+                ScanId(scan),
+            )
+            .unwrap()
+            .0
+    };
+    let (a, b, c) = (
+        rec("a.nef", 11, 1),
+        rec("b.nef", 12, 1),
+        rec("c.nef", 13, 1),
+    );
+    let portfolio = l.cat.add_album("Portfolio").unwrap();
+    let print = l.cat.add_album("to print").unwrap();
+    assert_eq!(l.cat.add_to_album(portfolio, &[a, b]).unwrap(), 2);
+    // Already in it: not added twice.
+    assert_eq!(l.cat.add_to_album(portfolio, &[b, c]).unwrap(), 1);
+    l.cat.add_to_album(print, &[a]).unwrap();
+    // Listed by name, ignoring case, with counts and a cover.
+    let albums = l.cat.albums().unwrap();
+    let names: Vec<_> = albums.iter().map(|a| (a.name.as_str(), a.count)).collect();
+    assert_eq!(names, [("Portfolio", 3), ("to print", 1)]);
+    assert!(albums[0].cover.is_some());
+
+    // Move a, delete c, rescan: the album follows a and leaves out c.
+    let new = l.root.join("Moved/a.nef");
+    std::fs::create_dir_all(new.parent().unwrap()).unwrap();
+    std::fs::rename(l.root.join("a.nef"), &new).unwrap();
+    std::fs::remove_file(l.root.join("c.nef")).unwrap();
+    for name in ["Moved/a.nef", "b.nef"] {
+        l.cat
+            .record_file(
+                l.folder,
+                &SourceIdentity::from_path(&l.root.join(name)).unwrap(),
+                ScanId(2),
+            )
+            .unwrap();
+    }
+    l.cat.finish_scan(l.folder, ScanId(2), None).unwrap();
+    let photos = l.cat.album_photos(portfolio).unwrap();
+    let paths: Vec<_> = photos.iter().map(|p| p.path.clone()).collect();
+    assert_eq!(paths.len(), 2);
+    assert!(paths.contains(&new.canonicalize().unwrap()));
+    assert_eq!(l.cat.album(portfolio).unwrap().unwrap().count, 2);
+
+    // Removing from one album leaves the other; renaming; deleting keeps the photos.
+    assert_eq!(l.cat.remove_from_album(portfolio, &[a, a]).unwrap(), 1);
+    assert_eq!(l.cat.album(print).unwrap().unwrap().count, 1);
+    assert!(l.cat.rename_album(print, "Prints").unwrap());
+    assert!(l.cat.delete_album(portfolio).unwrap());
+    assert!(!l.cat.delete_album(portfolio).unwrap());
+    assert_eq!(
+        l.cat.add_to_album(portfolio, &[b]).unwrap(),
+        0,
+        "no such album"
+    );
+    assert!(l.cat.album(portfolio).unwrap().is_none());
+    assert_eq!(l.cat.albums().unwrap()[0].name, "Prints");
+    // Deleting an album deletes no photos (the missing one is kept for when it returns).
+    assert_eq!(l.cat.photo_count().unwrap(), 3);
+}

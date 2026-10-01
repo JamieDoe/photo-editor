@@ -1,7 +1,7 @@
 //! Ratings and flags (ADR 0018): setting them, and library-wide collections built
 //! from them. Only photos inside granted folders can be marked or listed.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use app_core::{MarkChange, PhotoDetails, Rating};
@@ -28,18 +28,7 @@ pub async fn set_photo_marks(
         ),
         MarkChangeDto::Flag { flag } => MarkChange::Flag(flag.into()),
     };
-    let mut files = Vec::with_capacity(paths.len());
-    for p in &paths {
-        let file = state
-            .folders
-            .check(Path::new(p))
-            .ok_or_else(|| folder_unavailable(p))?;
-        let root = state
-            .folders
-            .root_of(&file)
-            .ok_or_else(|| folder_unavailable(p))?;
-        files.push((file, root));
-    }
+    let files = granted_files(&state, &paths)?;
     let catalogue = Arc::clone(&state.catalogue);
     let counts = tauri::async_runtime::spawn_blocking(move || {
         let mut photos = Vec::with_capacity(files.len());
@@ -53,6 +42,28 @@ pub async fn set_photo_marks(
     .map_err(IpcError::internal)?
     .map_err(IpcError::internal)?;
     Ok(counts.into())
+}
+
+/// Each of `paths` as a granted file and its library root; an error if any is outside
+/// the granted folders.
+pub(super) fn granted_files(
+    state: &AppState,
+    paths: &[String],
+) -> IpcResult<Vec<(PathBuf, PathBuf)>> {
+    paths
+        .iter()
+        .map(|p| {
+            let file = state
+                .folders
+                .check(Path::new(p))
+                .ok_or_else(|| folder_unavailable(p))?;
+            let root = state
+                .folders
+                .root_of(&file)
+                .ok_or_else(|| folder_unavailable(p))?;
+            Ok((file, root))
+        })
+        .collect()
 }
 
 /// The present photos of a library-wide collection that are inside granted folders.
@@ -85,7 +96,7 @@ pub async fn library_collection(
     Ok(CollectionListingDto { kind, photos })
 }
 
-fn entry_dto(
+pub(super) fn entry_dto(
     path: &Path,
     size: u64,
     modified_ns: i64,

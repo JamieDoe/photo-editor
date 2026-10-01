@@ -271,6 +271,14 @@ export const CloseIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** An album (ADR 0055): two photos stacked. */
+export const AlbumIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="2.5" y="4.5" width="9" height="9" rx="1.5" />
+    <path d="M5 2.5h7a1.5 1.5 0 0 1 1.5 1.5v7" />
+  </Icon>
+);
+
 export const PlusIcon = (p: IconProps) => (
   <Icon {...p}>
     <path d="M8 3v10M3 8h10" />
