@@ -104,6 +104,8 @@ pub enum OutputTransform {
 /// Backend-agnostic description of a render.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderPlan {
+    /// Heal and clone spots (ADR 0054), applied to the source before anything else.
+    pub spots: Vec<crate::retouch::Spot>,
     /// Crop, straighten and perspective (ADRs 0032, 0034), applied first: the source is
     /// resampled into the output frame, and the stages run on that. `None` renders the
     /// whole source.
@@ -117,6 +119,7 @@ pub struct RenderPlan {
 impl RenderPlan {
     pub fn new(stages: Vec<Stage>) -> Self {
         Self {
+            spots: Vec::new(),
             geometry: None,
             chromatic_aberration: None,
             stages,
@@ -253,6 +256,7 @@ impl RenderPlan {
             stages.push(Stage::Grain { amount: r.grain });
         }
         Self {
+            spots: r.spots.iter().filter(|s| !s.is_noop()).copied().collect(),
             geometry: r.geometry.filter(|g| !g.is_identity()),
             chromatic_aberration: r.chromatic_aberration.filter(|c| !c.is_identity()),
             ..Self::new(stages)

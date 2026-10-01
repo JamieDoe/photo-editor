@@ -740,3 +740,22 @@ A full render of a 1516×1010 synthetic chart (default look, no sharpening), med
 | Primaries and Shadow Tint, tint tabulated over √luminance | 4.69–5.42 ms | about +2.0 ms more (not kept: within noise, more code) |
 
 Release self-test, Nikon Z 6: a calibrated frame (primaries) rendered in 5.0 ms.
+
+## 37. Heal and clone spots (ADR 0054)
+
+Retouching a source, synthetic content, five heal spots of radius 0.02 (of the long
+edge), median of 9, machine load 5.3–7.6:
+
+| Source | Five heal spots | Of which the copy | Finding a source |
+|---|---|---|---|
+| 1516×1010 (preview level) | 2.25 ms | 0.29 ms | 0.047 ms |
+| 6064×4040 (24 MP export) | 12.2 ms | 3.5 ms | 0.050 ms |
+
+The retouched source is cached, so this is paid once per change to the spots, not per
+frame. Release self-test, Nikon Z 6, preview level:
+
+| Frame | Render |
+|---|---|
+| Without spots (exposure +0.3) | 4.3 ms |
+| First render with one spot (retouches) | 5.8 ms |
+| With the spot cached, exposure +0.3 | 4.4 ms |

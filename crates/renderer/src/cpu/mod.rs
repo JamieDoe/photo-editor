@@ -36,6 +36,15 @@ impl CpuRenderer {
         out: &mut OutputImage,
         cancel: &dyn Cancellation,
     ) -> Result<(), RenderError> {
+        // Spots first (ADR 0054): everything after works on the retouched source,
+        // which is cached while other controls change.
+        let retouched;
+        let source = if plan.spots.is_empty() {
+            source
+        } else {
+            retouched = kernels::cached_retouch(source, &plan.spots);
+            &*retouched
+        };
         let (sw, sh) = (source.width(), source.height());
         if plan.geometry.is_none() && plan.chromatic_aberration.is_none() {
             return self.render_frame(plan, source, Frame::whole(sw, sh), out, cancel);

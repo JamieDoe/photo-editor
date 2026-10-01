@@ -32,6 +32,8 @@ import type { PreviewRequestDto } from "./generated/PreviewRequestDto";
 import type { QuitRequestedDto } from "./generated/QuitRequestedDto";
 import type { SelfTestConfigDto } from "./generated/SelfTestConfigDto";
 import type { Settings } from "./generated/Settings";
+import type { Spot } from "./generated/Spot";
+import type { SpotKind } from "./generated/SpotKind";
 import type { SettingsViewDto } from "./generated/SettingsViewDto";
 import { decodeFrame, type PreviewFrame } from "./frame";
 
@@ -122,6 +124,10 @@ export const exportPreset = (id: string, destination: string | null = null) =>
 export const importPresets = (paths: string[] | null = null) => invoke<PresetImportDto>("import_presets", { paths });
 /** Auto level: the straighten angle that levels the open photo, or null (no clear horizon). */
 export const autoLevel = (imageId: number) => invoke<number | null>("auto_level", { imageId });
+/** A new heal or clone spot at `at` (photo fractions) of `radius` (a fraction of the
+ *  long edge), its source found nearby clear of `avoid`; null when none fits. */
+export const newSpot = (imageId: number, kind: SpotKind, at: [number, number], radius: number, avoid: Spot[]) =>
+  invoke<Spot | null>("new_spot", { imageId, kind, at, radius, avoid });
 /** Remove chromatic aberration: the correction measured on the open photo, or null (too
  *  few clean edges to measure). */
 export const measureChromaticAberration = (imageId: number) =>

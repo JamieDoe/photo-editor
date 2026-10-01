@@ -114,6 +114,52 @@ fn source_key(source: &LinearImage) -> SourceKey {
 
 type GainBits = [u32; 3];
 
+/// Retouched sources (ADR 0054) for the latest spots: one per source, for the last
+/// two sources (the interactive and detail previews' levels take turns), so dragging
+/// other controls does not retouch again and the caches keyed on the retouched image
+/// keep hitting.
+pub(super) fn cached_retouch(
+    source: &LinearImage,
+    spots: &[crate::retouch::Spot],
+) -> Arc<LinearImage> {
+    type Key = (SourceKey, Vec<u32>);
+    static LAST: Mutex<Vec<(Key, Arc<LinearImage>)>> = Mutex::new(Vec::new());
+    let key: Key = (
+        source_key(source),
+        spots
+            .iter()
+            .flat_map(|s| {
+                [
+                    s.kind as u32,
+                    s.x.to_bits(),
+                    s.y.to_bits(),
+                    s.source_x.to_bits(),
+                    s.source_y.to_bits(),
+                    s.radius.to_bits(),
+                    s.feather.to_bits(),
+                    s.opacity.to_bits(),
+                ]
+            })
+            .collect(),
+    );
+    if let Some((_, image)) = LAST
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|(k, _)| *k == key)
+    {
+        return Arc::clone(image);
+    }
+    let image = Arc::new(crate::retouch::retouch(source, spots));
+    let mut cache = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    cache.retain(|((id, _), _)| *id != key.0);
+    if cache.len() >= 2 {
+        cache.remove(0);
+    }
+    cache.push((key, Arc::clone(&image)));
+    image
+}
+
 /// The most recent framed (cropped, straightened, perspective- and CA-corrected)
 /// source, so dragging other controls does not resample again, and the maps built from
 /// it stay cached (they key on its buffer). One entry.

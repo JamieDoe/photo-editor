@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalibrationIcon, ColourIcon, CompareIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, UndoIcon } from "../../components/icons";
+import { CalibrationIcon, ColourIcon, CompareIcon, RetouchIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, UndoIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../../ipc/generated/MarksDto";
@@ -18,6 +18,7 @@ import { CropOverlay, CropToolbar, GeometryControls, useCropTool } from "./CropT
 import { ChromaticAberrationToggle } from "./LensControls";
 import { Histogram } from "./Histogram";
 import { MaskOverlay, MaskToolbar, useMaskTool } from "./MaskTool";
+import { RetouchControls, RetouchOverlay, useRetouchTool } from "./RetouchTool";
 import { SelectiveControls } from "./SelectiveControls";
 import { Filmstrip } from "./Filmstrip";
 import { PanelFooter } from "./PanelFooter";
@@ -69,8 +70,12 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
     setViewTransform: editor.setViewTransform,
   });
   const masks = useMaskTool({ recipe, imageId: image?.id ?? null, onChange: editor.setRecipe });
+  const retouch = useRetouchTool({ recipe, imageId: image?.id ?? null, onChange: editor.setRecipe, notify });
   const compare = useCompare();
-  // One at a time: cropping, masking or comparing.
+  // The Retouch section open puts the photo in retouch mode (ADR 0054), unless
+  // another tool takes it.
+  const [retouchOpen, setRetouchOpen] = useState(false);
+  // One at a time: cropping, masking, comparing or retouching.
   const enterCrop = () => {
     masks.done();
     compare.close();
@@ -91,6 +96,15 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
     masks.done();
     compare.toggle();
   };
+  const toggleRetouch = (open: boolean) => {
+    if (open) {
+      crop.done();
+      masks.done();
+      compare.close();
+    }
+    setRetouchOpen(open);
+  };
+  const retouching = retouchOpen && !crop.open && !masks.open && !compare.open;
   const frame = editor.displayed?.frame;
 
   // Keyboard: 0–5 / P / X / U mark the photo, ← → move through the Library's photos.
@@ -276,6 +290,13 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
               <MaskOverlay tool={masks} size={{ width: frame.fullWidth, height: frame.fullHeight }} />
             ) : compare.open && image && recipe && info ? (
               <CompareOverlay compare={compare} editor={editor} recipe={recipe} specs={info.adjustments} />
+            ) : retouching && frame && image && recipe ? (
+              <RetouchOverlay
+                tool={retouch}
+                size={{ width: frame.fullWidth, height: frame.fullHeight }}
+                recipe={recipe}
+                photo={{ width: image.fullWidth, height: image.fullHeight }}
+              />
             ) : undefined
           }
         />
@@ -386,6 +407,18 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
                 density={info.maskDensity}
                 disabled={!image}
               />
+            </PanelSection>
+          )}
+          {recipe && (
+            <PanelSection
+              title="Retouch"
+              icon={<RetouchIcon />}
+              count={retouch.spots.length > 0 ? String(retouch.spots.length) : undefined}
+              edited={retouch.spots.length > 0}
+              open={retouchOpen}
+              onToggle={toggleRetouch}
+            >
+              <RetouchControls tool={retouch} disabled={!image} />
             </PanelSection>
           )}
           <PanelSection title="Diagnostics" icon={<DiagnosticsIcon />} defaultOpen={false}>

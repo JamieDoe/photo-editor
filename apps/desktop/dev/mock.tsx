@@ -191,6 +191,7 @@ mockIPC((cmd, payload) => {
         { id: "detail", label: "Detail and effects", fields: ["texture", "clarity", "sharpening", "noiseReduction", "vignette", "grain"], copiedByDefault: true },
         { id: "geometry", label: "Crop, geometry and lens", fields: ["geometry", "chromaticAberration"], copiedByDefault: false },
         { id: "masks", label: "Masks", fields: ["masks"], copiedByDefault: false },
+        { id: "retouch", label: "Retouch", fields: ["spots"], copiedByDefault: false },
       ], curveRegions: [["highlights", "Highlights"], ["lights", "Lights"], ["darks", "Darks"], ["shadows", "Shadows"]].map(([key, label]) => ({ key, label, group: "Tone curve", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" })), grading: [
         { key: "luminance", label: "Luminance", group: "Colour grading", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
         { key: "blending", label: "Blending", group: "Colour grading", min: 0, max: 100, step: 1, default: 50, more: false, unit: "" },
@@ -241,6 +242,11 @@ mockIPC((cmd, payload) => {
         mockMarks.set(p, m);
       }
       return counts();
+    }
+    case "new_spot": {
+      // Dev-only stand-in: the source a little to the right.
+      const { kind, at, radius } = payload as { kind: "heal" | "clone"; at: [number, number]; radius: number };
+      return { kind, x: at[0], y: at[1], sourceX: Math.min(1, at[0] + radius * 3), sourceY: at[1], radius, feather: 30, opacity: 100 };
     }
     case "auto_level":
       // Dev-only stand-in: a small tilt to correct.

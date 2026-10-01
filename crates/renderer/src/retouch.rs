@@ -314,6 +314,31 @@ fn harmonic(ring: &[([f32; 2], [f32; 3])], x: f32, y: f32) -> [f32; 3] {
     sum.map(|s| s / total)
 }
 
+/// A new spot of `kind` at (`x`, `y`) with `radius`, its source found by
+/// [`find_source`] and the default feather and opacity; `None` when no source fits.
+pub fn new_spot(
+    image: &LinearImage,
+    kind: SpotKind,
+    x: f32,
+    y: f32,
+    radius: f32,
+    avoid: &[Spot],
+) -> Option<Spot> {
+    let [source_x, source_y] = find_source(image, x, y, radius, avoid)?;
+    Some(
+        Spot {
+            kind,
+            x,
+            y,
+            source_x,
+            source_y,
+            radius,
+            ..Default::default()
+        }
+        .sanitized(),
+    )
+}
+
 /// A source for a new spot at (`x`, `y`) with `radius` (as in [`Spot`]): a nearby
 /// disc, wholly inside the photo and clear of `avoid`'s spots, whose surroundings
 /// look most like the spot's, so a heal or clone blends in. `None` when no disc fits.

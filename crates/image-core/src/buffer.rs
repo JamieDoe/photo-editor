@@ -223,6 +223,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn every_image_has_its_own_id() {
+        let a = LinearImage::new(1, 1, vec![1, 2, 3]).unwrap();
+        let b = LinearImage::new(1, 1, vec![1, 2, 3]).unwrap();
+        // Same pixels, equal, but never the same image to a cache.
+        assert!(a == b);
+        assert_ne!(a.id(), b.id());
+        // A clone is the same image.
+        assert_eq!(a.clone().id(), a.id());
+    }
+
+    #[test]
     fn linear_image_validates_length() {
         assert!(LinearImage::new(2, 2, vec![0; 12]).is_ok());
         assert_eq!(

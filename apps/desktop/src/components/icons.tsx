@@ -63,6 +63,14 @@ export const ColourIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** The design's Retouch icon: a sticking plaster. */
+export const RetouchIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="1.5" y="5.5" width="13" height="5" rx="2.5" transform="rotate(-45 8 8)" />
+    <path d="M7 7h.01M9 9h.01M9 7h.01M7 9h.01" />
+  </Icon>
+);
+
 /** Calibration (ADR 0053): three overlapping primaries. Not in the design. */
 export const CalibrationIcon = (p: IconProps) => (
   <Icon {...p}>
