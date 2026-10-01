@@ -60,6 +60,9 @@ export function inCollection(marks: MarksDto, kind: CollectionKindDto): boolean 
       return marks.rating > 0;
     case "rejected":
       return marks.flag === "reject";
+    case "recent":
+      // Not a mark: the catalogue chose them.
+      return true;
   }
 }
 
@@ -67,6 +70,7 @@ export const COLLECTION_NAMES: Record<CollectionKindDto, string> = {
   picks: "Picks",
   rated: "Rated",
   rejected: "Rejected",
+  recent: "Recently imported",
 };
 
 export const starsText = (rating: number) => "★".repeat(Math.max(0, Math.min(5, rating)));

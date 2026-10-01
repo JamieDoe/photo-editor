@@ -543,7 +543,9 @@ fn marks_follow_a_moved_photo_and_collections_skip_missing_files() {
         crate::CollectionCounts {
             picks: 1,
             rated: 1,
-            rejected: 0
+            rejected: 0,
+            // Both were indexed just now; the missing one is not counted.
+            recent: 1
         }
     );
 }
@@ -714,4 +716,83 @@ fn albums_hold_photos_follow_moves_and_skip_missing_files() {
     assert_eq!(l.cat.albums().unwrap()[0].name, "Prints");
     // Deleting an album deletes no photos (the missing one is kept for when it returns).
     assert_eq!(l.cat.photo_count().unwrap(), 3);
+}
+
+#[test]
+fn search_finds_photos_by_folder_camera_lens_and_date() {
+    let l = library("cat-search");
+    let rec = |name: &str, seed: u8| {
+        l.cat
+            .record_file(
+                l.folder,
+                &write(&l.root.join(name), &photo_bytes(seed)),
+                ScanId(1),
+            )
+            .unwrap()
+            .0
+    };
+    let skye = rec("Isle of Skye/DSC_0001.NEF", 31);
+    let lake = rec("Lake District/IMG_0420.JPG", 32);
+    let undated = rec("Lake District/scan_50%.tif", 33);
+    let details = |camera: &str, lens: &str, at: &str| crate::PhotoDetails {
+        camera_make: Some("NIKON CORPORATION".into()),
+        camera_model: Some(camera.into()),
+        lens: Some(lens.into()),
+        captured_at: Some(at.into()),
+        ..Default::default()
+    };
+    l.cat
+        .set_details(&[
+            (
+                skye,
+                Some(details(
+                    "Z 6",
+                    "NIKKOR Z 24-70mm f/4 S",
+                    "2025-06-24T21:10:00",
+                )),
+            ),
+            (
+                lake,
+                Some(details("Z f", "NIKKOR Z 40mm f/2", "2026-09-03T08:00:00")),
+            ),
+        ])
+        .unwrap();
+    let found = |q: &str| {
+        let mut names: Vec<String> = l
+            .cat
+            .search(q)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    };
+    // A place, from the folder; case does not matter.
+    assert_eq!(found("skye"), ["DSC_0001.NEF"]);
+    assert_eq!(found("LAKE district"), ["IMG_0420.JPG", "scan_50%.tif"]);
+    // Camera and lens.
+    assert_eq!(found("nikon 40mm"), ["IMG_0420.JPG"]);
+    // Dates: a year, a month, a day, an ISO prefix; together, all must match.
+    assert_eq!(found("2025"), ["DSC_0001.NEF"]);
+    assert_eq!(found("sept"), ["IMG_0420.JPG"]);
+    assert_eq!(found("june 24"), ["DSC_0001.NEF"]);
+    assert_eq!(found("2026-09"), ["IMG_0420.JPG"]);
+    assert!(found("skye 2026").is_empty());
+    // A % is a character, not a wildcard; nothing for nothing.
+    assert_eq!(found("50%"), ["scan_50%.tif"]);
+    assert!(found("  ").is_empty());
+    // The folders above the library never match: every photo is under them.
+    let above = l
+        .root
+        .parent()
+        .unwrap()
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    assert!(found(&above).is_empty(), "{above}");
+    // The library folder's own name does.
+    assert_eq!(found("photos").len(), 3);
+    let _ = undated;
 }

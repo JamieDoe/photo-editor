@@ -17,6 +17,7 @@ mod identity;
 mod marks;
 mod presets;
 mod schema;
+mod search;
 
 pub use albums::{Album, AlbumId};
 pub use backup::{BackupInfo, BackupKind, BackupStore, newest_valid, schema_version_of, to_prune};
@@ -25,7 +26,9 @@ pub use details::{METADATA_VERSION, PhotoDetails, camera_name};
 pub use edits::StoredEdit;
 pub use error::CatalogueError;
 pub use identity::SourceIdentity;
-pub use marks::{Collection, CollectionCounts, CollectionEntry, Flag, MarkChange, Marks, Rating};
+pub use marks::{
+    Collection, CollectionCounts, CollectionEntry, Flag, MarkChange, Marks, RECENT_DAYS, Rating,
+};
 pub use presets::{PresetId, StoredPreset};
 pub use schema::SCHEMA_VERSION;
 

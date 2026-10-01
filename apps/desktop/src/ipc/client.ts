@@ -13,6 +13,7 @@ import type { CollectionKindDto } from "./generated/CollectionKindDto";
 import type { AlbumDto } from "./generated/AlbumDto";
 import type { AlbumListingDto } from "./generated/AlbumListingDto";
 import type { CollectionListingDto } from "./generated/CollectionListingDto";
+import type { SearchResultsDto } from "./generated/SearchResultsDto";
 import type { DiagnosticsDto } from "./generated/DiagnosticsDto";
 import type { EditRecipe } from "./generated/EditRecipe";
 import type { EditSavedDto } from "./generated/EditSavedDto";
@@ -153,6 +154,9 @@ export const deleteAlbum = (id: number) => invoke<void>("delete_album", { id });
 export const addToAlbum = (id: number, paths: string[]) => invoke<AlbumDto>("add_to_album", { id, paths });
 export const removeFromAlbum = (id: number, paths: string[]) => invoke<AlbumDto>("remove_from_album", { id, paths });
 export const albumPhotos = (id: number) => invoke<AlbumListingDto>("album_photos", { id });
+/** The library's photos matching every word of `query` (ADR 0056): file and folder
+ *  names, camera, lens, capture date. */
+export const searchLibrary = (query: string) => invoke<SearchResultsDto>("search_library", { query });
 export const libraryCollection = (kind: CollectionKindDto) =>
   invoke<CollectionListingDto>("library_collection", { kind });
 

@@ -7,6 +7,7 @@ import type { CollectionKindDto } from "../../ipc/generated/CollectionKindDto";
 import type { CollectionListingDto } from "../../ipc/generated/CollectionListingDto";
 import type { FolderListingDto } from "../../ipc/generated/FolderListingDto";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
+import type { SearchResultsDto } from "../../ipc/generated/SearchResultsDto";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { LibraryStatusDto } from "../../ipc/generated/LibraryStatusDto";
@@ -43,6 +44,11 @@ export function useLibrary() {
   /** The albums (ADR 0055), and the one being viewed instead of a folder. */
   const [albums, setAlbums] = useState<AlbumDto[]>([]);
   const [album, setAlbum] = useState<AlbumListingDto | null>(null);
+  /** A search of the whole library (ADR 0056): what is typed, and its results, shown
+   *  over whatever view is underneath until cleared. */
+  const [query, setQuery] = useState("");
+  const [search, setSearch] = useState<SearchResultsDto | null>(null);
+  const searchSeq = useRef(0);
   const requestRef = useRef(0);
   const listingRef = useRef<FolderListingDto | null>(null);
   listingRef.current = listing;
@@ -114,16 +120,39 @@ export function useLibrary() {
     return result;
   }, [load, index]);
 
+  /** Searches as the photographer types: after a short pause, the newest query only. */
+  const runSearch = useCallback((q: string) => {
+    setQuery(q);
+    const id = ++searchSeq.current;
+    if (!q.trim()) {
+      setSearch(null);
+      return;
+    }
+    window.setTimeout(() => {
+      if (id !== searchSeq.current) return;
+      ipc.searchLibrary(q).then(
+        (results) => id === searchSeq.current && setSearch(results),
+        async (e: unknown) => id === searchSeq.current && setError(await toAppError(e)),
+      );
+    }, 180);
+  }, []);
+  const clearSearch = useCallback(() => {
+    searchSeq.current++;
+    setQuery("");
+    setSearch(null);
+  }, []);
+
   const openFolder = useCallback(
     async (path: string) => {
       const result = await load(() => ipc.listFolder(path));
       if (result) {
         setCollection(null);
         setAlbum(null);
+        clearSearch();
       }
       return result;
     },
-    [load],
+    [load, clearSearch],
   );
 
   const openCollection = useCallback(async (kind: CollectionKindDto) => {
@@ -132,13 +161,14 @@ export function useLibrary() {
     try {
       setCollection(await ipc.libraryCollection(kind));
       setAlbum(null);
+      clearSearch();
       setError(null);
     } catch (e) {
       setError(await toAppError(e));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clearSearch]);
 
   const openAlbum = useCallback(async (id: number) => {
     setLoading(true);
@@ -147,6 +177,7 @@ export function useLibrary() {
       const listing = await ipc.albumPhotos(id);
       setAlbum(listing);
       setCollection(null);
+      clearSearch();
       setAlbums((all) => all.map((a) => (a.id === id ? listing.album : a)));
       setError(null);
     } catch (e) {
@@ -155,7 +186,7 @@ export function useLibrary() {
     } finally {
       setLoading(false);
     }
-  }, [refreshAlbums]);
+  }, [refreshAlbums, clearSearch]);
 
   /** Runs an album change; the albums (and the album shown, if it is the one changed)
    *  are refreshed after. Errors are shown; returns the album, or null. */
@@ -175,12 +206,14 @@ export function useLibrary() {
     [refreshAlbums],
   );
 
-  /** The photos of the current view (album, collection or folder), before filtering. */
-  const photos: PhotoEntryDto[] = album?.photos ?? collection?.photos ?? listing?.photos ?? [];
+  /** The photos of the current view (search, album, collection or folder), before
+   *  filtering. */
+  const photos: PhotoEntryDto[] = search?.photos ?? album?.photos ?? collection?.photos ?? listing?.photos ?? [];
+  const shownCollection = search || album ? null : (collection?.kind ?? null);
   const photosRef = useRef(photos);
   photosRef.current = photos;
   /** What the grid shows: the view's photos after the filter (and collection membership). */
-  const visible = useMemo(() => visiblePhotos(photos, filter, collection?.kind ?? null), [photos, filter, collection?.kind]);
+  const visible = useMemo(() => visiblePhotos(photos, filter, shownCollection), [photos, filter, shownCollection]);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
 
@@ -208,6 +241,7 @@ export function useLibrary() {
       setListing((l) => (l ? { ...l, photos: update(l.photos) } : l));
       setCollection((c) => (c ? { ...c, photos: update(c.photos) } : c));
       setAlbum((a) => (a ? { ...a, photos: update(a.photos) } : a));
+      setSearch((s) => (s ? { ...s, photos: update(s.photos) } : s));
       try {
         const collections = await ipc.setPhotoMarks(paths, change);
         setStatus((s) => (s ? { ...s, collections } : s));
@@ -227,6 +261,7 @@ export function useLibrary() {
     setListing((l) => (l ? { ...l, photos: update(l.photos) } : l));
     setCollection((c) => (c ? { ...c, photos: update(c.photos) } : c));
     setAlbum((a) => (a ? { ...a, photos: update(a.photos) } : a));
+    setSearch((s) => (s ? { ...s, photos: update(s.photos) } : s));
     setThumbRevs((r) => ({ ...r, [path]: (r[path] ?? 0) + 1 }));
   }, []);
 
@@ -280,6 +315,11 @@ export function useLibrary() {
     albums,
     album,
     openAlbum,
+    /** The search box's text, and the results while it has any. */
+    query,
+    search,
+    runSearch,
+    clearSearch,
     /** A new album holding `paths`; opened when `open` is set. */
     createAlbum: async (name: string, paths: string[], open = false) => {
       const made = await albumChange(() => ipc.createAlbum(name, paths));

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
-import { AlbumIcon, CloseIcon, FolderIcon, ImportIcon, MoreIcon, PhotosIcon, PickIcon, RatingStar, RefreshIcon, RejectIcon, StarIcon } from "../../components/icons";
+import { AlbumIcon, CloseIcon, FolderIcon, SearchIcon, ImportIcon, MoreIcon, PhotosIcon, PickIcon, RatingStar, RefreshIcon, RejectIcon, StarIcon } from "../../components/icons";
 import type { CollectionKindDto } from "../../ipc/generated/CollectionKindDto";
 import * as ipc from "../../ipc/client";
 import { formatDateRange } from "../../lib/format";
@@ -58,7 +58,10 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
   const onColumns = useCallback((n: number) => {
     columnsRef.current = n;
   }, []);
-  const { visible, selected, setSelected, setMarks, collection, album } = library;
+  const { visible, selected, setSelected, setMarks, album, search } = library;
+  // A search shows over the view underneath, which comes back when it is cleared.
+  const collection = search ? null : library.collection;
+  const albumShown = search ? null : album;
   const [popover, setPopover] = useState<{ kind: "add" | "album"; anchor: HTMLElement } | null>(null);
   const ticked = new Set(library.batch);
   const targets = library.targets();
@@ -126,6 +129,29 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
   return (
     <div className="library-view">
       <aside className="sidebar-left">
+        <div className="sidebar-search">
+          <label className="search-field">
+            <SearchIcon size={15} />
+            <input
+              type="search"
+              placeholder="Search folders, cameras, dates"
+              aria-label="Search photos"
+              value={library.query}
+              onChange={(e) => library.runSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  library.clearSearch();
+                  e.currentTarget.blur();
+                }
+              }}
+            />
+            {library.query && (
+              <button className="search-clear" aria-label="Clear search" title="Clear search" onClick={library.clearSearch}>
+                <CloseIcon size={11} />
+              </button>
+            )}
+          </label>
+        </div>
         <div className="sidebar-scroll scroll">
           <section className="nav-section" aria-label="Library">
             <div className="nav-label">Library</div>
@@ -134,6 +160,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
               <span className="grow">Indexed photos</span>
               <span className="count">{library.status ? library.status.photos.toLocaleString() : "—"}</span>
             </div>
+            {collectionRow("recent", <ImportIcon size={16} />, counts?.recent)}
             {collectionRow("picks", <PickIcon size={16} />, counts?.picks)}
             {collectionRow("rated", <RatingStar filled={false} />, counts?.rated)}
             {collectionRow("rejected", <RejectIcon size={16} />, counts?.rejected)}
@@ -153,7 +180,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
               <button
                 key={f}
                 className="nav-row"
-                aria-current={!collection && !album && currentRoot === f ? "true" : undefined}
+                aria-current={!collection && !albumShown && !search && currentRoot === f ? "true" : undefined}
                 title={f}
                 onClick={() => void library.openFolder(f)}
               >
@@ -183,7 +210,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
 
       <section className="library-main">
         {library.status?.notice && <p className="notice library-notice">{library.status.notice}</p>}
-        {!listing && !collection && !album ? (
+        {!listing && !collection && !album && !search ? (
           <div className="empty-state">
             {loading ? (
               <p>Loading…</p>
@@ -202,7 +229,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
           <>
             <header className="page-header">
               <div className="page-title">
-                {!collection && !album && listing && listing.breadcrumbs.length > 1 && (
+                {!collection && !albumShown && !search && listing && listing.breadcrumbs.length > 1 && (
                   <nav className="crumbs" aria-label="Folder">
                     {listing.breadcrumbs.slice(0, -1).map((c) => (
                       <span key={c.path}>
@@ -214,10 +241,18 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                     ))}
                   </nav>
                 )}
-                {collection && <span className="crumbs">Across all folders</span>}
-                {album && <span className="crumbs">Album</span>}
+                {(collection || search) && <span className="crumbs">{search ? "Search · across all folders" : "Across all folders"}</span>}
+                {albumShown && <span className="crumbs">Album</span>}
                 <div className="page-title-row">
-                  <h1>{album ? album.album.name : collection ? COLLECTION_NAMES[collection.kind] : listing?.name}</h1>
+                  <h1>
+                    {search
+                      ? `“${search.query.trim()}”`
+                      : albumShown
+                        ? albumShown.album.name
+                        : collection
+                          ? COLLECTION_NAMES[collection.kind]
+                          : listing?.name}
+                  </h1>
                   <span className="subtle">
                     {[photoCount, dateRange].filter(Boolean).join(" · ")}
                     {loading ? " · loading…" : ""}
@@ -234,14 +269,14 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                     </button>
                   </span>
                 )}
-                {album && targets.length > 0 && (
+                {albumShown && targets.length > 0 && (
                   <button
                     className="ghost"
                     onClick={async () => {
                       const n = targets.length;
-                      if (await library.removeFromAlbum(album.album.id, targets)) {
+                      if (await library.removeFromAlbum(albumShown.album.id, targets)) {
                         library.clearBatch();
-                        notify(`Removed ${photosText(n)} from ${album.album.name}`);
+                        notify(`Removed ${photosText(n)} from ${albumShown.album.name}`);
                       }
                     }}
                   >
@@ -259,7 +294,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                     Add to album
                   </button>
                 )}
-                {album && (
+                {albumShown && (
                   <button
                     className="icon-button"
                     aria-label="Rename or delete this album"
@@ -270,7 +305,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                     <MoreIcon />
                   </button>
                 )}
-                {!collection && !album && listing && (
+                {!collection && !albumShown && !search && listing && (
                   <>
                     <button className="ghost" onClick={() => void library.refresh()}>
                       <RefreshIcon />
@@ -304,9 +339,9 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
             <div
               className="library-scroll scroll"
               ref={scrollRef}
-              key={album ? `album:${album.album.id}` : collection ? `collection:${collection.kind}` : listing?.path}
+              key={search ? "search" : albumShown ? `album:${albumShown.album.id}` : collection ? `collection:${collection.kind}` : listing?.path}
             >
-              {!collection && !album && listing && listing.folders.length > 0 && (
+              {!collection && !albumShown && !search && listing && listing.folders.length > 0 && (
                 <div className="chips">
                   {listing.folders.map((f) => (
                     <button key={f.path} className="chip" onClick={() => void library.openFolder(f.path)}>
@@ -318,7 +353,11 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
               )}
               {visible.length === 0 ? (
                 <p className="muted empty-note">
-                  {album
+                  {search
+                    ? library.photos.length === 0
+                      ? `Nothing matches “${search.query.trim()}”. Try a folder or place, a camera, a lens, a year or a month.`
+                      : "No photos match this filter."
+                    : albumShown
                     ? library.photos.length === 0
                       ? "Nothing here yet. Drag photos onto the album in the sidebar, or select some and use Add to album."
                       : "No photos match this filter."
@@ -346,7 +385,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                   onDrag={drag}
                 />
               )}
-              {!collection && !album && listing && listing.skipped > 0 && (
+              {!collection && !albumShown && !search && listing && listing.skipped > 0 && (
                 <p className="muted">{listing.skipped} item(s) couldn’t be read and are not shown.</p>
               )}
             </div>
@@ -356,12 +395,15 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
       {popover?.kind === "add" && (
         <AddToAlbum library={library} paths={targets} anchor={popover.anchor} onClose={() => setPopover(null)} notify={notify} />
       )}
-      {popover?.kind === "album" && album && (
-        <AlbumSettings library={library} album={album.album} anchor={popover.anchor} onClose={() => setPopover(null)} />
+      {popover?.kind === "album" && albumShown && (
+        <AlbumSettings library={library} album={albumShown.album} anchor={popover.anchor} onClose={() => setPopover(null)} />
       )}
     </div>
   );
 }
+
+/** Recently imported reaches back this far (the catalogue's `RECENT_DAYS`). */
+const RECENT_DAYS = 30;
 
 const LAYOUTS: ReadonlyArray<{ id: LibraryLayout; label: string }> = [
   { id: "grid", label: "Grid" },
@@ -370,7 +412,12 @@ const LAYOUTS: ReadonlyArray<{ id: LibraryLayout; label: string }> = [
 
 function emptyMessage(total: number, filter: LibraryFilter, collection: CollectionKindDto | null): string {
   if (collection) {
-    const how = { picks: "Press P to pick the selected photo.", rated: "Press 1–5 to rate the selected photo.", rejected: "Press X to reject the selected photo." };
+    const how = {
+      picks: "Press P to pick the selected photo.",
+      rated: "Press 1–5 to rate the selected photo.",
+      rejected: "Press X to reject the selected photo.",
+      recent: `Photos added to the library in the last ${RECENT_DAYS} days show here.`,
+    };
     return total === 0 ? `Nothing here yet. ${how[collection]}` : "No photos match this filter.";
   }
   if (total === 0) return "No supported photos in this folder.";
