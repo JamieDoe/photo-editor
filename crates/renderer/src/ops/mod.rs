@@ -3,6 +3,7 @@
 //! These are the reference implementations: backends may restructure them (LUTs,
 //! SIMD, shaders) but tests compare backends against these functions.
 
+pub mod colour_grading;
 pub mod colour_mixer;
 pub mod contrast;
 pub mod dehaze;

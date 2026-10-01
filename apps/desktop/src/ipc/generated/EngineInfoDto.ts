@@ -35,4 +35,8 @@ settingGroups: Array<SettingGroup>,
 /**
  * The parametric tone curve's region sliders (ADR 0051).
  */
-curveRegions: Array<AdjustmentSpec>, };
+curveRegions: Array<AdjustmentSpec>, 
+/**
+ * Colour grading's Luminance, Blending and Balance (ADR 0052).
+ */
+grading: Array<AdjustmentSpec>, };

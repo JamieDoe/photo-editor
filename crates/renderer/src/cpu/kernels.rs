@@ -7,6 +7,7 @@ use super::lut::CurveLut;
 use crate::chromatic::ChromaticAberration;
 use crate::geometry::Geometry;
 use crate::masks::{Frame, LocalField};
+use crate::ops::colour_grading;
 use crate::ops::colour_mixer::{self, MixerTable};
 use crate::ops::dehaze::DehazeModel;
 use crate::ops::detail::{self, DetailParams};
@@ -38,6 +39,8 @@ pub(super) enum Kernel {
     ChannelCurves(Box<[CurveLut; 3]>),
     Saturation(f32),
     Vibrance(f32),
+    /// Colour grading (ADR 0052), compiled.
+    Grade(Box<colour_grading::GradeTable>),
     Mixer(Box<MixerTable>),
     /// Highlights/shadows (with the surroundings map) and whites/blacks, with the
     /// gains as lookup tables over "stops below white".
@@ -708,6 +711,11 @@ impl Kernel {
                     *px = vibrance::apply(*px, *amount);
                 }
             }
+            Self::Grade(table) => {
+                for px in rgb.as_chunks_mut::<3>().0 {
+                    *px = colour_grading::apply(*px, table);
+                }
+            }
         }
     }
 }
@@ -811,6 +819,9 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage, frame: Frame) -> 
                 masks = Some(field);
             }
             Stage::Saturation { factor } => out.push(Kernel::Saturation(factor)),
+            Stage::ColourGrading { ref grading } => out.push(Kernel::Grade(Box::new(
+                colour_grading::GradeTable::new(grading),
+            ))),
             Stage::Vibrance { amount } => out.push(Kernel::Vibrance(amount)),
             Stage::Vignette { amount } => out.push(Kernel::Vignette(Box::new(VignetteKernel {
                 amount,

@@ -540,25 +540,39 @@ fn map_settings(s: &Settings) -> Result<LightroomPreset, LightroomError> {
         || r.channel_curves.is_some()
         || s.lists.contains_key("ToneCurvePV2012");
 
+    // Color Grading (ADR 0052), or the older Split Toning it replaced, which filled the
+    // shadows' and highlights' wheels and set the balance.
+    {
+        use renderer::ops::colour_grading::{ColourGrading, GradeWheel};
+        let wheel = |name: &str, split: Option<&str>| {
+            let grade = |part: &str| s.num(&format!("ColorGrade{name}{part}"));
+            let legacy = |part: &str| split.and_then(|p| s.num(&format!("SplitToning{p}{part}")));
+            GradeWheel {
+                hue: grade("Hue").or_else(|| legacy("Hue")).unwrap_or(0.0),
+                saturation: grade("Sat").or_else(|| legacy("Saturation")).unwrap_or(0.0),
+                luminance: grade("Lum").unwrap_or(0.0),
+            }
+        };
+        let grading = ColourGrading {
+            shadows: wheel("Shadow", Some("Shadow")),
+            midtones: wheel("Midtone", None),
+            highlights: wheel("Highlight", Some("Highlight")),
+            global: wheel("Global", None),
+            blending: s.num("ColorGradeBlending").unwrap_or(50.0),
+            balance: s.num("SplitToningBalance").unwrap_or(0.0),
+        };
+        if !grading.is_identity() {
+            r.colour_grading = Some(grading);
+            used = true;
+        }
+    }
+
     let mut left_out = Vec::new();
     let mut note = |present: bool, what: &'static str| {
         if present {
             left_out.push(what);
         }
     };
-    note(
-        [
-            "SplitToningShadowSaturation",
-            "SplitToningHighlightSaturation",
-            "ColorGradeShadowSat",
-            "ColorGradeMidtoneSat",
-            "ColorGradeHighlightSat",
-            "ColorGradeGlobalSat",
-        ]
-        .iter()
-        .any(|k| s.set(k)),
-        "Color Grading",
-    );
     note(
         [
             "RedHue",
@@ -679,7 +693,13 @@ mod tests {
         let channels = r.channel_curves.unwrap();
         assert!(channels.red.is_none() && channels.green.is_none() && channels.blue.is_some());
         // What has no counterpart is named; the mask's own exposure was not taken.
-        assert_eq!(p.left_out, ["Color Grading", "Masks and healing"]);
+        assert_eq!(p.left_out, ["Masks and healing"]);
+        // Color Grading comes across (ADR 0052): the fixture's teal shadows.
+        let grading = r.colour_grading.unwrap();
+        assert_eq!(
+            (grading.shadows.hue, grading.shadows.saturation),
+            (220.0, 12.0)
+        );
         // The region sliders come across (ADR 0051).
         assert_eq!(r.parametric_curve.map(|c| c.darks), Some(-6.0));
     }
@@ -760,7 +780,13 @@ mod tests {
         assert_eq!((curve.darks, curve.shadow_split), (10.0, 30.0));
         // The flat list of curve numbers is read as pairs.
         assert_eq!(r.point_curve.unwrap().points().len(), 3);
-        assert_eq!(p.left_out, ["Color Grading"]);
+        assert!(p.left_out.is_empty(), "{:?}", p.left_out);
+        // The older Split Toning fills the shadows' wheel.
+        let grading = r.colour_grading.unwrap();
+        assert_eq!(
+            (grading.shadows.hue, grading.shadows.saturation),
+            (210.0, 15.0)
+        );
     }
 
     #[test]

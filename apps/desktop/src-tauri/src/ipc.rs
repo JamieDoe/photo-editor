@@ -135,6 +135,8 @@ pub struct EngineInfoDto {
     pub setting_groups: Vec<renderer::settings::SettingGroup>,
     /// The parametric tone curve's region sliders (ADR 0051).
     pub curve_regions: Vec<AdjustmentSpec>,
+    /// Colour grading's Luminance, Blending and Balance (ADR 0052).
+    pub grading: Vec<AdjustmentSpec>,
 }
 
 impl From<EngineInfo> for EngineInfoDto {
@@ -158,6 +160,7 @@ impl From<EngineInfo> for EngineInfoDto {
             mask_density: i.mask_density,
             setting_groups: i.setting_groups,
             curve_regions: i.curve_regions,
+            grading: i.grading,
         }
     }
 }

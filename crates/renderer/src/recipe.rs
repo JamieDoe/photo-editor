@@ -45,7 +45,8 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   one shape at full density.
 /// - 21: adds white balance set as a light and the parametric tone curve (ADR 0051),
 ///   written only when set.
-pub const RECIPE_VERSION: u32 = 21;
+/// - 22: adds colour grading (ADR 0052), written only when set.
+pub const RECIPE_VERSION: u32 = 22;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -123,6 +124,11 @@ pub struct EditRecipe {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub parametric_curve: Option<crate::ops::parametric_curve::ParametricCurve>,
+    /// Colour grading (ADR 0052): tints for the shadows, midtones, highlights and the
+    /// whole picture. `None` (and omitted from the JSON) while no wheel is set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts", ts(optional))]
+    pub colour_grading: Option<crate::ops::colour_grading::ColourGrading>,
     /// Red, green and blue tone curves, after the RGB one. `None` (and omitted from
     /// the JSON) while all three are the diagonal.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -164,6 +170,7 @@ impl Default for EditRecipe {
             chromatic_aberration: None,
             point_curve: None,
             parametric_curve: None,
+            colour_grading: None,
             channel_curves: None,
             masks: Vec::new(),
             look: Look::Standard,
@@ -218,7 +225,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=21 => Ok(Self {
+            7..=22 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -266,6 +273,10 @@ impl EditRecipe {
                 .parametric_curve
                 .map(|c| c.sanitized())
                 .filter(|c| !c.is_identity()),
+            colour_grading: self
+                .colour_grading
+                .map(|g| g.sanitized())
+                .filter(|g| !g.is_identity()),
             channel_curves: self
                 .channel_curves
                 .map(|c| c.sanitized())
@@ -328,6 +339,7 @@ impl EditRecipe {
             && s.chromatic_aberration.is_none()
             && s.point_curve.is_none()
             && s.parametric_curve.is_none()
+            && s.colour_grading.is_none()
             && s.channel_curves.is_none()
             && s.masks.is_empty()
             && s.look == Look::default()
@@ -373,7 +385,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":21,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":22,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 

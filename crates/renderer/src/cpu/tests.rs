@@ -153,6 +153,9 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                     out
                 }
                 Stage::Saturation { factor } => ops::saturation::apply(rgb, factor),
+                Stage::ColourGrading { ref grading } => {
+                    ops::colour_grading::apply(rgb, &ops::colour_grading::GradeTable::new(grading))
+                }
                 Stage::Vibrance { amount } => ops::vibrance::apply(rgb, amount),
                 Stage::ColourMixer { bands } => {
                     ops::colour_mixer::apply(rgb, &ops::colour_mixer::MixerTable::new(&bands))
@@ -184,6 +187,19 @@ fn matches_scalar_reference_for_all_stages() {
         noise_reduction: 70.0,
         vignette: -40.0,
         grain: 30.0,
+        colour_grading: Some(crate::ops::colour_grading::ColourGrading {
+            shadows: crate::ops::colour_grading::GradeWheel {
+                hue: 200.0,
+                saturation: 40.0,
+                luminance: -10.0,
+            },
+            highlights: crate::ops::colour_grading::GradeWheel {
+                hue: 35.0,
+                saturation: 30.0,
+                luminance: 5.0,
+            },
+            ..Default::default()
+        }),
         parametric_curve: Some(crate::ops::parametric_curve::ParametricCurve {
             shadows: 30.0,
             highlights: -40.0,
@@ -325,6 +341,52 @@ fn the_colour_mixer_is_the_black_and_white_mix() {
         grey(&b, 1)
     );
     assert!((grey(&b, 6) - grey(&a, 6)).abs() <= 2, "blue moved");
+}
+
+#[test]
+fn black_and_white_photos_can_be_toned() {
+    // Split toning on black and white (ADR 0052): grading runs after Saturation -100,
+    // so the dark end turns blue and the light end warm, not grey.
+    // A grey ramp in linear light, from near black to bright.
+    let w = 64u32;
+    let data: Vec<u16> = (0..w)
+        .flat_map(|x| {
+            let v = (0.002 + 0.8 * (x as f32 / (w - 1) as f32).powi(2)) * 65535.0;
+            [v as u16; 3]
+        })
+        .collect();
+    let img = LinearImage::new(w, 1, data).unwrap();
+    let toned = EditRecipe {
+        saturation: -100.0,
+        sharpening: 0.0,
+        colour_grading: Some(crate::ops::colour_grading::ColourGrading {
+            shadows: crate::ops::colour_grading::GradeWheel {
+                hue: 220.0,
+                saturation: 60.0,
+                luminance: 0.0,
+            },
+            highlights: crate::ops::colour_grading::GradeWheel {
+                hue: 40.0,
+                saturation: 60.0,
+                luminance: 0.0,
+            },
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let out = render(&toned, &img);
+    let w = w as usize;
+    let px = |x: usize| {
+        let p = &out.data()[x * 3..x * 3 + 3];
+        (i32::from(p[0]), i32::from(p[2]))
+    };
+    let (r_dark, b_dark) = px(w / 10);
+    let (r_light, b_light) = px(w * 9 / 10);
+    assert!(b_dark > r_dark + 3, "dark end not blue: {r_dark} {b_dark}");
+    assert!(
+        r_light > b_light + 3,
+        "light end not warm: {r_light} {b_light}"
+    );
 }
 
 #[test]
