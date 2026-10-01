@@ -258,7 +258,7 @@ fn cbrt(x: f32) -> f32 {
 }
 
 /// Linear sRGB to Oklab (Björn Ottosson's published matrices).
-fn oklab([r, g, b]: [f32; 3]) -> [f32; 3] {
+pub(crate) fn oklab([r, g, b]: [f32; 3]) -> [f32; 3] {
     let l = cbrt(0.412_221_47 * r + 0.536_332_55 * g + 0.051_445_99 * b);
     let m = cbrt(0.211_903_5 * r + 0.680_699_5 * g + 0.107_396_96 * b);
     let s = cbrt(0.088_302_46 * r + 0.281_718_85 * g + 0.629_978_7 * b);

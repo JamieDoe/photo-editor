@@ -30,6 +30,7 @@ s = {
 			WhiteBalance = "Custom",
 			SplitToningShadowHue = 210,
 			SplitToningShadowSaturation = 15,
+			GreenSaturation = -20,
 		},
 		uuid = "00000000-0000-0000-0000-000000000000",
 	},

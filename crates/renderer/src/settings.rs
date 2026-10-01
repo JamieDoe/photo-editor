@@ -58,6 +58,7 @@ pub fn setting_groups() -> Vec<SettingGroup> {
             &["vibrance", "saturation", "mixer", "colourGrading"],
             true,
         ),
+        group("calibration", "Calibration", &["calibration"], true),
         group(
             "detail",
             "Detail and effects",
@@ -187,6 +188,10 @@ mod tests {
                     saturation: 10.0,
                     luminance: 0.0,
                 },
+                ..Default::default()
+            }),
+            calibration: Some(crate::ops::calibration::Calibration {
+                red_hue: 10.0,
                 ..Default::default()
             }),
             parametric_curve: Some(crate::ops::parametric_curve::ParametricCurve {

@@ -153,6 +153,10 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                     out
                 }
                 Stage::Saturation { factor } => ops::saturation::apply(rgb, factor),
+                Stage::Calibration { ref calibration } => ops::calibration::apply(
+                    rgb,
+                    &ops::calibration::CalibrationTable::new(calibration),
+                ),
                 Stage::ColourGrading { ref grading } => {
                     ops::colour_grading::apply(rgb, &ops::colour_grading::GradeTable::new(grading))
                 }
@@ -187,6 +191,13 @@ fn matches_scalar_reference_for_all_stages() {
         noise_reduction: 70.0,
         vignette: -40.0,
         grain: 30.0,
+        calibration: Some(crate::ops::calibration::Calibration {
+            shadow_tint: 20.0,
+            red_hue: 15.0,
+            blue_hue: -40.0,
+            blue_saturation: 30.0,
+            ..Default::default()
+        }),
         colour_grading: Some(crate::ops::colour_grading::ColourGrading {
             shadows: crate::ops::colour_grading::GradeWheel {
                 hue: 200.0,
@@ -386,6 +397,48 @@ fn black_and_white_photos_can_be_toned() {
     assert!(
         r_light > b_light + 3,
         "light end not warm: {r_light} {b_light}"
+    );
+}
+
+#[test]
+fn calibration_moves_colours_and_keeps_greys() {
+    // The classic teal-and-orange calibration (ADR 0053): blue toward cyan and
+    // stronger. Greys stay grey; a blue sky turns toward teal.
+    let level = |v: f32| (v * 65535.0) as u16;
+    let data: Vec<u16> = [[0.18, 0.18, 0.18], [0.6, 0.6, 0.6], [0.05, 0.1, 0.5]]
+        .iter()
+        .flat_map(|p: &[f32; 3]| p.map(level))
+        .collect();
+    let img = LinearImage::new(3, 1, data).unwrap();
+    let plain = EditRecipe {
+        sharpening: 0.0,
+        ..Default::default()
+    };
+    let calibrated = EditRecipe {
+        calibration: Some(crate::ops::calibration::Calibration {
+            blue_hue: -100.0,
+            blue_saturation: 50.0,
+            ..Default::default()
+        }),
+        ..plain.clone()
+    };
+    let (a, b) = (render(&plain, &img), render(&calibrated, &img));
+    let px = |o: &OutputImage, x: usize| {
+        let p = &o.data()[x * 3..x * 3 + 3];
+        [i32::from(p[0]), i32::from(p[1]), i32::from(p[2])]
+    };
+    for x in 0..2 {
+        let (before, after) = (px(&a, x), px(&b, x));
+        assert!(
+            before.iter().zip(after).all(|(p, q)| (p - q).abs() <= 1),
+            "grey moved: {before:?} {after:?}"
+        );
+    }
+    let (before, after) = (px(&a, 2), px(&b, 2));
+    // Toward cyan: more green against the blue.
+    assert!(
+        after[1] - after[2] > before[1] - before[2] + 5,
+        "blue not turned toward cyan: {before:?} {after:?}"
     );
 }
 

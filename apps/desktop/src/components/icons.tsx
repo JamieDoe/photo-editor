@@ -63,6 +63,15 @@ export const ColourIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** Calibration (ADR 0053): three overlapping primaries. Not in the design. */
+export const CalibrationIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <circle cx="8" cy="5.9" r="3.2" />
+    <circle cx="5.7" cy="10" r="3.2" />
+    <circle cx="10.3" cy="10" r="3.2" />
+  </Icon>
+);
+
 /** The design's Auto level icon: a horizon under a chevron. */
 export const LevelIcon = (p: IconProps) => (
   <Icon {...p}>

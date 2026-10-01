@@ -80,6 +80,7 @@ export function isIdentity(r: EditRecipe): boolean {
     r.whiteBalance === undefined &&
     r.parametricCurve === undefined &&
     r.colourGrading === undefined &&
+    r.calibration === undefined &&
     (r.masks ?? []).length === 0 &&
     r.look === "standard"
   );

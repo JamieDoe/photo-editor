@@ -155,4 +155,5 @@ pub struct EngineInfo {
     pub setting_groups: Vec<renderer::settings::SettingGroup>,
     pub curve_regions: Vec<AdjustmentSpec>,
     pub grading: Vec<AdjustmentSpec>,
+    pub calibration: Vec<AdjustmentSpec>,
 }

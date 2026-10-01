@@ -727,3 +727,16 @@ median of 40, three rounds, machine load 5–7. An ungraded render takes 3.3–3
 | A grey's grading tabulated: gain plus tint (kept) | 4.7–5.1 ms | +1.4–1.7 ms |
 
 Release self-test, Nikon Z 6: a split-toned black and white frame rendered in 7.3 ms.
+
+## 36. Calibration (ADR 0053)
+
+A full render of a 1516×1010 synthetic chart (default look, no sharpening), median of
+40, three rounds, machine load 5.6–7.9. An uncalibrated render takes 1.74–1.84 ms.
+
+| Setting | Render | Added |
+|---|---|---|
+| Primaries (one 3×3 matrix) | 2.72–2.82 ms | about +1.0 ms |
+| Primaries and Shadow Tint (colour grading's table, kept) | 5.16–5.26 ms | about +2.4 ms more |
+| Primaries and Shadow Tint, tint tabulated over √luminance | 4.69–5.42 ms | about +2.0 ms more (not kept: within noise, more code) |
+
+Release self-test, Nikon Z 6: a calibrated frame (primaries) rendered in 5.0 ms.

@@ -567,26 +567,30 @@ fn map_settings(s: &Settings) -> Result<LightroomPreset, LightroomError> {
         }
     }
 
+    // Calibration (ADR 0053).
+    {
+        let n = |key: &str| s.num(key).unwrap_or(0.0);
+        let calibration = renderer::ops::calibration::Calibration {
+            shadow_tint: n("ShadowTint"),
+            red_hue: n("RedHue"),
+            red_saturation: n("RedSaturation"),
+            green_hue: n("GreenHue"),
+            green_saturation: n("GreenSaturation"),
+            blue_hue: n("BlueHue"),
+            blue_saturation: n("BlueSaturation"),
+        };
+        if !calibration.is_identity() {
+            r.calibration = Some(calibration);
+            used = true;
+        }
+    }
+
     let mut left_out = Vec::new();
     let mut note = |present: bool, what: &'static str| {
         if present {
             left_out.push(what);
         }
     };
-    note(
-        [
-            "RedHue",
-            "RedSaturation",
-            "GreenHue",
-            "GreenSaturation",
-            "BlueHue",
-            "BlueSaturation",
-            "ShadowTint",
-        ]
-        .iter()
-        .any(|k| s.set(k)),
-        "Calibration",
-    );
     note(
         [
             "MaskGroupBasedCorrections",
@@ -702,6 +706,18 @@ mod tests {
         );
         // The region sliders come across (ADR 0051).
         assert_eq!(r.parametric_curve.map(|c| c.darks), Some(-6.0));
+        // So does Calibration (ADR 0053).
+        let c = r.calibration.unwrap();
+        assert_eq!(
+            (
+                c.shadow_tint,
+                c.red_hue,
+                c.blue_hue,
+                c.blue_saturation,
+                c.green_hue
+            ),
+            (5.0, 12.0, -40.0, 25.0, 0.0)
+        );
     }
 
     #[test]
@@ -787,6 +803,7 @@ mod tests {
             (grading.shadows.hue, grading.shadows.saturation),
             (210.0, 15.0)
         );
+        assert_eq!(r.calibration.map(|c| c.green_saturation), Some(-20.0));
     }
 
     #[test]

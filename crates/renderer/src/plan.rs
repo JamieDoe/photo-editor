@@ -39,6 +39,11 @@ pub enum Stage {
     Detail { params: DetailParams },
     /// Vignette (ADR 0031), -100..100: a gain towards the corners.
     Vignette { amount: f32 },
+    /// Calibration (ADR 0053): the moved primaries as a matrix, and the shadows'
+    /// tint, on scene values before Contrast and the base look.
+    Calibration {
+        calibration: Box<crate::ops::calibration::Calibration>,
+    },
     /// Tone S-curve around mid grey, applied per channel in a perceptual domain.
     Contrast { gamma: f32 },
     /// The Standard base look's tone curve, per channel (ADR 0022).
@@ -77,6 +82,7 @@ impl Stage {
             Self::Detail { .. } => "detail",
             Self::Vignette { .. } => "vignette",
             Self::Grain { .. } => "grain",
+            Self::Calibration { .. } => "calibration",
             Self::Contrast { .. } => "contrast",
             Self::BaseCurve => "base_curve",
             Self::PointCurve { .. } => "point_curve",
@@ -132,7 +138,7 @@ impl RenderPlan {
     ///
     /// Order: white balance -> exposure -> dehaze -> tone (highlights, shadows, whites,
     /// blacks)
-    /// -> detail (texture, clarity) -> contrast -> base look (scene to display tones) -> colour (mixer, vibrance,
+    /// -> detail (texture, clarity) -> vignette -> calibration -> contrast -> base look (scene to display tones) -> colour (mixer, vibrance,
     /// saturation) -> output transform, matching the conceptual pipeline in CLAUDE.md.
     /// Exposure and contrast act on scene-referred values, so the base look's shoulder
     /// still rolls off highlights they push up.
@@ -196,6 +202,11 @@ impl RenderPlan {
         }
         if r.vignette != 0.0 {
             stages.push(Stage::Vignette { amount: r.vignette });
+        }
+        if let Some(calibration) = r.calibration.filter(|c| !c.is_identity()) {
+            stages.push(Stage::Calibration {
+                calibration: Box::new(calibration),
+            });
         }
         if r.contrast != 0.0 {
             stages.push(Stage::Contrast {
