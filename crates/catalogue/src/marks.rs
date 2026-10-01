@@ -76,21 +76,33 @@ pub enum MarkChange {
     Flag(Flag),
 }
 
-/// Library-wide views built from marks.
+/// Library-wide views: built from marks, or (Recently imported) from when photos
+/// joined the library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Collection {
     Picks,
     /// One star or more.
     Rated,
     Rejected,
+    /// First indexed within the last [`RECENT_DAYS`] days (ADR 0056).
+    RecentlyImported,
+}
+
+/// How far back Recently imported reaches.
+pub const RECENT_DAYS: i64 = 30;
+
+/// Photos first indexed after this (ms since the epoch) are recently imported.
+fn recent_cutoff_ms() -> i64 {
+    crate::catalogue::now_ms() - RECENT_DAYS * 24 * 60 * 60 * 1000
 }
 
 impl Collection {
-    fn condition(self) -> &'static str {
+    fn condition(self) -> String {
         match self {
-            Self::Picks => "p.flag = 1",
-            Self::Rated => "p.rating > 0",
-            Self::Rejected => "p.flag = -1",
+            Self::Picks => "p.flag = 1".into(),
+            Self::Rated => "p.rating > 0".into(),
+            Self::Rejected => "p.flag = -1".into(),
+            Self::RecentlyImported => format!("p.created_at_ms >= {}", recent_cutoff_ms()),
         }
     }
 }
@@ -100,6 +112,7 @@ pub struct CollectionCounts {
     pub picks: usize,
     pub rated: usize,
     pub rejected: usize,
+    pub recent: usize,
 }
 
 /// A photo in a collection: its present file and what the catalogue knows about it.
@@ -190,7 +203,7 @@ impl Catalogue {
     /// Present photos in `collection` across the whole library, oldest capture first
     /// (then by path; photos without a capture time last).
     pub fn collection(&self, collection: Collection) -> Result<Vec<CollectionEntry>> {
-        self.entries(collection.condition(), [])
+        self.entries(&collection.condition(), [])
     }
 
     /// Present photos meeting `condition` (SQL over `p`, the photo, and `f`, its file),
@@ -232,7 +245,7 @@ impl Catalogue {
     /// Sizes of the library-wide collections (present photos only).
     pub fn collection_counts(&self) -> Result<CollectionCounts> {
         let conn = self.conn();
-        Ok(conn.query_row(
+        let (picks, rated, rejected) = conn.query_row(
             "SELECT
                COUNT(DISTINCT CASE WHEN p.flag = 1 THEN p.id END),
                COUNT(DISTINCT CASE WHEN p.rating > 0 THEN p.id END),
@@ -241,13 +254,25 @@ impl Catalogue {
              WHERE f.missing = 0 AND (p.flag <> 0 OR p.rating > 0)",
             [],
             |r| {
-                Ok(CollectionCounts {
-                    picks: r.get::<_, i64>(0)? as usize,
-                    rated: r.get::<_, i64>(1)? as usize,
-                    rejected: r.get::<_, i64>(2)? as usize,
-                })
+                Ok((
+                    r.get::<_, i64>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, i64>(2)?,
+                ))
             },
-        )?)
+        )?;
+        let recent: i64 = conn.query_row(
+            "SELECT COUNT(DISTINCT p.id) FROM photos p JOIN files f ON f.photo_id = p.id
+             WHERE f.missing = 0 AND p.created_at_ms >= ?1",
+            [recent_cutoff_ms()],
+            |r| r.get(0),
+        )?;
+        Ok(CollectionCounts {
+            picks: picks as usize,
+            rated: rated as usize,
+            rejected: rejected as usize,
+            recent: recent as usize,
+        })
     }
 }
 

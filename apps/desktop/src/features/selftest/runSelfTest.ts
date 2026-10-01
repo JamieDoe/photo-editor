@@ -310,6 +310,43 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       !albums.listedAfterDelete &&
       albums.photosKept === 3;
 
+    // Search and Recently imported (ADR 0056) through the real commands and catalogue:
+    // the fixtures folder's name, the test photo's camera and capture year find it; a
+    // nonsense word finds nothing; the photos just indexed are recently imported.
+    const searchCheck = await (async () => {
+      if (!indexing) return null;
+      const folderName = indexing.folder.split(/[\\/]/).filter(Boolean).pop() ?? "";
+      const target = (await ipc.listFolder(indexing.folder)).photos.find((p) => p.path === config.imagePath);
+      const camera = target?.details?.camera?.split(/\s+/)[0] ?? "";
+      const year = target?.details?.capturedAt?.slice(0, 4) ?? "";
+      const t = performance.now();
+      const byFolder = await ipc.searchLibrary(folderName);
+      const ms = Math.round((performance.now() - t) * 10) / 10;
+      const byCameraYear = await ipc.searchLibrary(`${camera} ${year}`);
+      const nonsense = await ipc.searchLibrary("zzqxv-nothing");
+      const recent = await ipc.libraryCollection("recent");
+      const status = await ipc.libraryStatus();
+      const has = (r: { photos: { path: string }[] }) => r.photos.some((p) => p.path === config.imagePath);
+      return {
+        query: `${folderName} | ${camera} ${year}`,
+        byFolder: byFolder.photos.length,
+        foundByFolder: has(byFolder),
+        foundByCameraYear: has(byCameraYear),
+        nonsense: nonsense.photos.length,
+        recent: recent.photos.length,
+        recentCount: status.collections.recent,
+        recentHasPhoto: has(recent),
+        searchMs: ms,
+      };
+    })();
+    const searchOk =
+      searchCheck !== null &&
+      searchCheck.foundByFolder &&
+      searchCheck.foundByCameraYear &&
+      searchCheck.nonsense === 0 &&
+      searchCheck.recentHasPhoto &&
+      searchCheck.recent === searchCheck.recentCount;
+
     // Saved edits through the real commands, catalogue and editor: save a recipe,
     // see it in the listing and the thumbnail, reopen the photo with it, then reset.
     const edits = await (async () => {
@@ -1371,6 +1408,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       libraryThumbnails: thumbnailsOk,
       ratingsAndFlags: marksOk,
       albums: albumsOk,
+      search: searchOk,
       savedEdits: editsOk,
       toneCurve: toneCurveOk,
       history: historyOk,
@@ -1435,6 +1473,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       thumbnails,
       marks,
       albums,
+      search: searchCheck,
       edits,
       detailFrame: { size: `${detail.frame.width}x${detail.frame.height}`, rustRenderMs: detail.frame.renderMs, roundTripMs: detail.info.roundTripMs },
       baselineUiFrameGapMs: summarise(baselineGaps),

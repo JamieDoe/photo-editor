@@ -697,7 +697,7 @@ pub enum MarkChangeDto {
     Flag { flag: FlagDto },
 }
 
-/// Library-wide collections built from marks.
+/// Library-wide collections: built from marks, or the recently imported photos.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
@@ -705,6 +705,8 @@ pub enum CollectionKindDto {
     Picks,
     Rated,
     Rejected,
+    /// First indexed within the last 30 days (ADR 0056).
+    Recent,
 }
 
 impl From<CollectionKindDto> for app_core::Collection {
@@ -713,6 +715,7 @@ impl From<CollectionKindDto> for app_core::Collection {
             CollectionKindDto::Picks => Self::Picks,
             CollectionKindDto::Rated => Self::Rated,
             CollectionKindDto::Rejected => Self::Rejected,
+            CollectionKindDto::Recent => Self::RecentlyImported,
         }
     }
 }
@@ -724,6 +727,7 @@ pub struct CollectionCountsDto {
     pub picks: u32,
     pub rated: u32,
     pub rejected: u32,
+    pub recent: u32,
 }
 
 impl From<app_core::CollectionCounts> for CollectionCountsDto {
@@ -732,8 +736,18 @@ impl From<app_core::CollectionCounts> for CollectionCountsDto {
             picks: c.picks as u32,
             rated: c.rated as u32,
             rejected: c.rejected as u32,
+            recent: c.recent as u32,
         }
     }
+}
+
+/// The photos matching a search of the library (ADR 0056).
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SearchResultsDto {
+    pub query: String,
+    pub photos: Vec<PhotoEntryDto>,
 }
 
 /// Photos of a library-wide collection, from the catalogue.
