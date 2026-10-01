@@ -30,18 +30,20 @@ pub async fn export_image(
         }
         (None, _) => {
             let dialog_app = app.clone();
+            let format = single_format(&state);
             let picked = tauri::async_runtime::spawn_blocking(move || {
+                let extensions = format.extensions();
                 dialog_app
                     .dialog()
                     .file()
-                    .add_filter("JPEG", &["jpg", "jpeg"])
-                    .set_file_name("export.jpg")
+                    .add_filter(format_name(format), extensions)
+                    .set_file_name(format!("export.{}", extensions[0]))
                     .blocking_save_file()
             })
             .await
             .map_err(|e| IpcError::internal(e.to_string()))?;
             match picked.and_then(|p| p.into_path().ok()) {
-                Some(p) => with_jpeg_extension(p),
+                Some(p) => with_extension_for(p, format),
                 None => return Ok(None),
             }
         }
@@ -54,9 +56,7 @@ pub async fn export_image(
             image: ImageId(request.image_id),
             recipe: request.recipe,
             destination: destination.clone(),
-            format: ExportFormat::Jpeg {
-                quality: state.settings.get().export.jpeg_quality,
-            },
+            format: single_format(&state),
         },
         move |p| {
             let event = ExportEvent::Progress {
@@ -94,17 +94,43 @@ pub async fn export_image(
     }))
 }
 
-/// Save panels can return a name without an extension; exports are always JPEG.
-fn with_jpeg_extension(path: PathBuf) -> PathBuf {
-    let is_jpeg = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("jpg") || e.eq_ignore_ascii_case("jpeg"));
-    if is_jpeg {
+/// The export format for the remembered settings' choice (ADR 0057).
+pub(crate) fn export_format(format: settings::ExportFileFormat, quality: u8) -> ExportFormat {
+    match format {
+        settings::ExportFileFormat::Jpeg => ExportFormat::Jpeg { quality },
+        settings::ExportFileFormat::Tiff => ExportFormat::Tiff,
+        settings::ExportFileFormat::Png => ExportFormat::Png,
+    }
+}
+
+/// The single-photo export's format: the remembered one.
+fn single_format(state: &AppState) -> ExportFormat {
+    let s = state.settings.get().export;
+    export_format(s.format, s.jpeg_quality)
+}
+
+fn format_name(format: ExportFormat) -> &'static str {
+    match format {
+        ExportFormat::Jpeg { .. } => "JPEG",
+        ExportFormat::Tiff => "TIFF",
+        ExportFormat::Png => "PNG",
+    }
+}
+
+/// Save panels can return a name without the format's extension: it is added.
+fn with_extension_for(path: PathBuf, format: ExportFormat) -> PathBuf {
+    let has = path.extension().and_then(|e| e.to_str()).is_some_and(|e| {
+        format
+            .extensions()
+            .iter()
+            .any(|x| x.eq_ignore_ascii_case(e))
+    });
+    if has {
         path
     } else {
         let mut s = path.into_os_string();
-        s.push(".jpg");
+        s.push(".");
+        s.push(format.extensions()[0]);
         PathBuf::from(s)
     }
 }
@@ -169,6 +195,7 @@ pub async fn start_export(
         settings::ExportSettings::JPEG_QUALITY_MIN,
         settings::ExportSettings::JPEG_QUALITY_MAX,
     );
+    let format = export_format(batch.format.unwrap_or_default(), quality);
     let long_edge = batch.long_edge.map(|e| {
         e.clamp(
             settings::ExportSettings::LONG_EDGE_MIN,
@@ -220,7 +247,7 @@ pub async fn start_export(
                 recipe,
                 folder: folder.clone(),
                 long_edge,
-                quality,
+                format,
             }),
             Err(f) => refused.push(f),
         }

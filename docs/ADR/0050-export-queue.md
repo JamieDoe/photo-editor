@@ -87,7 +87,8 @@ A full-resolution export holds the decoded photo, about 26 bytes a pixel (§4 of
 ## Deviations from the design
 
 Recorded in ADR 0016:
-- three presets instead of four, with Full quality a JPEG;
+- three presets instead of four, with Full quality a JPEG (a 16-bit TIFF since ADR
+  0057, which also added the Format row);
 - the Format, Colour space, Sharpen for and switch rows, and the estimate, are left out
   until they work;
 - progress in the top bar;

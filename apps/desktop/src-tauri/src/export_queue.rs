@@ -24,7 +24,7 @@ pub struct QueuedExport {
     pub recipe: EditRecipe,
     pub folder: PathBuf,
     pub long_edge: Option<u32>,
-    pub quality: u8,
+    pub format: ExportFormat,
 }
 
 #[derive(Default)]
@@ -98,20 +98,25 @@ impl ExportQueue {
     }
 }
 
-/// The file a photo exports to in `folder`: its own name as a JPEG, numbered when that
-/// name is taken on disk or earlier in the run ("DSC_0012-2.jpg"). Never an existing
-/// file, so an export never replaces anything.
-pub fn destination_for(source: &Path, folder: &Path, reserved: &HashSet<PathBuf>) -> PathBuf {
+/// The file a photo exports to in `folder`: its own name with `extension`, numbered
+/// when that name is taken on disk or earlier in the run ("DSC_0012-2.jpg"). Never an
+/// existing file, so an export never replaces anything.
+pub fn destination_for(
+    source: &Path,
+    folder: &Path,
+    extension: &str,
+    reserved: &HashSet<PathBuf>,
+) -> PathBuf {
     let stem = source
         .file_stem()
         .map_or_else(|| "Photo".into(), |s| s.to_string_lossy().into_owned());
     let taken = |p: &Path| p.exists() || reserved.contains(p);
-    let first = folder.join(format!("{stem}.jpg"));
+    let first = folder.join(format!("{stem}.{extension}"));
     if !taken(&first) {
         return first;
     }
     (2..)
-        .map(|n| folder.join(format!("{stem}-{n}.jpg")))
+        .map(|n| folder.join(format!("{stem}-{n}.{extension}")))
         .find(|p| !taken(p))
         .expect("an unused name exists")
 }
@@ -126,7 +131,9 @@ async fn run_queue(app: AppHandle) {
             let mut run = queue.run.lock().expect("export queue lock");
             match run.pending.pop_front() {
                 Some(item) if !run.cancelled => {
-                    let dest = destination_for(&item.source, &item.folder, &run.reserved);
+                    let extension = item.format.extensions()[0];
+                    let dest =
+                        destination_for(&item.source, &item.folder, extension, &run.reserved);
                     run.reserved.insert(dest.clone());
                     Some((item, dest, run.done, run.total))
                 }
@@ -145,9 +152,7 @@ async fn run_queue(app: AppHandle) {
                 source: item.source.clone(),
                 recipe: item.recipe,
                 destination: dest,
-                format: ExportFormat::Jpeg {
-                    quality: item.quality,
-                },
+                format: item.format,
                 long_edge: item.long_edge,
             },
             move |p| {
@@ -182,6 +187,7 @@ async fn run_queue(app: AppHandle) {
                     path: summary.path.display().to_string(),
                     width: summary.width,
                     height: summary.height,
+                    bytes: summary.bytes as u64,
                 });
             }
             Ok(Err(JobError::Cancelled)) => run.cancelled = true,
@@ -241,23 +247,23 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let source = Path::new("/photos/DSC_0012.NEF");
         let mut reserved = HashSet::new();
-        let first = destination_for(source, &dir, &reserved);
+        let first = destination_for(source, &dir, "jpg", &reserved);
         assert_eq!(first, dir.join("DSC_0012.jpg"));
         // Taken earlier in the run, then on disk.
         reserved.insert(first.clone());
         assert_eq!(
-            destination_for(source, &dir, &reserved),
+            destination_for(source, &dir, "jpg", &reserved),
             dir.join("DSC_0012-2.jpg")
         );
         std::fs::write(dir.join("DSC_0012-2.jpg"), b"x").unwrap();
         assert_eq!(
-            destination_for(source, &dir, &reserved),
+            destination_for(source, &dir, "jpg", &reserved),
             dir.join("DSC_0012-3.jpg")
         );
         // A JPEG exported next to itself gets a new name too.
         std::fs::write(dir.join("IMG_1.jpg"), b"x").unwrap();
         assert_eq!(
-            destination_for(&dir.join("IMG_1.jpg"), &dir, &HashSet::new()),
+            destination_for(&dir.join("IMG_1.jpg"), &dir, "jpg", &HashSet::new()),
             dir.join("IMG_1-2.jpg")
         );
         let _ = std::fs::remove_dir_all(&dir);

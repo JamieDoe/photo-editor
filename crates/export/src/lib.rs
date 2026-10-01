@@ -8,19 +8,38 @@ use std::path::{Path, PathBuf};
 
 use image_core::{OutputImage, PixelFormat};
 
+mod icc;
 pub mod resize;
 #[cfg(feature = "turbojpeg")]
 mod turbo;
 
+/// What an export is written as (ADR 0057).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExportFormat {
-    Jpeg { quality: u8 },
+    Jpeg {
+        quality: u8,
+    },
+    /// 8-bit, lossless, marked sRGB.
+    Png,
+    /// 16-bit, lossless (Deflate), with an sRGB profile: for printing and further
+    /// editing.
+    Tiff,
 }
 
 impl ExportFormat {
     pub fn extensions(self) -> &'static [&'static str] {
         match self {
             Self::Jpeg { .. } => &["jpg", "jpeg"],
+            Self::Png => &["png"],
+            Self::Tiff => &["tif", "tiff"],
+        }
+    }
+
+    /// The pixels to render for it: 16-bit for TIFF, 8-bit otherwise.
+    pub fn pixel_format(self) -> PixelFormat {
+        match self {
+            Self::Tiff => PixelFormat::Rgb16,
+            Self::Jpeg { .. } | Self::Png => PixelFormat::Rgb8,
         }
     }
 }
@@ -121,19 +140,27 @@ impl JpegEncoder {
     }
 }
 
-/// Encodes `image` to bytes with the preferred encoder.
+/// Encodes `image` to bytes with the preferred JPEG encoder.
 pub fn encode(image: &OutputImage, format: ExportFormat) -> Result<Vec<u8>, ExportError> {
     encode_with(image, format, JpegEncoder::preferred())
 }
 
-/// Encodes with a specific encoder (benchmarks and parity tests).
+/// Encodes with a specific JPEG encoder (benchmarks and parity tests).
 pub fn encode_with(
     image: &OutputImage,
     format: ExportFormat,
     encoder: JpegEncoder,
 ) -> Result<Vec<u8>, ExportError> {
-    let ExportFormat::Jpeg { quality } = format;
-    let quality = quality.clamp(1, 100);
+    let quality = match format {
+        ExportFormat::Jpeg { quality } => quality.clamp(1, 100),
+        ExportFormat::Png => return encode_png(image),
+        ExportFormat::Tiff => return encode_tiff(image),
+    };
+    if image.format() == PixelFormat::Rgb16 {
+        return Err(ExportError::Encode(
+            "JPEG is 8-bit; got a 16-bit image".into(),
+        ));
+    }
     match encoder {
         #[cfg(feature = "turbojpeg")]
         JpegEncoder::Turbo => turbo::encode(image, quality),
@@ -150,6 +177,11 @@ fn encode_pure_rust(image: &OutputImage, quality: u8) -> Result<Vec<u8>, ExportE
     let color = match image.format() {
         PixelFormat::Rgb8 => jpeg_encoder::ColorType::Rgb,
         PixelFormat::Rgba8 => jpeg_encoder::ColorType::Rgba,
+        PixelFormat::Rgb16 => {
+            return Err(ExportError::Encode(
+                "JPEG is 8-bit; got a 16-bit image".into(),
+            ));
+        }
     };
     let mut out = Vec::with_capacity(image.byte_size() / 4);
     let mut encoder = jpeg_encoder::Encoder::new(&mut out, quality);
@@ -159,6 +191,75 @@ fn encode_pure_rust(image: &OutputImage, quality: u8) -> Result<Vec<u8>, ExportE
         .encode(image.data(), w, h, color)
         .map_err(|e| ExportError::Encode(e.to_string()))?;
     Ok(out)
+}
+
+/// PNG: 8-bit RGB (or RGBA), marked as sRGB so browsers and viewers show it as
+/// rendered.
+fn encode_png(image: &OutputImage) -> Result<Vec<u8>, ExportError> {
+    let err = |e: png::EncodingError| ExportError::Encode(e.to_string());
+    let (color, depth) = match image.format() {
+        PixelFormat::Rgb8 => (png::ColorType::Rgb, png::BitDepth::Eight),
+        PixelFormat::Rgba8 => (png::ColorType::Rgba, png::BitDepth::Eight),
+        PixelFormat::Rgb16 => (png::ColorType::Rgb, png::BitDepth::Sixteen),
+    };
+    let mut out = Vec::with_capacity(image.byte_size() / 2);
+    let mut encoder = png::Encoder::new(&mut out, image.width(), image.height());
+    encoder.set_color(color);
+    encoder.set_depth(depth);
+    encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
+    encoder.set_compression(png::Compression::Balanced);
+    let mut writer = encoder.write_header().map_err(err)?;
+    match image.format() {
+        // PNG samples are big-endian.
+        PixelFormat::Rgb16 => {
+            let be: Vec<u8> = image
+                .data()
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .flat_map(|b| u16::from_ne_bytes(*b).to_be_bytes())
+                .collect();
+            writer.write_image_data(&be).map_err(err)?;
+        }
+        _ => writer.write_image_data(image.data()).map_err(err)?,
+    }
+    writer.finish().map_err(err)?;
+    Ok(out)
+}
+
+/// TIFF: 16-bit RGB (or 8-bit, as given), Deflate with the horizontal predictor
+/// (lossless, about half the size of uncompressed), the sRGB profile embedded, at a
+/// nominal 300 ppi.
+fn encode_tiff(image: &OutputImage) -> Result<Vec<u8>, ExportError> {
+    use tiff::encoder::{Compression, Rational, TiffEncoder, colortype, compression::DeflateLevel};
+    use tiff::tags::{Predictor, ResolutionUnit, Tag};
+    let err = |e: tiff::TiffError| ExportError::Encode(e.to_string());
+    let mut out = std::io::Cursor::new(Vec::with_capacity(image.byte_size() / 2));
+    let mut encoder = TiffEncoder::new(&mut out)
+        .map_err(err)?
+        .with_compression(Compression::Deflate(DeflateLevel::Balanced))
+        .with_predictor(Predictor::Horizontal);
+    let profile = icc::srgb_profile();
+    let (w, h) = (image.width(), image.height());
+    macro_rules! write {
+        ($color:ty, $data:expr) => {{
+            let mut tiff = encoder.new_image::<$color>(w, h).map_err(err)?;
+            tiff.resolution(ResolutionUnit::Inch, Rational { n: 300, d: 1 });
+            tiff.encoder()
+                .write_tag(Tag::IccProfile, &profile[..])
+                .map_err(err)?;
+            tiff.write_data($data).map_err(err)?;
+        }};
+    }
+    match image.format() {
+        PixelFormat::Rgb16 => {
+            let samples = image.samples16().unwrap_or_default();
+            write!(colortype::RGB16, &samples)
+        }
+        PixelFormat::Rgb8 => write!(colortype::RGB8, image.data()),
+        PixelFormat::Rgba8 => write!(colortype::RGBA8, image.data()),
+    }
+    Ok(out.into_inner())
 }
 
 /// Writes `bytes` to `dest` atomically (see [`platform::fs::write_atomic`]).
@@ -313,5 +414,69 @@ mod tests {
     fn write_to_missing_directory_fails_cleanly() {
         let err = write_atomic(Path::new("/nonexistent-dir/out.jpg"), b"x").unwrap_err();
         assert!(matches!(err, ExportError::Io(_)));
+    }
+
+    fn ramp16(w: u32, h: u32) -> OutputImage {
+        let data: Vec<u8> = (0..w * h)
+            .flat_map(|i| {
+                let v = (i * 977 % 65536) as u16;
+                [v, v / 2, 65535 - v]
+            })
+            .flat_map(u16::to_ne_bytes)
+            .collect();
+        OutputImage::from_raw(w, h, PixelFormat::Rgb16, data).unwrap()
+    }
+
+    #[test]
+    fn tiff_keeps_every_16_bit_value_and_carries_the_srgb_profile() {
+        let img = ramp16(37, 23);
+        let bytes = encode(&img, ExportFormat::Tiff).unwrap();
+        let mut dec = tiff::decoder::Decoder::new(std::io::Cursor::new(bytes)).unwrap();
+        assert_eq!(dec.dimensions().unwrap(), (37, 23));
+        assert_eq!(dec.colortype().unwrap(), tiff::ColorType::RGB(16));
+        let profile = dec.get_tag_u8_vec(tiff::tags::Tag::IccProfile).unwrap();
+        assert_eq!(profile, icc::srgb_profile());
+        let tiff::decoder::DecodingResult::U16(samples) = dec.read_image().unwrap() else {
+            panic!("not 16-bit");
+        };
+        assert_eq!(samples, img.samples16().unwrap(), "lossless");
+    }
+
+    #[test]
+    fn png_is_lossless_and_marked_srgb() {
+        let data: Vec<u8> = (0..31 * 17 * 3).map(|i| (i * 37 % 256) as u8).collect();
+        let img = OutputImage::from_raw(31, 17, PixelFormat::Rgb8, data.clone()).unwrap();
+        let bytes = encode(&img, ExportFormat::Png).unwrap();
+        let mut reader = png::Decoder::new(std::io::Cursor::new(bytes))
+            .read_info()
+            .unwrap();
+        assert!(reader.info().srgb.is_some(), "sRGB chunk");
+        let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+        let frame = reader.next_frame(&mut buf).unwrap();
+        assert_eq!((frame.width, frame.height), (31, 17));
+        assert_eq!(&buf[..frame.buffer_size()], &data[..]);
+    }
+
+    #[test]
+    fn formats_have_their_extensions_and_depth() {
+        let src = Path::new("/photos/DSC_0001.NEF");
+        for (format, ok, bad) in [
+            (ExportFormat::Png, "a.png", "a.jpg"),
+            (ExportFormat::Tiff, "a.TIF", "a.png"),
+            (ExportFormat::Tiff, "a.tiff", "a.tifff"),
+        ] {
+            assert!(
+                validate_destination(Path::new(ok), src, format).is_ok(),
+                "{ok}"
+            );
+            assert!(
+                validate_destination(Path::new(bad), src, format).is_err(),
+                "{bad}"
+            );
+        }
+        assert_eq!(ExportFormat::Tiff.pixel_format(), PixelFormat::Rgb16);
+        assert_eq!(ExportFormat::Png.pixel_format(), PixelFormat::Rgb8);
+        // JPEG never takes 16-bit pixels.
+        assert!(encode(&ramp16(4, 4), JPEG).is_err());
     }
 }

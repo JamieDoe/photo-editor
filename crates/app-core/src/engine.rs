@@ -590,9 +590,9 @@ impl Shared {
         });
         let t = Instant::now();
         let plan = RenderPlan::from_recipe(&req.recipe, decoded.info.as_shot_white);
-        let rendered = self
-            .renderer
-            .render(&plan, &decoded.image, PixelFormat::Rgb8, token)?;
+        let rendered =
+            self.renderer
+                .render(&plan, &decoded.image, req.format.pixel_format(), token)?;
         drop(decoded);
         let rendered = match req.long_edge {
             Some(edge) => export::resize::fit_long_edge(&rendered, edge),

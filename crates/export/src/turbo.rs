@@ -8,6 +8,11 @@ pub(crate) fn encode(image: &OutputImage, quality: u8) -> Result<Vec<u8>, Export
     let channels = match image.format() {
         PixelFormat::Rgb8 => 3,
         PixelFormat::Rgba8 => 4,
+        PixelFormat::Rgb16 => {
+            return Err(ExportError::Encode(
+                "JPEG is 8-bit; got a 16-bit image".into(),
+            ));
+        }
     };
     jpeg_turbo::encode(
         image.data(),

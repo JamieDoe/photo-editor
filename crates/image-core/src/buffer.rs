@@ -120,18 +120,34 @@ pub enum PixelFormat {
     Rgba8,
     /// 8-bit RGB. Used for export encoders.
     Rgb8,
+    /// 16-bit RGB, each sample a native-endian `u16` (two bytes). Used for 16-bit
+    /// exports (ADR 0057).
+    Rgb16,
 }
 
 impl PixelFormat {
     pub fn channels(self) -> usize {
         match self {
             Self::Rgba8 => 4,
-            Self::Rgb8 => 3,
+            Self::Rgb8 | Self::Rgb16 => 3,
         }
+    }
+
+    /// Bytes per sample: 1, or 2 for 16-bit.
+    pub fn bytes_per_sample(self) -> usize {
+        match self {
+            Self::Rgba8 | Self::Rgb8 => 1,
+            Self::Rgb16 => 2,
+        }
+    }
+
+    pub fn bytes_per_pixel(self) -> usize {
+        self.channels() * self.bytes_per_sample()
     }
 }
 
-/// Display-encoded (sRGB) 8-bit image produced by the renderer.
+/// Display-encoded (sRGB) image produced by the renderer: 8-bit, or 16-bit for
+/// exports (samples stored as native-endian byte pairs).
 #[derive(Clone, PartialEq)]
 pub struct OutputImage {
     width: u32,
@@ -146,7 +162,7 @@ impl OutputImage {
         if width == 0 || height == 0 {
             return Err(ImageError::EmptyDimensions);
         }
-        let len = width as usize * height as usize * format.channels();
+        let len = width as usize * height as usize * format.bytes_per_pixel();
         Ok(Self {
             width,
             height,
@@ -164,7 +180,7 @@ impl OutputImage {
         if width == 0 || height == 0 {
             return Err(ImageError::EmptyDimensions);
         }
-        let expected = width as usize * height as usize * format.channels();
+        let expected = width as usize * height as usize * format.bytes_per_pixel();
         if data.len() != expected {
             return Err(ImageError::LengthMismatch {
                 expected,
@@ -197,6 +213,18 @@ impl OutputImage {
 
     pub fn data_mut(&mut self) -> &mut [u8] {
         &mut self.data
+    }
+
+    /// A 16-bit image's samples (`None` for 8-bit images).
+    pub fn samples16(&self) -> Option<Vec<u16>> {
+        (self.format == PixelFormat::Rgb16).then(|| {
+            self.data
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|b| u16::from_ne_bytes(*b))
+                .collect()
+        })
     }
 
     pub fn into_data(self) -> Vec<u8> {
