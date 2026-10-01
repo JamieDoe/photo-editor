@@ -81,12 +81,12 @@ export function ColourGradingControls({
           onPointerCancel={() => (dragging.current = false)}
           onDoubleClick={() => !disabled && onChange(withWheel(recipe, range, { hue: 0, saturation: 0 }))}
           onKeyDown={(e) => {
-            // Arrows: left/right turn the hue, up/down change the strength.
+            // Arrows: right/left turn the hue up/down the wheel, up/down change the strength.
             const step = e.shiftKey ? 10 : 1;
             const change =
-              e.key === "ArrowLeft"
+              e.key === "ArrowRight"
                 ? { hue: (wheel.hue + step) % 360 }
-                : e.key === "ArrowRight"
+                : e.key === "ArrowLeft"
                   ? { hue: (wheel.hue - step + 360) % 360 }
                   : e.key === "ArrowUp"
                     ? { saturation: Math.min(100, wheel.saturation + step) }
