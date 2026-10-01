@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ColourIcon, CompareIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, UndoIcon } from "../../components/icons";
+import { CalibrationIcon, ColourIcon, CompareIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, UndoIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../../ipc/generated/MarksDto";
@@ -24,6 +24,8 @@ import { PanelFooter } from "./PanelFooter";
 import { PanelSection } from "./PanelSection";
 import { ColourGradingControls } from "./ColourGradingControls";
 import { gradingEdited } from "./colourGrading";
+import { CalibrationControls } from "./CalibrationControls";
+import { calibrationEdited } from "./calibration";
 import { PresetStrip } from "./PresetStrip";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
@@ -340,6 +342,11 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
           {info && recipe && (
             <PanelSection title="Colour grading" icon={<ColourIcon />} edited={gradingEdited(recipe)} defaultOpen={false}>
               <ColourGradingControls specs={info.grading} recipe={recipe} onChange={editor.setRecipe} disabled={!image} />
+            </PanelSection>
+          )}
+          {info && recipe && (
+            <PanelSection title="Calibration" icon={<CalibrationIcon />} edited={calibrationEdited(recipe)} defaultOpen={false}>
+              <CalibrationControls specs={info.calibration} recipe={recipe} onChange={editor.setRecipe} disabled={!image} />
             </PanelSection>
           )}
           {info && recipe && (

@@ -39,4 +39,8 @@ curveRegions: Array<AdjustmentSpec>,
 /**
  * Colour grading's Luminance, Blending and Balance (ADR 0052).
  */
-grading: Array<AdjustmentSpec>, };
+grading: Array<AdjustmentSpec>, 
+/**
+ * Calibration's sliders (ADR 0053).
+ */
+calibration: Array<AdjustmentSpec>, };
