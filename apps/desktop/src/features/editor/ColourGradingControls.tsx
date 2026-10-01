@@ -1,7 +1,7 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
-import { GRADE_RANGES, gradingOf, wheelAt, wheelPoint, withGrading, withWheel, type GradeRange } from "./colourGrading";
+import { GRADE_RANGES, gradingOf, nudgeWheel, wheelAt, wheelPoint, withGrading, withWheel, type GradeRange } from "./colourGrading";
 import { Slider } from "./Slider";
 import { formatSliderValue } from "./sliderTrack";
 
@@ -81,18 +81,11 @@ export function ColourGradingControls({
           onPointerCancel={() => (dragging.current = false)}
           onDoubleClick={() => !disabled && onChange(withWheel(recipe, range, { hue: 0, saturation: 0 }))}
           onKeyDown={(e) => {
-            // Arrows: right/left turn the hue up/down the wheel, up/down change the strength.
-            const step = e.shiftKey ? 10 : 1;
-            const change =
-              e.key === "ArrowRight"
-                ? { hue: (wheel.hue + step) % 360 }
-                : e.key === "ArrowLeft"
-                  ? { hue: (wheel.hue - step + 360) % 360 }
-                  : e.key === "ArrowUp"
-                    ? { saturation: Math.min(100, wheel.saturation + step) }
-                    : e.key === "ArrowDown"
-                      ? { saturation: Math.max(0, wheel.saturation - step) }
-                      : null;
+            // Arrows move the point the way they point, as dragging does (Shift: further).
+            const step = e.shiftKey ? 0.1 : 0.02;
+            const moves: Record<string, [number, number]> = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] };
+            const move = moves[e.key];
+            const change = move ? nudgeWheel(wheel, ...move) : null;
             if (!change || disabled) return;
             // The arrows are the wheel's: they must not also step to another photo.
             e.preventDefault();

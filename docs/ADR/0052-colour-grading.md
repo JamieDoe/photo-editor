@@ -62,8 +62,8 @@ grading.
    - A switch picks the range: Shadows, Midtones, Highlights or Global. A dot marks
      ranges that are set.
    - One 128 px wheel: drag or click the point. Its direction is the hue, its distance
-     from the centre the strength. Double-click clears it; arrow keys turn and
-     strengthen it.
+     from the centre the strength. Double-click clears it; arrow keys move the point
+     the way they point, as dragging does (Shift for bigger steps).
    - A readout shows hue and strength, then the range's Luminance, and the sections'
      Blending and Balance.
 7. **Tests:**

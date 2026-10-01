@@ -57,6 +57,13 @@ export function wheelPoint(w: GradeWheel): { x: number; y: number } {
   return { x: r * Math.cos(t), y: r * Math.sin(t) };
 }
 
+/** The wheel's point moved by (dx, dy) (the wheel's radius is 1, y up), as the
+ *  arrow keys move it. A move of at least 0.02 always changes the rounded result. */
+export function nudgeWheel(w: GradeWheel, dx: number, dy: number): { hue: number; saturation: number } {
+  const p = wheelPoint(w);
+  return wheelAt(p.x + dx, p.y + dy);
+}
+
 /** The hue and saturation of a point on the wheel; outside it counts as its edge. */
 export function wheelAt(x: number, y: number): { hue: number; saturation: number } {
   const r = Math.min(1, Math.hypot(x, y));
