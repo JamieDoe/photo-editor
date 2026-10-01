@@ -70,6 +70,12 @@ function draggedPaths(e: DragEvent): string[] {
   }
 }
 
+/** Photos added to an album: the ticks that chose them are done with, so they clear
+ *  (a single unticked photo dragged leaves other ticks alone). */
+function doneWith(library: LibraryApi, paths: string[]) {
+  if (paths.some((p) => library.batch.includes(p))) library.clearBatch();
+}
+
 export const photosText = (n: number) => `${n.toLocaleString()} photo${n === 1 ? "" : "s"}`;
 
 /** The sidebar's Albums: each with its cover, name and count; + makes a new one.
@@ -93,7 +99,10 @@ export function AlbumsNav({ library, notify }: { library: LibraryApi; notify: (m
     if (paths.length === 0) return;
     const before = album.count;
     const after = await library.addToAlbum(album.id, paths);
-    if (after) notify(after.count === before ? `Already in ${after.name}` : `Added ${photosText(after.count - before)} to ${after.name}`);
+    if (after) {
+      notify(after.count === before ? `Already in ${after.name}` : `Added ${photosText(after.count - before)} to ${after.name}`);
+      doneWith(library, paths);
+    }
   };
   const startNaming = () => setNaming(true);
   return (
@@ -184,14 +193,20 @@ export function AddToAlbum({
   const [name, setName] = useState("");
   const add = async (album: AlbumDto) => {
     const after = await library.addToAlbum(album.id, paths);
-    if (after) notify(after.count === album.count ? `Already in ${after.name}` : `Added ${photosText(after.count - album.count)} to ${after.name}`);
+    if (after) {
+      notify(after.count === album.count ? `Already in ${after.name}` : `Added ${photosText(after.count - album.count)} to ${after.name}`);
+      doneWith(library, paths);
+    }
     onClose();
   };
   const create = async (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
     const made = await library.createAlbum(name, paths);
-    if (made) notify(`Added ${photosText(made.count)} to ${made.name}`);
+    if (made) {
+      notify(`Added ${photosText(made.count)} to ${made.name}`);
+      doneWith(library, paths);
+    }
     onClose();
   };
   return (

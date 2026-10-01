@@ -67,8 +67,9 @@ are separate steps (see Consequences).
        ticked ones; the row lights while they are over it);
      - or use **Add to album** in the header, which lists the albums and can make a
        new one with the photos.
-     - It acts on the ticked photos, or else the selected one, and a toast confirms
-       ("Added 3 photos to Portfolio", or "Already in Portfolio").
+     - It acts on the selected and ticked photos, and a toast confirms ("Added 3
+       photos to Portfolio", or "Already in Portfolio"). The ticks then clear: they
+       have done their job.
    - **Viewing an album:**
      - the header reads "Album", then the name, count and date range;
      - **Remove from album** takes the ticked or selected photos out;
