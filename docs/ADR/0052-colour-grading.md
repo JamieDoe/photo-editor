@@ -28,8 +28,13 @@ grading.
    - A hue's direction is that of the fully saturated colour at it.
    - A pixel's lightness gives it weights for the ranges: shadows `(1 − x)^k`,
      highlights `x^k`, midtones the rest.
-   - `x` is lightness bent so that Balance's point lands in the middle. Blending sets
-     `k`: 4 at 0, 2 at 50, 1 at 100.
+   - `x` is lightness bent so that the point where shadows give way to highlights
+     lands in the middle. That point is middle grey (18% luminance) at Balance 0, so
+     a photo's typical tones count as midtones; Balance moves it.
+   - Blending sets `k`: 6 at 0, 3 at 50, 1.5 at 100. At the default, a tone halfway
+     from middle grey to white takes about a fifth of the highlights' tint. (The first
+     version put the point at Oklab L 0.5 with `k` 2, and a highlight tint spread
+     over most of a photo as a cast.)
    - At full strength a wheel moves chroma by 0.10, and luminance at ±100 moves
      lightness by 0.12.
 4. **Applied through a table over lightness.** What grading does to a grey of each

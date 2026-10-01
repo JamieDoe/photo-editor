@@ -4,9 +4,9 @@
 //!
 //! The tints are worked out in Oklab, so a tint's strength looks alike at any hue.
 //! Lightness gives weights for the three ranges: shadows `(1 - x)^k`, highlights
-//! `x^k`, midtones the rest, where `x` is the lightness bent so that Balance moves the
-//! point where shadows give way to highlights, and Blending sets `k` (how much the
-//! ranges overlap). At each lightness, the wheels' tints add to a grey's colour (a, b)
+//! `x^k`, midtones the rest, where `x` is the lightness bent so that the point where
+//! shadows give way to highlights (middle grey, moved by Balance) lands at 0.5, and
+//! Blending sets `k` (how much the ranges overlap). At each lightness, the wheels' tints add to a grey's colour (a, b)
 //! and their brightnesses to its lightness, by weight; the global wheel applies
 //! everywhere.
 //!
@@ -23,6 +23,13 @@ use serde::{Deserialize, Serialize};
 const MAX_CHROMA: f32 = 0.10;
 /// The most a brightness slider at ±100 moves lightness (Oklab L).
 const MAX_LIGHTNESS: f32 = 0.12;
+/// Where shadows give way to highlights at Balance 0: middle grey (18% luminance), so
+/// a photo's typical tones are midtones rather than mostly highlights.
+const MIDDLE_GREY_L: f32 = 0.5646;
+/// The weights' exponent at Blending 50: steep enough that a range's tint stays mostly
+/// in its own tones (a tone halfway from middle grey to white takes about a fifth of
+/// the highlights' tint), so a split tone reads as one, not as an overall cast.
+const DEFAULT_K: f32 = 3.0;
 
 /// One wheel: a hue (degrees on the colour wheel: 0 red, 120 green, 240 blue), how
 /// strongly to tint toward it (0..100), and a brightness change (-100..100).
@@ -125,7 +132,7 @@ impl GradeTable {
         let g = g.sanitized();
         let wheels = g.wheels();
         // Positive balance gives highlights more: the point between moves down.
-        let pivot = 0.5 - g.balance / 100.0 * 0.25;
+        let pivot = MIDDLE_GREY_L - g.balance / 100.0 * 0.25;
         let mut t = Self {
             chroma: wheels.map(|w| {
                 let d = hue_direction(w.hue);
@@ -134,7 +141,7 @@ impl GradeTable {
             }),
             lightness: wheels.map(|w| w.luminance / 100.0 * MAX_LIGHTNESS),
             bend: 0.5f32.ln() / pivot.ln(),
-            k: 2.0 * 2f32.powf((50.0 - g.blending) / 50.0),
+            k: DEFAULT_K * 2f32.powf((50.0 - g.blending) / 50.0),
             gains: Vec::new(),
         };
         t.gains = (0..=STEPS)
@@ -357,7 +364,7 @@ mod tests {
     #[test]
     fn balance_and_blending_shape_the_ranges() {
         let base = GradeTable::new(&ColourGrading::default());
-        let mid = 0.5;
+        let mid = MIDDLE_GREY_L;
         let w = base.weights(mid);
         assert!((w[0] - w[2]).abs() < 1e-5, "even at the middle: {w:?}");
         // Positive balance: the middle already counts as highlights.
@@ -378,6 +385,19 @@ mod tests {
             let w = sharp.weights(l);
             assert!((w.iter().sum::<f32>() - 1.0).abs() < 1e-5);
         }
+    }
+
+    #[test]
+    fn ranges_keep_to_their_own_tones() {
+        let t = GradeTable::new(&ColourGrading::default());
+        let at = |luminance: f32| t.weights(luminance.cbrt());
+        // Middle grey is mostly midtones.
+        assert!(at(0.18)[1] > 0.7, "{:?}", at(0.18));
+        // A mid-bright tone takes only a little of the highlights' tint...
+        assert!(at(0.3)[2] < 0.25, "{:?}", at(0.3));
+        // ...and near-white and near-black ones most of their range's.
+        assert!(at(0.8)[2] > 0.6, "{:?}", at(0.8));
+        assert!(at(0.01)[0] > 0.6, "{:?}", at(0.01));
     }
 
     #[test]

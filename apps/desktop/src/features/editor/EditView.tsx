@@ -95,7 +95,8 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
   // Ignored while a control (such as a slider) has focus, so its own keys still work.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (hasCommandModifier(e) || isTextEntry(e.target) || e.target instanceof HTMLInputElement) return;
+      if (e.defaultPrevented || hasCommandModifier(e) || isTextEntry(e.target) || e.target instanceof HTMLInputElement) return;
+      if (e.target instanceof Element && e.target.closest('[role="slider"]')) return;
       // \ shows the photo before and after editing, as in other editors.
       if (e.key === "\\" && image) {
         toggleCompare();

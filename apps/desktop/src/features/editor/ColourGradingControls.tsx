@@ -94,7 +94,9 @@ export function ColourGradingControls({
                       ? { saturation: Math.max(0, wheel.saturation - step) }
                       : null;
             if (!change || disabled) return;
+            // The arrows are the wheel's: they must not also step to another photo.
             e.preventDefault();
+            e.stopPropagation();
             onChange(withWheel(recipe, range, change));
           }}
         >
