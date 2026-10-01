@@ -306,6 +306,13 @@ Each colour supports:
 - Blending
 - Balance
 
+### Calibration
+
+For photographers coming from Lightroom and its presets (agreed 2026-09-30):
+
+- Shadows tint
+- Red, green and blue primary hue and saturation
+
 ### Presence
 
 - Texture

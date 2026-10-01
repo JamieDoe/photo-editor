@@ -137,6 +137,8 @@ pub struct EngineInfoDto {
     pub curve_regions: Vec<AdjustmentSpec>,
     /// Colour grading's Luminance, Blending and Balance (ADR 0052).
     pub grading: Vec<AdjustmentSpec>,
+    /// Calibration's sliders (ADR 0053).
+    pub calibration: Vec<AdjustmentSpec>,
 }
 
 impl From<EngineInfo> for EngineInfoDto {
@@ -161,6 +163,7 @@ impl From<EngineInfo> for EngineInfoDto {
             setting_groups: i.setting_groups,
             curve_regions: i.curve_regions,
             grading: i.grading,
+            calibration: i.calibration,
         }
     }
 }

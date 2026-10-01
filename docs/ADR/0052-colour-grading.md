@@ -78,7 +78,7 @@ grading.
    - **Frontend:** wheel points and ranges.
    - **Release self-test, Nikon Z 6:** black and white measures channel spread 0;
      split-toned, 21.5 (rendered in 7.3 ms).
-8. **Still left out on import:** Calibration (the next milestone), masks and healing,
+8. **Still left out on import:** Calibration (since imported, ADR 0053), masks and healing,
    Lens Corrections, crop and transform, the profile, colour noise reduction.
 
 ## Deviations from the design

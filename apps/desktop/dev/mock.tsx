@@ -187,6 +187,7 @@ mockIPC((cmd, payload) => {
         { id: "light", label: "Light and tone curve", fields: ["look", "contrast", "highlights", "shadows", "whites", "blacks", "dehaze", "pointCurve", "channelCurves"], copiedByDefault: true },
         { id: "whiteBalance", label: "White balance", fields: ["temperature", "tint"], copiedByDefault: true },
         { id: "colour", label: "Colour", fields: ["vibrance", "saturation", "mixer"], copiedByDefault: true },
+        { id: "calibration", label: "Calibration", fields: ["calibration"], copiedByDefault: true },
         { id: "detail", label: "Detail and effects", fields: ["texture", "clarity", "sharpening", "noiseReduction", "vignette", "grain"], copiedByDefault: true },
         { id: "geometry", label: "Crop, geometry and lens", fields: ["geometry", "chromaticAberration"], copiedByDefault: false },
         { id: "masks", label: "Masks", fields: ["masks"], copiedByDefault: false },
@@ -194,7 +195,11 @@ mockIPC((cmd, payload) => {
         { key: "luminance", label: "Luminance", group: "Colour grading", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
         { key: "blending", label: "Blending", group: "Colour grading", min: 0, max: 100, step: 1, default: 50, more: false, unit: "" },
         { key: "balance", label: "Balance", group: "Colour grading", min: -100, max: 100, step: 1, default: 0, more: false, unit: "" },
-      ] };
+      ], calibration: [
+        ["shadowTint", "Tint", "Shadows"], ["redHue", "Hue", "Red primary"], ["redSaturation", "Saturation", "Red primary"],
+        ["greenHue", "Hue", "Green primary"], ["greenSaturation", "Saturation", "Green primary"],
+        ["blueHue", "Hue", "Blue primary"], ["blueSaturation", "Saturation", "Blue primary"],
+      ].map(([key, label, group]) => ({ key, label, group, min: -100, max: 100, step: 1, default: 0, more: false, unit: "" })) };
     case "open_image_dialog":
     case "open_image_path":
       openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";

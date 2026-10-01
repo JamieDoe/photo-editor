@@ -333,6 +333,33 @@ pub const GRADING: [AdjustmentSpec; 3] = [
     },
 ];
 
+/// Calibration's sliders (ADR 0053), keyed by `Calibration` field; the group is the
+/// heading they sit under.
+pub const CALIBRATION: [AdjustmentSpec; 7] = {
+    const fn slider(key: &'static str, label: &'static str, group: &'static str) -> AdjustmentSpec {
+        AdjustmentSpec {
+            key,
+            label,
+            group,
+            min: -100.0,
+            max: 100.0,
+            step: 1.0,
+            default: 0.0,
+            more: false,
+            unit: "",
+        }
+    }
+    [
+        slider("shadowTint", "Tint", "Shadows"),
+        slider("redHue", "Hue", "Red primary"),
+        slider("redSaturation", "Saturation", "Red primary"),
+        slider("greenHue", "Hue", "Green primary"),
+        slider("greenSaturation", "Saturation", "Green primary"),
+        slider("blueHue", "Hue", "Blue primary"),
+        slider("blueSaturation", "Saturation", "Blue primary"),
+    ]
+};
+
 pub const PERSPECTIVE: [AdjustmentSpec; 2] = [
     AdjustmentSpec {
         key: "vertical",

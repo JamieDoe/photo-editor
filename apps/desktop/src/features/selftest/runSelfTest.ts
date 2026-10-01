@@ -1081,6 +1081,47 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       gradingCheck.greySpread < 1 &&
       gradingCheck.tonedSpread > 5;
 
+    // Calibration (ADR 0053) on the real raw file: the primaries move colours but not
+    // brightness; Shadow Tint turns the shadows magenta. (It runs before Saturation,
+    // as in Lightroom, so black and white takes it out again.)
+    const calibrationCheck = await (async () => {
+      const neutral = { shadowTint: 0, redHue: 0, redSaturation: 0, greenHue: 0, greenSaturation: 0, blueHue: 0, blueSaturation: 0 };
+      const colour = { ...beforeCrop, masks: undefined };
+      const plain = await show(colour, "uncalibrated frame");
+      const moved = await show({ ...colour, calibration: { ...neutral, redHue: 60, blueHue: -100, blueSaturation: 60 } }, "calibrated frame", plain);
+      const tinted = await show({ ...colour, calibration: { ...neutral, shadowTint: 100 } }, "shadow-tinted frame", moved);
+      // Mean change per channel, and how magenta (red and blue over green) a frame is.
+      const change = (a: RenderedFrame | null, b: RenderedFrame | null) => {
+        if (!a || !b) return null;
+        const [p, q] = [a.frame.pixels, b.frame.pixels];
+        let sum = 0;
+        for (let i = 0; i < p.length; i += 4) sum += Math.abs(p[i]! - q[i]!) + Math.abs(p[i + 1]! - q[i + 1]!) + Math.abs(p[i + 2]! - q[i + 2]!);
+        return Math.round((sum / ((p.length / 4) * 3)) * 10) / 10;
+      };
+      const magenta = (f: RenderedFrame | null) => {
+        if (!f) return null;
+        const px = f.frame.pixels;
+        let sum = 0;
+        for (let i = 0; i < px.length; i += 4) sum += (px[i]! + px[i + 2]!) / 2 - px[i + 1]!;
+        return Math.round((sum / (px.length / 4)) * 10) / 10;
+      };
+      const luma = (f: RenderedFrame | null) => (f ? meanLuma(f) : null);
+      return {
+        colourChange: change(plain, moved),
+        lumaChange: luma(plain) !== null && luma(moved) !== null ? Math.round((luma(moved)! - luma(plain)!) * 10) / 10 : null,
+        magentaLift: magenta(tinted) !== null && magenta(plain) !== null ? Math.round((magenta(tinted)! - magenta(plain)!) * 10) / 10 : null,
+        renderMs: moved?.frame.renderMs ?? null,
+      };
+    })();
+    driver.editor().setRecipe(beforeCrop);
+    const calibrationOk =
+      calibrationCheck.colourChange !== null &&
+      calibrationCheck.colourChange > 1 &&
+      calibrationCheck.lumaChange !== null &&
+      Math.abs(calibrationCheck.lumaChange) < 3 &&
+      calibrationCheck.magentaLift !== null &&
+      calibrationCheck.magentaLift > 0.5;
+
     // Shapes combined (ADR 0043): -1 EV over the top, less a hard circle at its
     // middle. Inside the circle unchanged, beside it darker.
     const combinedFrame = await show(
@@ -1235,6 +1276,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       exportQueue: exportQueueOk,
       whiteBalanceLight: lightOk,
       colourGrading: gradingOk,
+      calibration: calibrationOk,
       copyPaste: copyPasteOk,
       crop: cropOk,
       perspective: perspectiveOk,
@@ -1268,6 +1310,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       exportQueue,
       whiteBalanceLight: lightCheck,
       colourGrading: gradingCheck,
+      calibration: calibrationCheck,
       copyPaste: copyPasteCheck,
       crop,
       perspective,
