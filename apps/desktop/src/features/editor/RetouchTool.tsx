@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { CheckIcon } from "../../components/icons";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { CropRect } from "../../ipc/generated/CropRect";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { Spot } from "../../ipc/generated/Spot";
 import type { SpotKind } from "../../ipc/generated/SpotKind";
-import { newSpot } from "../../ipc/client";
+import { findDust, newSpot } from "../../ipc/client";
 import { isTextEntry } from "../../lib/keyboard";
 import { orientedSize } from "./cropGeometry";
 import { FULL_CROP, fromShown, toShown, type Point } from "./masks";
@@ -18,7 +19,9 @@ import {
   sourceToFrame,
   spotAt,
   spotsOf,
+  stillToFix,
   withSpots,
+  withoutSpots,
 } from "./spots";
 
 /**
@@ -29,10 +32,14 @@ import {
 export function useRetouchTool(opts: {
   recipe: EditRecipe | null;
   imageId: number | null;
+  /** The photo's width / height, for telling which spots cover which. */
+  aspect: number;
+  /** Retouch mode is on: sensor dust is looked for (once per photo). */
+  active: boolean;
   onChange: (r: EditRecipe) => void;
   notify: (message: string) => void;
 }) {
-  const { recipe, imageId, onChange, notify } = opts;
+  const { recipe, imageId, aspect, active, onChange, notify } = opts;
   const [kind, setKindState] = useState<SpotKind>("heal");
   const [size, setSizeState] = useState<number>(BRUSH_SIZE.initial);
   const [selected, setSelected] = useState<number | null>(null);
@@ -43,6 +50,22 @@ export function useRetouchTool(opts: {
   // The latest recipe, for edits that finish after an await.
   const latest = useRef(recipe);
   latest.current = recipe;
+
+  // Sensor dust (ADR 0058): what was found on this photo, and the spots the last Fix
+  // all made (for its Undo).
+  const [dust, setDust] = useState<{ imageId: number; found: Spot[] | null } | null>(null);
+  const [fixedAll, setFixedAll] = useState<Spot[] | null>(null);
+  useEffect(() => {
+    if (!active || imageId === null || dust?.imageId === imageId) return;
+    setDust({ imageId, found: null });
+    setFixedAll(null);
+    findDust(imageId, latest.current ? spotsOf(latest.current) : []).then(
+      (found) => setDust((d) => (d?.imageId === imageId ? { imageId, found } : d)),
+      () => setDust((d) => (d?.imageId === imageId ? { imageId, found: [] } : d)),
+    );
+  }, [active, imageId, dust?.imageId]);
+  const found = dust?.imageId === imageId ? dust.found : null;
+  const toFix = found ? stillToFix(found, spots, aspect) : [];
 
   useEffect(() => setSelected(null), [imageId]);
   useEffect(() => {
@@ -97,6 +120,26 @@ export function useRetouchTool(opts: {
     clear: () => {
       commit([]);
       setSelected(null);
+    },
+    /** Sensor dust still to fix (ADR 0058); null while it is being looked for. */
+    dust: found === null ? null : toFix,
+    /** Heals every dust spot still to fix, in one edit. */
+    fixAll: () => {
+      if (toFix.length === 0) return;
+      commit([...spots, ...toFix]);
+      setFixedAll(toFix);
+      setSelected(null);
+    },
+    /** Heals one dust spot. */
+    fixOne: (d: Spot) => {
+      commit([...spots, d]);
+      setFixedAll(null);
+    },
+    /** The spots the last Fix all made, while its Undo is offered. */
+    fixedAll,
+    undoFixAll: () => {
+      if (fixedAll) commit(withoutSpots(spots, fixedAll));
+      setFixedAll(null);
     },
   };
 }
@@ -201,7 +244,11 @@ export function RetouchOverlay({
     const sourceHit = tool.selected !== null && spotAt([tool.spot!], source, aspect, true) !== null ? tool.selected : null;
     const hit = sourceHit ?? spotAt(spots, source, aspect);
     if (hit === null) {
-      void tool.place(source);
+      // A click on found dust heals it, at the size found.
+      const dust = tool.dust ?? [];
+      const onDust = spotAt(dust, source, aspect);
+      if (onDust !== null) tool.fixOne(dust[onDust]!);
+      else void tool.place(source);
       return;
     }
     tool.select(hit);
@@ -258,6 +305,10 @@ export function RetouchOverlay({
             </g>
           );
         })}
+        {(tool.dust ?? []).map((d, i) => {
+          const c = shown([d.x, d.y]);
+          return <circle key={`dust-${i}`} className="dust-ring" cx={c[0]} cy={c[1]} r={Math.max(radius(d), 9)} />;
+        })}
         {pointer && !overSpot && !drag.current && <circle className="brush-ring" cx={pointer[0]} cy={pointer[1]} r={brushRadius} />}
       </svg>
     </div>
@@ -265,6 +316,16 @@ export function RetouchOverlay({
 }
 
 const minus = (a: Point, b: Point): [number, number] => [a[0] - b[0], a[1] - b[1]];
+
+/** The design's dust icon: a dashed ring around a speck. */
+function DustIcon() {
+  return (
+    <svg className="icon dust-icon" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" strokeDasharray="2.5 2" />
+      <circle cx="8" cy="8" r="1.5" />
+    </svg>
+  );
+}
 
 const BRUSH_SPEC: AdjustmentSpec = {
   key: "brushSize",
@@ -279,7 +340,8 @@ const BRUSH_SPEC: AdjustmentSpec = {
 };
 
 /** The Retouch section, as in the design: the tool, what it does, and the brush size;
- *  then the spots made, with a way to clear them. */
+ *  sensor dust found, with Fix all (and its Undo); then the spots made, with a way to
+ *  clear them. */
 export function RetouchControls({ tool, disabled }: { tool: RetouchTool; disabled: boolean }) {
   const current = RETOUCH_TOOLS.find((t) => t.kind === tool.kind) ?? RETOUCH_TOOLS[0]!;
   const count = tool.spots.length;
@@ -304,6 +366,26 @@ export function RetouchControls({ tool, disabled }: { tool: RetouchTool; disable
         disabled={disabled}
         onChange={(v) => tool.setSize(v)}
       />
+      {tool.dust && tool.dust.length > 0 && (
+        <div className="dust-found">
+          <DustIcon />
+          <span className="grow">
+            {tool.dust.length} sensor dust {tool.dust.length === 1 ? "spot" : "spots"} found
+          </span>
+          <button className="dust-fix" disabled={disabled} onClick={tool.fixAll}>
+            Fix all
+          </button>
+        </div>
+      )}
+      {tool.fixedAll && tool.dust?.length === 0 && (
+        <div className="dust-fixed">
+          <CheckIcon size={14} />
+          {tool.fixedAll.length} {tool.fixedAll.length === 1 ? "spot" : "spots"} removed ·
+          <button className="link-button" disabled={disabled} onClick={tool.undoFixAll}>
+            Undo
+          </button>
+        </div>
+      )}
       {count > 0 && (
         <div className="retouch-count">
           <span>

@@ -70,11 +70,18 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
     setViewTransform: editor.setViewTransform,
   });
   const masks = useMaskTool({ recipe, imageId: image?.id ?? null, onChange: editor.setRecipe });
-  const retouch = useRetouchTool({ recipe, imageId: image?.id ?? null, onChange: editor.setRecipe, notify });
   const compare = useCompare();
   // The Retouch section open puts the photo in retouch mode (ADR 0054), unless
   // another tool takes it.
   const [retouchOpen, setRetouchOpen] = useState(false);
+  const retouch = useRetouchTool({
+    recipe,
+    imageId: image?.id ?? null,
+    aspect: image ? image.fullWidth / image.fullHeight : 1.5,
+    active: retouchOpen && !crop.open && !masks.open && !compare.open,
+    onChange: editor.setRecipe,
+    notify,
+  });
   // One at a time: cropping, masking, comparing or retouching.
   const enterCrop = () => {
     masks.done();

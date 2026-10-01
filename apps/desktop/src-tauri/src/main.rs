@@ -122,6 +122,7 @@ fn main() {
             commands::images::render_preview,
             commands::images::auto_level,
             commands::images::new_spot,
+            commands::images::find_dust,
             commands::images::measure_chromatic_aberration,
             commands::export::export_image,
             commands::export::choose_export_folder,

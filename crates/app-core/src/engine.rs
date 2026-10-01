@@ -177,6 +177,28 @@ impl Engine {
         })
     }
 
+    /// Sensor dust on the open photo (ADR 0058), as heal spots not already covered by
+    /// `existing`, each with a source. Looked for on a preview level of about 2000 px,
+    /// on the interactive lane (tens of milliseconds).
+    pub fn find_dust(
+        &self,
+        image: ImageId,
+        existing: Vec<renderer::retouch::Spot>,
+    ) -> JobHandle<Vec<renderer::retouch::Spot>, EngineError> {
+        let Some(image) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        let level = Arc::clone(&image.pyramid.levels()[image.pyramid.select_index(2000)]);
+        let spec = JobSpec::new(Lane::Interactive, Priority::Interactive, "find-dust")
+            .superseding("find-dust");
+        self.jobs.submit(spec, move |_token| {
+            Ok(renderer::dust::dust_spots(&level, &existing))
+        })
+    }
+
     /// Remove chromatic aberration (ADR 0035): the correction measured on the open
     /// photo, or `None` when it has too few clean edges to measure reliably. Measured on
     /// the level nearest 2000 px or above (about a quarter of a second), on the

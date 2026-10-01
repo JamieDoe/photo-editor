@@ -252,6 +252,18 @@ mockIPC((cmd, payload) => {
       }
       return counts();
     }
+    case "find_dust":
+      // Dev-only stand-in: two specks in the sky.
+      return new Promise((r) =>
+        setTimeout(
+          () =>
+            r([
+              { kind: "heal", x: 0.21, y: 0.17, sourceX: 0.26, sourceY: 0.17, radius: 0.008, feather: 30, opacity: 100 },
+              { kind: "heal", x: 0.81, y: 0.3, sourceX: 0.76, sourceY: 0.3, radius: 0.006, feather: 30, opacity: 100 },
+            ]),
+          120,
+        ),
+      );
     case "new_spot": {
       // Dev-only stand-in: the source a little to the right.
       const { kind, at, radius } = payload as { kind: "heal" | "clone"; at: [number, number]; radius: number };

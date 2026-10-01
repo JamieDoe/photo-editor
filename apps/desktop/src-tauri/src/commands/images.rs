@@ -138,6 +138,17 @@ pub async fn new_spot(
     .await
 }
 
+/// Sensor dust on the open photo (ADR 0058), as heal spots that `existing` spots do
+/// not already cover, each with a source.
+#[tauri::command]
+pub async fn find_dust(
+    state: State<'_, AppState>,
+    image_id: u64,
+    existing: Vec<renderer::retouch::Spot>,
+) -> IpcResult<Vec<renderer::retouch::Spot>> {
+    wait(state.engine.find_dust(ImageId(image_id), existing)).await
+}
+
 /// Remove chromatic aberration (ADR 0035): the correction measured on the open photo,
 /// or null when it has too few clean edges to measure.
 #[tauri::command]

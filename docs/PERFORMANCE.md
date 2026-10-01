@@ -779,3 +779,20 @@ A search runs on a blocking thread 180 ms after typing pauses, and only the newe
 query's results are shown. Its cost is a `LIKE` scan, about 1–2 µs per photo, so a
 100,000-photo library would take about 0.1–0.2 s. A full-text index is the next step if
 that becomes noticeable.
+
+## 40. Finding sensor dust (ADR 0058)
+
+`bench --dust`: each camera file opened in the engine, then dust found on the preview
+level of about 2000 px. Median of 3, release build, machine load 7–10.
+
+| File | Found | Before parallel blurs | After |
+|---|---|---|---|
+| Canon EOS R6 (CR3) | 0 | 152 ms | 51 ms |
+| Fujifilm X-T3 (RAF) | 0 | 256 ms | 44 ms |
+| Nikon Z 6 (NEF) | 0 | 194 ms | 43 ms |
+| Ricoh GR III (DNG) | 1 | 201 ms | 54 ms |
+| Sony A7 III (ARW) | 0 | 208 ms | 54–66 ms |
+| Sony A7R IV (ARW) | 0 | 110 ms | 31 ms |
+
+Release self-test: Nikon Z 6, 53 ms; Ricoh GR III, 70 ms (with the call over IPC).
+It runs once per photo when Retouch opens, on the interactive lane.

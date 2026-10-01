@@ -1244,6 +1244,20 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       retouchCheck.insideChange > 0.2 &&
       retouchCheck.outsideChange === 0;
 
+    // Sensor dust (ADR 0058) on the real raw file: found quickly, each a heal spot with a
+    // source; once those are spots, nothing is left to find.
+    const dustCheck = await (async () => {
+      const id = driver.editor().image!.id;
+      const t = performance.now();
+      const found = await ipc.findDust(id, []).catch(() => null);
+      const ms = Math.round((performance.now() - t) * 10) / 10;
+      if (!found) return { found: null, ms, healed: false, leftAfterFixing: null };
+      const healed = found.every((s) => s.kind === "heal" && (s.sourceX !== s.x || s.sourceY !== s.y));
+      const left = found.length > 0 ? (await ipc.findDust(id, found)).length : 0;
+      return { found: found.length, ms, healed, leftAfterFixing: left };
+    })();
+    const dustOk = dustCheck.found !== null && dustCheck.healed && dustCheck.leftAfterFixing === 0 && dustCheck.ms < 1000;
+
     // Shapes combined (ADR 0043): -1 EV over the top, less a hard circle at its
     // middle. Inside the circle unchanged, beside it darker.
     const combinedFrame = await show(
@@ -1402,6 +1416,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       colourGrading: gradingOk,
       calibration: calibrationOk,
       retouch: retouchOk,
+      dust: dustOk,
       copyPaste: copyPasteOk,
       crop: cropOk,
       perspective: perspectiveOk,
@@ -1437,6 +1452,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       colourGrading: gradingCheck,
       calibration: calibrationCheck,
       retouch: retouchCheck,
+      dust: dustCheck,
       copyPaste: copyPasteCheck,
       crop,
       perspective,

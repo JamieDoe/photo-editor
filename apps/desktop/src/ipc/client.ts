@@ -131,6 +131,8 @@ export const autoLevel = (imageId: number) => invoke<number | null>("auto_level"
  *  long edge), its source found nearby clear of `avoid`; null when none fits. */
 export const newSpot = (imageId: number, kind: SpotKind, at: [number, number], radius: number, avoid: Spot[]) =>
   invoke<Spot | null>("new_spot", { imageId, kind, at, radius, avoid });
+/** Sensor dust on the open photo (ADR 0058): heal spots for it, clear of `existing`. */
+export const findDust = (imageId: number, existing: Spot[]) => invoke<Spot[]>("find_dust", { imageId, existing });
 /** Remove chromatic aberration: the correction measured on the open photo, or null (too
  *  few clean edges to measure). */
 export const measureChromaticAberration = (imageId: number) =>

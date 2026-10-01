@@ -109,3 +109,15 @@ export function moveSpot(spot: Spot, delta: Point, which: "spot" | "source"): Sp
     ? { ...spot, x: clamp(spot.x + delta[0]), y: clamp(spot.y + delta[1]) }
     : { ...spot, sourceX: clamp(spot.sourceX + delta[0]), sourceY: clamp(spot.sourceY + delta[1]) };
 }
+
+/** The dust spots found (ADR 0058) whose centres no spot in `spots` covers yet: the
+ *  ones still to fix. `aspect` is width / height. */
+export function stillToFix(found: readonly Spot[], spots: readonly Spot[], aspect: number): Spot[] {
+  return found.filter((d) => spotAt(spots, [d.x, d.y], aspect) === null);
+}
+
+/** `spots` without those in `fixed` (the same spot: centre and size). */
+export function withoutSpots(spots: readonly Spot[], fixed: readonly Spot[]): Spot[] {
+  const same = (a: Spot, b: Spot) => a.x === b.x && a.y === b.y && a.radius === b.radius;
+  return spots.filter((s) => !fixed.some((f) => same(s, f)));
+}
