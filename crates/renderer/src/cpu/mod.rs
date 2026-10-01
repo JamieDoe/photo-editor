@@ -9,6 +9,7 @@
 mod kernels;
 mod lut;
 
+use image_core::gamut::{ON_OUTPUT, compress};
 use image_core::{Cancellation, LinearImage, OutputImage, PixelFormat};
 use rayon::prelude::*;
 
@@ -81,6 +82,10 @@ impl CpuRenderer {
         let height = source.height() as usize;
         let format = out.format();
         let bytes = format.bytes_per_pixel();
+        let output = Output {
+            format,
+            compress: plan.compresses_output(),
+        };
         let rows_per_chunk = (CHUNK_PIXELS / width)
             .max(min_chunk_rows(&kernels))
             .min(height)
@@ -110,7 +115,7 @@ impl CpuRenderer {
                         scratch,
                         kernel_scratch,
                         out_chunk,
-                        format,
+                        output,
                         span,
                     );
                     Ok(())
@@ -139,20 +144,39 @@ impl RenderBackend for CpuRenderer {
     }
 }
 
+/// How a render's pixels are written: their format, and whether colours past sRGB
+/// are compressed first (ADR 0060; see `RenderPlan::compresses_output`).
+#[derive(Clone, Copy)]
+struct Output {
+    format: PixelFormat,
+    compress: bool,
+}
+
 fn process_chunk(
     kernels: &[Kernel],
     src: &[u16],
     scratch: &mut Vec<f32>,
     kernel_scratch: &mut KernelScratch,
     out: &mut [u8],
-    format: PixelFormat,
+    output: Output,
     span: RowSpan<'_>,
 ) {
+    let Output {
+        format,
+        compress: compress_output,
+    } = output;
     const INV: f32 = 1.0 / 65535.0;
     scratch.clear();
     scratch.extend(src.iter().map(|&v| f32::from(v) * INV));
     for k in kernels {
         k.apply(scratch, span, kernel_scratch);
+    }
+    // Colours that edits pushed past sRGB are brought back smoothly rather than
+    // clipped channel by channel (ADR 0060).
+    if compress_output {
+        for px in scratch.as_chunks_mut::<3>().0 {
+            *px = compress(*px, &ON_OUTPUT);
+        }
     }
     let pixels = scratch.as_chunks::<3>().0;
     if format == PixelFormat::Rgb16 {

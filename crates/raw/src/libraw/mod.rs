@@ -20,6 +20,20 @@ pub(crate) const EXTENSIONS: &[&str] = &[
     "srf", "srw", "x3f",
 ];
 
+/// LibRaw's Rec.2020 output in the sRGB working space (ADR 0060): converted, with the
+/// colours beyond sRGB brought in by soft gamut compression rather than clipped, so
+/// saturated colours keep their hue and gradation.
+fn to_working_space(data: &mut [u16]) {
+    use rayon::prelude::*;
+    data.par_chunks_mut(3 * 4096).for_each(|chunk| {
+        for px in chunk.as_chunks_mut::<3>().0 {
+            let rgb = px.map(|v| f32::from(v) / 65535.0);
+            let s = image_core::gamut::rec2020_to_srgb(rgb);
+            *px = s.map(|v| (v.clamp(0.0, 1.0) * 65535.0).round() as u16);
+        }
+    });
+}
+
 /// LibRaw-backed decoder producing linear sRGB-primaries data with as-shot white balance.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct LibRawDecoder;
@@ -138,6 +152,7 @@ impl Decoder for LibRawDecoder {
         if cancel.is_cancelled() {
             return Err(DecodeError::Cancelled);
         }
+        to_working_space(&mut data);
 
         let image = LinearImage::new(info.width, info.height, data)
             .map_err(|e| DecodeError::Internal(format!("LibRaw buffer: {e}")))?;

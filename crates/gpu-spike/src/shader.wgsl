@@ -5,7 +5,8 @@ struct Params {
     gains: vec4<f32>,
     contrast_gamma: f32,
     saturation: f32,
-    flags: u32,        // bit 0: contrast, bit 1: saturation, bit 2: base curve
+    flags: u32,        // bit 0: contrast, bit 1: saturation, bit 2: base curve,
+                       // bit 3: compress colours past sRGB on output (ADR 0060)
     pixel_count: u32,
 };
 
@@ -49,6 +50,33 @@ fn base_curve(x: f32) -> f32 {
     return log_logistic(x * LOOK_LIFT) / log_logistic(LOOK_LIFT);
 }
 
+// Soft gamut compression on output (image_core::gamut::ON_OUTPUT, ADR 0060): each
+// channel's distance from the brightest, past the threshold, eased so the limit lands
+// on sRGB's edge.
+const COMPRESS_THRESHOLD: f32 = 0.97;
+const COMPRESS_LIMIT: f32 = 1.3;
+const COMPRESS_POWER: f32 = 1.2;
+
+fn compress(rgb: vec3<f32>) -> vec3<f32> {
+    let mx = max(rgb.x, max(rgb.y, rgb.z));
+    if (mx <= 0.0) { return rgb; }
+    let mn = min(rgb.x, min(rgb.y, rgb.z));
+    let t = COMPRESS_THRESHOLD;
+    if ((mx - mn) / mx < t) { return rgb; }
+    let p = COMPRESS_POWER;
+    let s = (COMPRESS_LIMIT - t) / pow(pow((1.0 - t) / (COMPRESS_LIMIT - t), -p) - 1.0, 1.0 / p);
+    var out = rgb;
+    for (var i = 0; i < 3; i = i + 1) {
+        let d = (mx - rgb[i]) / mx;
+        if (d >= t) {
+            let x = (d - t) / s;
+            let cd = t + (d - t) / pow(1.0 + pow(x, p), 1.0 / p);
+            out[i] = mx - cd * mx;
+        }
+    }
+    return out;
+}
+
 fn encode(x: f32) -> u32 {
     let v = clamp(x, 0.0, 1.0);
     let s = select(1.055 * pow(v, 1.0 / 2.4) - 0.055, v * 12.92, v <= 0.0031308);
@@ -70,7 +98,11 @@ fn main(@builtin(workgroup_id) wg: vec3<u32>, @builtin(num_workgroups) nwg: vec3
     }
     if ((params.flags & 2u) != 0u) {
         let y = dot(rgb, vec3<f32>(0.2126, 0.7152, 0.0722));
-        rgb = max(vec3<f32>(y) + (rgb - vec3<f32>(y)) * params.saturation, vec3<f32>(0.0));
+        // Past sRGB stays negative, for the output's compression.
+        rgb = vec3<f32>(y) + (rgb - vec3<f32>(y)) * params.saturation;
+    }
+    if ((params.flags & 8u) != 0u) {
+        rgb = compress(rgb);
     }
     dst[idx] = encode(rgb.x) | (encode(rgb.y) << 8u) | (encode(rgb.z) << 16u) | (255u << 24u);
 }

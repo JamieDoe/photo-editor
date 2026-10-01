@@ -35,7 +35,7 @@ typedef struct pe_raw_info {
 typedef struct pe_raw_ctx pe_raw_ctx;
 
 /*
- * Decodes `path` into 16-bit linear RGB (sRGB primaries, camera white balance).
+ * Decodes `path` into 16-bit linear RGB (Rec.2020 primaries, camera white balance).
  * If `min_long_edge` > 0 and a half-size decode still has a long edge >= it, LibRaw's
  * fast half-size mode is used. `cancel` is polled at LibRaw progress stages.
  * If `max_threads` > 0 and LibRaw was built with OpenMP, its parallel regions started

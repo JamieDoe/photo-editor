@@ -841,3 +841,16 @@ thread pool), Screen sharpening:
 | First version | 342–469 ms | 1.5–1.8 s |
 | Kept | 230 ms | 1.38 s |
 | Before sharpening (ADR 0057) | 128–171 ms | 1.40 s |
+
+## 42. Soft gamut compression (ADR 0060)
+
+Per pixel over a 24 MP image (6064×4040), release build, every core, median of 5,
+machine load about 5:
+
+| Step | Time at 24 MP | At a 1516×1010 preview |
+|---|---|---|
+| Decode: Rec.2020 → sRGB with compression (every raw decode) | 67 ms | about 4 ms |
+| Output compression (only plans with colour edits; most pixels exit at once) | 26 ms | about 1.7 ms |
+
+For scale, a full-size raw decode takes about 1 s, so the conversion adds about 7%. A
+half-size preview decode (6 MP) adds about 17 ms.
