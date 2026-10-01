@@ -2,6 +2,7 @@ import { useState, type DragEvent, type FormEvent } from "react";
 import { AlbumIcon, PlusIcon, TrashIcon } from "../../components/icons";
 import { Popover, PopoverHeader, PopoverIcon } from "../../components/Popover";
 import type { AlbumDto } from "../../ipc/generated/AlbumDto";
+import { NavGroup } from "./NavGroup";
 import { PhotoThumbnail } from "./PhotoThumbnail";
 import type { LibraryApi } from "./useLibrary";
 
@@ -50,14 +51,16 @@ export function AlbumsNav({ library, notify }: { library: LibraryApi; notify: (m
     const after = await library.addToAlbum(album.id, paths);
     if (after) notify(after.count === before ? `Already in ${after.name}` : `Added ${photosText(after.count - before)} to ${after.name}`);
   };
+  const startNaming = () => setNaming(true);
   return (
-    <section className="nav-section" aria-label="Albums">
-      <div className="nav-label">
-        Albums
-        <button className="icon-button" aria-label="New album" title="New album" onClick={() => setNaming(true)}>
+    <NavGroup
+      label="Albums"
+      action={
+        <button className="icon-button" aria-label="New album" title="New album" onClick={startNaming}>
           <PlusIcon size={13} />
         </button>
-      </div>
+      }
+    >
       {naming && (
         <form className="nav-new" onSubmit={(e) => void create(e)}>
           <input
@@ -79,7 +82,16 @@ export function AlbumsNav({ library, notify }: { library: LibraryApi; notify: (m
           />
         </form>
       )}
-      {library.albums.length === 0 && !naming && <p className="nav-empty">Make one with +, then drag photos onto it.</p>}
+      {library.albums.length === 0 && !naming && (
+        <div className="nav-empty-card">
+          <AlbumIcon size={18} />
+          <p>Group photos from any folder: a portfolio, prints, a trip.</p>
+          <button className="ghost small" onClick={startNaming}>
+            <PlusIcon size={12} />
+            New album
+          </button>
+        </div>
+      )}
       {library.albums.map((a) => (
         <button
           key={a.id}
@@ -101,7 +113,13 @@ export function AlbumsNav({ library, notify }: { library: LibraryApi; notify: (m
           <span className="count">{a.count.toLocaleString()}</span>
         </button>
       ))}
-    </section>
+      {library.albums.length > 0 && !naming && (
+        <button className="nav-row nav-add" onClick={startNaming}>
+          <PlusIcon size={14} />
+          <span className="grow">New album</span>
+        </button>
+      )}
+    </NavGroup>
   );
 }
 

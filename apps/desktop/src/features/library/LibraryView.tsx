@@ -7,6 +7,7 @@ import { hasCommandModifier, isTextEntry } from "../../lib/keyboard";
 import type { SettingsApi } from "../settings/useSettings";
 import { AddToAlbum, AlbumSettings, AlbumsNav, photosText, setDraggedPaths } from "./Albums";
 import { indexStatusText } from "./indexStatus";
+import { NavGroup } from "./NavGroup";
 import { COLLECTION_NAMES, FILTERS, markChangeForKey, type LibraryFilter } from "./marks";
 import { PhotoGrid } from "./PhotoGrid";
 import { PhotoList } from "./PhotoList";
@@ -137,15 +138,16 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
             {collectionRow("rated", <RatingStar filled={false} />, counts?.rated)}
             {collectionRow("rejected", <RejectIcon size={16} />, counts?.rejected)}
           </section>
-          <section className="nav-section" aria-label="Folders">
-            <div className="nav-label">
-              Folders
+          <NavGroup
+            label="Folders"
+            action={
               <button className="icon-button" aria-label="Add folder" title="Add folder" onClick={() => void choose()}>
                 <svg className="icon" width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
                   <path d="M8 3v10M3 8h10" />
                 </svg>
               </button>
-            </div>
+            }
+          >
             {recent.length === 0 && <p className="nav-empty">No folders yet.</p>}
             {recent.map((f) => (
               <button
@@ -164,7 +166,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                 )}
               </button>
             ))}
-          </section>
+          </NavGroup>
           <AlbumsNav library={library} notify={notify} />
         </div>
         <div className="sidebar-footer">

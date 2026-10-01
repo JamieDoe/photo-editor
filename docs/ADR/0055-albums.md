@@ -43,7 +43,15 @@ are separate steps (see Consequences).
 4. **Library UI:**
    - **Sidebar:** the design's Albums section after Folders. Each row has a cover
      thumbnail (the design's gradient swatch while empty), the name and the count.
-     **+** makes a new, empty album with an inline name field. Click a row to view it.
+     **+** on the label, or the **New album** row under the list, makes a new, empty
+     album with an inline name field. Click a row to view it.
+   - Without albums, the section shows a short empty state with a New album button.
+   - Folders and Albums fold away under their labels (remembered per viewer).
+   - **Drag and drop:** the window's native file drop (Tauri's `dragDropEnabled`) is
+     off. The app takes no files dropped from the Finder, and on macOS it swallowed
+     the page's own drags, so photos could not be dragged onto albums.
+   - **Header:** on a narrow window, the header's actions wrap onto their own rows
+     under the title instead of overflowing.
    - **Ticking:** in the grid and list, ⌘-click ticks a photo and ⇧-click ticks a
      range. These are the filmstrip's batch ticks (ADR 0049), shared between
      Library and Edit. The accent ring marks ticked photos, and the header shows

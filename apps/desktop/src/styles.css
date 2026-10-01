@@ -196,12 +196,13 @@ button.nav-row:hover:not(:disabled) { background: var(--hover); color: var(--tex
 .empty-state { margin: auto; display: flex; flex-direction: column; align-items: center; gap: 14px; text-align: center; color: var(--text-2); }
 .empty-state h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
 .empty-state p { margin: 0; max-width: 360px; font-size: 12.5px; }
-.page-header { min-height: 64px; flex-shrink: 0; padding: 10px 24px 6px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
-.page-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.page-header { min-height: 64px; flex-shrink: 0; padding: 10px 24px 6px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 16px; }
+.page-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 220px; }
 .page-title-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 .page-title h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.page-title .subtle { font-size: 12.5px; white-space: nowrap; }
-.page-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.page-title .subtle { font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+/* On a narrow window the actions wrap onto their own rows, under the title. */
+.page-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 4px; margin-left: auto; min-width: 0; }
 .page-actions .segmented { margin-left: 6px; }
 .page-actions button { height: 28px; font-size: 12.5px; }
 .crumbs { display: flex; align-items: center; flex-wrap: wrap; font-size: 11.5px; color: var(--text-3); }
@@ -826,3 +827,13 @@ button.batch-export:hover:not(:disabled) { background: var(--hover-strong); colo
 .album-menu .popover-item .count { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 button.album-delete { margin-right: auto; gap: 6px; color: var(--danger); }
 .popover-actions .grow { flex: 1 1 auto; align-self: center; }
+
+/* Folding sidebar groups (Folders, Albums), the albums' empty state and New album row. */
+button.nav-toggle { height: 22px; padding: 0 4px 0 0; margin-left: -4px; gap: 4px; background: transparent; border: 0; font: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
+button.nav-toggle:hover:not(:disabled) { background: transparent; color: var(--text-2); }
+button.nav-toggle .chevron { width: 12px; height: 12px; }
+.nav-empty-card { margin: 2px 4px 6px; padding: 12px; border-radius: 9px; border: 1px dashed var(--hairline-strong); display: flex; flex-direction: column; align-items: flex-start; gap: 8px; color: var(--text-3); }
+.nav-empty-card p { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.nav-empty-card button { gap: 5px; margin-left: -8px; color: var(--text); }
+button.nav-row.nav-add { color: var(--text-3); }
+button.nav-row.nav-add:hover:not(:disabled) { color: var(--text); }
