@@ -1,4 +1,5 @@
 #include "pe_libraw.h"
+#include "pe_libraw_xtrans.h"
 
 #include <libraw/libraw.h>
 #include <stdlib.h>
@@ -77,7 +78,8 @@ int pe_raw_decode(const char *path, uint32_t min_long_edge, uint32_t max_threads
     ctx->cancel = cancel;
     ctx->cancel_ctx = cancel_ctx;
 
-    ctx->lr = libraw_init(0);
+    /* Not libraw_init: this instance keeps X-Trans processing deterministic (ADR 0060). */
+    ctx->lr = pe_libraw_new();
     if (!ctx->lr) {
         free(ctx);
         return LIBRAW_UNSUFFICIENT_MEMORY;

@@ -159,7 +159,8 @@ Same plan and pixels (max difference 1 code). ms, median of 10 runs after warm-u
 4. **Export peak memory is ~26 bytes/pixel** (24 MP → ~640 MB; 61 MP → 1.3 GB), and
    most of it is **inside LibRaw**.
    - `bench --decode-peak` measures a lone full decode in a fresh process: 17–18 B/px
-     for Bayer files (Nikon 451 MB, 61 MP Sony 1.05 GB) and 24.5 B/px for X-Trans.
+     for Bayer files (Nikon 451 MB, 61 MP Sony 1.05 GB) and 24.5 B/px for X-Trans
+     (28.1 B/px at 10 threads since the deterministic X-Trans demosaic, §42).
      Our decoded result is 6 B/px.
    - LibRaw holds its raw buffer, a 4-channel working image and demosaic scratch at
      the same time. Removing our copy of its output would not lower the peak (the copy
@@ -841,3 +842,20 @@ thread pool), Screen sharpening:
 | First version | 342–469 ms | 1.5–1.8 s |
 | Kept | 230 ms | 1.38 s |
 | Before sharpening (ADR 0057) | 128–171 ms | 1.40 s |
+
+## 42. Deterministic X-Trans decoding (ADR 0060)
+
+Fujifilm X-T3, release build, `main` and the fix run alternately (median of 3–9
+decodes, machine load 3–13). "Differing" is the share of pixels that changed between
+two decodes of the same file.
+
+| Decode | Threads | Before | After | Differing, before → after |
+|---|---|---|---|---|
+| Preview (3123×2085) | 10 | 193 ms | 189 ms | 3.6–4.1% → 0 |
+| Preview | 5 | 313 ms | 304 ms | |
+| Full (6246×4170) | 10 | 2304 ms | 2351 ms | up to 0.06% → 0 |
+| Full | 5 | 4.15 s | 3.66 s | |
+
+Peak memory of a lone full decode (`bench --decode-peak`): 640 → 734 MB at 10
+threads. It is unchanged at 5 threads (the export lane) and at 2 threads. Every Bayer
+fixture decodes byte-identically to before.

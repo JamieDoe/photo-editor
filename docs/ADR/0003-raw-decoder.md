@@ -15,7 +15,8 @@ The application core is proprietary, so licensing of native libraries must be ex
    (zune-jpeg, pure Rust).
 2. **C shim (`crates/raw/shim/pe_libraw.c`).** Rust never touches `libraw_data_t`
    (its layout changes between LibRaw versions). The shim exposes plain structs and
-   five functions. No bindgen dependency.
+   five functions. No bindgen dependency. Decodes use a small C++ `LibRaw` subclass
+   that keeps X-Trans processing deterministic under OpenMP (ADR 0060).
 3. **Output contract:** 16-bit linear, sRGB primaries, as-shot white balance,
    `no_auto_bright`, highlight clip. Tone and display encoding are ours.
 4. **Preview decodes use `half_size`** when the half-resolution result still has a
@@ -24,6 +25,7 @@ The application core is proprietary, so licensing of native libraries must be ex
 6. **Thread budget:** `DecodeOptions::max_threads` caps LibRaw's OpenMP regions via
    `omp_set_num_threads`, resolved with `dlsym` at runtime (no link-time OpenMP
    dependency; a no-op for non-OpenMP builds). Windows is not implemented yet.
+   X-Trans output is the same for any cap (ADR 0060).
 7. **Dynamic linking to the thread-safe `libraw_r`**, found via `LIBRAW_DIR` or common
    prefixes. LibRaw is a default cargo feature; building without it leaves JPEG-only.
 

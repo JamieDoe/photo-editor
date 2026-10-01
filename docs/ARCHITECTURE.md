@@ -227,7 +227,9 @@ UI export dialog ─► start_export {items (open photo by id with its edit, or 
 
 LibRaw is built with OpenMP by Homebrew. Each decode caps OpenMP at the calling
 lane's compute-pool size (`DecodeOptions::max_threads`), so background decodes stay
-within half the machine.
+within half the machine. LibRaw's OpenMP X-Trans code races, so for Fuji files the
+shim replaces two steps with deterministic parallel versions, whose output does not
+depend on the cap (ADR 0060).
 
 ## 7. Non-destructive guarantees
 
@@ -256,7 +258,8 @@ See `PERFORMANCE.md` for measured consequences.
   previews (ADR 0046) each have a supersede key; further views need their own slots.
 - Full-resolution export holds the whole image in memory (no tiling).
 - LibRaw's OpenMP threads are capped per decode via `DecodeOptions::max_threads`
-  on macOS/Linux; Windows has no cap yet.
+  on macOS/Linux; Windows has no cap yet, and therefore no X-Trans determinism fix
+  either (ADR 0060).
 - Export peak memory is dominated by LibRaw's working set (17–25 bytes/pixel); see
   PERFORMANCE.md §7.4.
 - JPEG EXIF orientation and embedded ICC profiles are ignored; exports carry no

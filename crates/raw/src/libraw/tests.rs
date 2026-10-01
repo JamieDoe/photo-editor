@@ -215,3 +215,109 @@ fn reports_the_as_shot_light() {
         );
     }
 }
+
+// --- X-Trans determinism (ADR 0060) ---
+//
+// LibRaw's OpenMP code races on X-Trans sensors (half-size binning and the strip-parallel
+// demosaic), so the same file used to decode to different pixels each time. The shim
+// must give identical bytes on every decode and for any thread count.
+
+fn decode_samples(path: &Path, scale: DecodeScale, threads: Option<usize>) -> Vec<u16> {
+    let mut opts = DecodeOptions::new(scale);
+    if let Some(n) = threads {
+        opts = opts.with_max_threads(n);
+    }
+    let out = LibRawDecoder.decode(path, opts, &NeverCancel).unwrap();
+    out.image.data().to_vec()
+}
+
+fn assert_identical(a: &[u16], b: &[u16], what: &str) {
+    assert_eq!(a.len(), b.len(), "{what}: sizes differ");
+    let differing = a.iter().zip(b).filter(|(x, y)| x != y).count();
+    assert_eq!(
+        differing,
+        0,
+        "{what}: {differing} of {} samples differ",
+        a.len()
+    );
+}
+
+/// 1700 x 988 makes the shim's block grid cover all its cases: a remainder merged into
+/// the last column of blocks and a last row of blocks pulled back to one LibRaw tile.
+fn synthetic_xtrans(dir: &Path) -> PathBuf {
+    let path = dir.join("xtrans.dng");
+    std::fs::write(&path, fixtures::chart_xtrans_dng(1700, 988)).unwrap();
+    path
+}
+
+#[test]
+fn synthetic_xtrans_decodes_are_deterministic() {
+    let dir = fixtures::TempDir::new("libraw-xtrans-determinism");
+    let path = synthetic_xtrans(dir.path());
+    for scale in [DecodeScale::AtLeast(400), DecodeScale::Full] {
+        let reference = decode_samples(&path, scale, None);
+        for threads in [None, None, Some(1), Some(3)] {
+            let again = decode_samples(&path, scale, threads);
+            assert_identical(
+                &reference,
+                &again,
+                &format!("{scale:?}, {threads:?} threads"),
+            );
+        }
+    }
+}
+
+#[test]
+fn synthetic_xtrans_full_decode_matches_the_chart() {
+    // The block-parallel demosaic must stitch blocks back in the right place: compare
+    // every 24 x 24 region against the scene (the texture averages out).
+    let dir = fixtures::TempDir::new("libraw-xtrans-chart");
+    let path = synthetic_xtrans(dir.path());
+    let (w, h) = (1700u32, 988u32);
+    let out = LibRawDecoder
+        .decode(&path, DecodeOptions::new(DecodeScale::Full), &NeverCancel)
+        .unwrap();
+    assert_eq!((out.image.width(), out.image.height()), (w, h));
+    let data = out.image.data();
+    let mut worst = (0.0f32, 0u32, 0u32);
+    for ry in (8..h - 8 - 24).step_by(24) {
+        for rx in (8..w - 8 - 24).step_by(24) {
+            let mut err = 0.0f32;
+            for y in ry..ry + 24 {
+                for x in rx..rx + 24 {
+                    let i = (y as usize * w as usize + x as usize) * 3;
+                    let scene = fixtures::sample(x, y, w, h);
+                    for c in 0..3 {
+                        err += (f32::from(data[i + c]) / 65535.0 - scene[c]).abs();
+                    }
+                }
+            }
+            let mean = err / (24.0 * 24.0 * 3.0);
+            if mean > worst.0 {
+                worst = (mean, rx, ry);
+            }
+        }
+    }
+    assert!(
+        worst.0 < 0.03,
+        "region at {:?} has mean error {}",
+        (worst.1, worst.2),
+        worst.0
+    );
+}
+
+/// The real camera file that exposed the races (git-ignored local fixture; skips when
+/// absent): 3.4% of preview pixels used to differ between two decodes.
+#[test]
+fn fujifilm_xtrans_decodes_are_deterministic() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/local/fujifilm-xt3-compressed.raf");
+    if !path.exists() {
+        return;
+    }
+    for scale in [DecodeScale::AtLeast(1500), DecodeScale::Full] {
+        let first = decode_samples(&path, scale, None);
+        let second = decode_samples(&path, scale, None);
+        assert_identical(&first, &second, &format!("{scale:?}"));
+    }
+}

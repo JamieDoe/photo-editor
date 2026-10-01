@@ -2,7 +2,7 @@
 //!
 //! Everything here is generated procedurally, so fixtures carry no third-party
 //! copyright and can be regenerated bit-for-bit. The same scene is available as a
-//! Bayer DNG (exercises the RAW path), a JPEG (display-referred path) and a
+//! Bayer or X-Trans DNG (exercises the RAW path), a JPEG (display-referred path) and a
 //! [`LinearImage`] (renderer golden tests, independent of any decoder).
 
 mod dng;
@@ -11,7 +11,7 @@ mod tempdir;
 
 use image_core::{LinearImage, color};
 
-pub use dng::{DNG_MAKE, DNG_MODEL, chart_dng};
+pub use dng::{DNG_MAKE, DNG_MODEL, XTRANS_TEXTURE, chart_dng, chart_xtrans_dng};
 pub use scene::{chart_neutral_value, chart_probe_neutral, sample};
 pub use tempdir::TempDir;
 
