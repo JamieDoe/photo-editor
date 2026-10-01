@@ -27,6 +27,10 @@ pub struct ExportBatchDto {
     #[serde(default)]
     #[ts(optional)]
     pub format: Option<settings::ExportFileFormat>,
+    /// What to sharpen for (ADR 0059); Screen when left out.
+    #[serde(default)]
+    #[ts(optional)]
+    pub sharpen: Option<settings::OutputSharpening>,
     /// The folder to export to, for the self-test only; otherwise the one chosen in
     /// the folder dialog (settings).
     #[ts(optional)]

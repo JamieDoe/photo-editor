@@ -10,6 +10,7 @@ use image_core::{OutputImage, PixelFormat};
 
 mod icc;
 pub mod resize;
+pub mod sharpen;
 #[cfg(feature = "turbojpeg")]
 mod turbo;
 

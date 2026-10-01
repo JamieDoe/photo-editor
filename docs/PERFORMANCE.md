@@ -822,3 +822,22 @@ level of about 2000 px. Median of 3, release build, machine load 7–10.
 
 Release self-test: Nikon Z 6, 53 ms; Ricoh GR III, 70 ms (with the call over IPC).
 It runs once per photo when Retouch opens, on the interactive lane.
+
+## 41. Output sharpening (ADR 0059)
+
+Sharpening a 6064×4040 image on its own (release build, every core, median of 5,
+machine load 7–8):
+
+| Version | 8-bit Screen | 8-bit Matte | 16-bit Screen | 16-bit Matte |
+|---|---|---|---|---|
+| First (float copies of everything, ~1 GB at peak) | 82 ms | 98 ms | 86 ms | 101 ms |
+| Kept (two float planes, ~190 MB, written in place) | 58 ms | 78 ms | 63 ms | 86 ms |
+
+Release self-test, full-size export of the Nikon Z 6 on the export lane (its bounded
+thread pool), Screen sharpening:
+
+| Build | Render (incl. sharpening) | Total |
+|---|---|---|
+| First version | 342–469 ms | 1.5–1.8 s |
+| Kept | 230 ms | 1.38 s |
+| Before sharpening (ADR 0057) | 128–171 ms | 1.40 s |

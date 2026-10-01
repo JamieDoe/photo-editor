@@ -1,5 +1,6 @@
 import * as ipc from "../../ipc/client";
 import type { ExportFileFormat } from "../../ipc/generated/ExportFileFormat";
+import type { OutputSharpening } from "../../ipc/generated/OutputSharpening";
 import type { ExportQueueEvent } from "../../ipc/generated/ExportQueueEvent";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
@@ -429,7 +430,13 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       if (!indexing) return null;
       const folder = config.exportPath.replace(/[^/\\]+$/, "");
       const photos = (await ipc.listFolder(indexing.folder)).photos.map((p) => p.path);
-      const run = async (items: string[], longEdge: number | undefined, cancelAfterStart: boolean, format: ExportFileFormat = "jpeg") => {
+      const run = async (
+        items: string[],
+        longEdge: number | undefined,
+        cancelAfterStart: boolean,
+        format: ExportFileFormat = "jpeg",
+        sharpen: OutputSharpening = "screen",
+      ) => {
         let progress = 0;
         let finished: Extract<ExportQueueEvent, { type: "finished" }> | null = null;
         const unlisten = await ipc.onExportQueueEvent((e) => {
@@ -439,7 +446,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
           } else finished = e;
         });
         const t0 = performance.now();
-        await ipc.startExport({ items: items.map((path) => ({ path })), longEdge, quality: 85, format, folder });
+        await ipc.startExport({ items: items.map((path) => ({ path })), longEdge, quality: 85, format, sharpen, folder });
         const done = await waitFor(() => finished, 120_000, "export queue").catch(() => null);
         unlisten();
         return { done, progress, ms: Math.round(performance.now() - t0) };
@@ -454,8 +461,14 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         return o ? { file: o.path.split(/[\\/]/).pop(), size: `${o.width}x${o.height}`, kb: Math.round(o.bytes / 1024), ms: Math.round(performance.now() - t) } : null;
       };
       const formats = { jpeg: sized.done?.outputs[0]?.bytes ?? null, tiff: await output("tiff"), png: await output("png") };
+      // Output sharpening (ADR 0059): sharpened for matte paper, the same JPEG holds
+      // more fine detail, so it is larger than unsharpened.
+      const sharpenedKb = async (sharpen: OutputSharpening) =>
+        Math.round(((await run([config.imagePath], 1350, false, "jpeg", sharpen)).done?.outputs[0]?.bytes ?? 0) / 1024);
+      const sharpening = { noneKb: await sharpenedKb("none"), screenKb: await sharpenedKb("screen"), matteKb: await sharpenedKb("matte") };
       return {
         formats,
+        sharpening,
         exported: sized.done?.exported ?? null,
         longEdges: sized.done?.outputs.map((o) => Math.max(o.width, o.height)) ?? [],
         failed: sized.done?.failed.length ?? null,
@@ -474,6 +487,11 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       // A 16-bit TIFF is far larger than the PNG, which is larger than a JPEG.
       exportQueue.formats.tiff!.kb > exportQueue.formats.png!.kb &&
       exportQueue.formats.png!.kb * 1024 > (exportQueue.formats.jpeg ?? Infinity);
+    const sharpeningOk =
+      exportQueue !== null &&
+      exportQueue.sharpening.noneKb > 0 &&
+      exportQueue.sharpening.screenKb > exportQueue.sharpening.noneKb &&
+      exportQueue.sharpening.matteKb > exportQueue.sharpening.screenKb;
     const exportQueueOk =
       exportQueue !== null &&
       exportQueue.exported === 3 &&
@@ -1431,6 +1449,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       batch: batchOk,
       exportQueue: exportQueueOk,
       exportFormats: formatsOk,
+      outputSharpening: sharpeningOk,
       whiteBalanceLight: lightOk,
       colourGrading: gradingOk,
       calibration: calibrationOk,

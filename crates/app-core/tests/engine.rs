@@ -180,6 +180,7 @@ fn files_export_fitted_to_a_long_edge_without_being_open() {
                     recipe,
                     destination: dir.path().join(name),
                     format: ExportFormat::Jpeg { quality: 85 },
+                    sharpening: app_core::OutputSharpening::None,
                     long_edge,
                 },
                 |_| {},
@@ -275,6 +276,7 @@ fn export_writes_full_resolution_and_never_touches_source() {
                 },
                 destination: dest.clone(),
                 format: ExportFormat::Jpeg { quality: 90 },
+                sharpening: app_core::OutputSharpening::None,
             },
             move |p| seen.lock().unwrap().push(p.stage),
         )
@@ -304,6 +306,7 @@ fn export_over_source_is_rejected() {
                 recipe: EditRecipe::default(),
                 destination: path.clone(),
                 format: ExportFormat::Jpeg { quality: 90 },
+                sharpening: app_core::OutputSharpening::None,
             },
             |_| {},
         )
@@ -329,6 +332,7 @@ fn interactive_preview_is_not_blocked_by_running_export() {
             recipe: EditRecipe::default(),
             destination: dir.path().join("out.jpg"),
             format: ExportFormat::Jpeg { quality: 90 },
+            sharpening: app_core::OutputSharpening::None,
         },
         |_| {},
     );

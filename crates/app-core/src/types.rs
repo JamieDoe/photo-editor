@@ -91,6 +91,8 @@ pub struct ExportRequest {
     pub recipe: EditRecipe,
     pub destination: PathBuf,
     pub format: ExportFormat,
+    /// Output sharpening (ADR 0059), after any resize.
+    pub sharpening: export::sharpen::OutputSharpening,
 }
 
 /// Exporting a photo straight from its file (ADR 0050), as the export queue does: it
@@ -103,6 +105,8 @@ pub struct FileExport {
     pub format: ExportFormat,
     /// The output's long edge at most this many pixels; the full size when `None`.
     pub long_edge: Option<u32>,
+    /// Output sharpening (ADR 0059), after any resize.
+    pub sharpening: export::sharpen::OutputSharpening,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

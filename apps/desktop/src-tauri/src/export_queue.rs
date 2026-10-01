@@ -25,6 +25,7 @@ pub struct QueuedExport {
     pub folder: PathBuf,
     pub long_edge: Option<u32>,
     pub format: ExportFormat,
+    pub sharpening: app_core::OutputSharpening,
 }
 
 #[derive(Default)]
@@ -154,6 +155,7 @@ async fn run_queue(app: AppHandle) {
                 destination: dest,
                 format: item.format,
                 long_edge: item.long_edge,
+                sharpening: item.sharpening,
             },
             move |p| {
                 let _ = progress_app.emit(
