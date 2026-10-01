@@ -52,8 +52,14 @@ are separate steps (see Consequences).
      the page's own drags, so photos could not be dragged onto albums.
    - **Header:** on a narrow window, the header's actions wrap onto their own rows
      under the title instead of overflowing.
-   - **Ticking:** in the grid and list, ⌘-click ticks a photo and ⇧-click ticks a
-     range. These are the filmstrip's batch ticks (ADR 0049), shared between
+   - **Selecting several:** in the grid and list, ⌘-click ticks a photo and ⇧-click
+     ticks a range. The photo selected by a plain click counts with the ticked ones, as
+     in the Finder: click one, ⌘-click others.
+   - **Dragging several** shows a stack of up to three of their cards (the dragged one
+     on top) with the count. WebKit draws the drag image from the element as shown, so
+     it is placed under the pointer for that moment, then removed.
+   - **Hovering** a selected or ticked photo keeps its ring, a little darker.
+   - **Ticking** uses the filmstrip's ticks. These are the filmstrip's batch ticks (ADR 0049), shared between
      Library and Edit. The accent ring marks ticked photos, and the header shows
      "N photos ticked ×".
    - **Adding photos:**

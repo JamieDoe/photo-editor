@@ -49,6 +49,7 @@ export function PhotoGrid({ photos, scrollRef, selected, onPick, onOpen, ticked,
             key={p.path}
             className={["card", p.marks.flag === "reject" && "rejected", ticked.has(p.path) && "ticked"].filter(Boolean).join(" ")}
             aria-pressed={p.path === selected}
+            data-photo-path={p.path}
             draggable
             onDragStart={(e) => onDrag(p.path, e)}
             onClick={(e) => onPick(p.path, e)}

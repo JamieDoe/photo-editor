@@ -49,6 +49,7 @@ export function PhotoList({ photos, scrollRef, selected, onPick, onOpen, ticked,
               aria-rowindex={first + i + 2}
               aria-selected={p.path === selected}
               style={{ height: ROW_HEIGHT }}
+              data-photo-path={p.path}
               draggable
               onDragStart={(e) => onDrag(p.path, e)}
               onClick={(e) => onPick(p.path, e)}

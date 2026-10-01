@@ -17,6 +17,8 @@
   --accent: #f0b45e;
   --accent-text: #f6cb8a;
   --accent-soft: rgb(240 180 94 / 12%);
+  --accent-ring-hover: #b98543; /* a ticked photo's ring, hovered */
+  --text-ring-hover: #9fa0a6; /* the selected photo's ring, hovered */
   --success: #6fbf8a;
   --danger: #e5675c;
   --danger-soft: rgb(229 103 92 / 12%);
@@ -53,6 +55,7 @@
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) {
     --canvas: #ececef; --surface: #f8f8f9; --raised: #ffffff; --control: #ffffff;
+    --accent-ring-hover: #9a6415; --text-ring-hover: #55565c;
     --hairline: rgb(0 0 0 / 8%); --hairline-strong: rgb(0 0 0 / 12%);
     --hover: rgb(0 0 0 / 4%); --hover-strong: rgb(0 0 0 / 7%); --fill-quiet: rgb(0 0 0 / 4%);
     --text: #16171b; --text-2: #55565c; --text-3: #7d7f86;
@@ -72,6 +75,7 @@
 }
 :root[data-theme="light"] {
   --canvas: #ececef; --surface: #f8f8f9; --raised: #ffffff; --control: #ffffff;
+  --accent-ring-hover: #9a6415; --text-ring-hover: #55565c;
   --hairline: rgb(0 0 0 / 8%); --hairline-strong: rgb(0 0 0 / 12%);
   --hover: rgb(0 0 0 / 4%); --hover-strong: rgb(0 0 0 / 7%); --fill-quiet: rgb(0 0 0 / 4%);
   --text: #16171b; --text-2: #55565c; --text-3: #7d7f86;
@@ -242,7 +246,13 @@ button.card.ticked[aria-pressed="true"] .card-frame { box-shadow: 0 0 0 2px var(
 .card-name + .card-edited { margin-right: auto; }
 .card-edited { width: 5px; height: 5px; border-radius: 3px; background: var(--text); flex-shrink: 0; }
 .card-image img { width: 100%; height: 100%; object-fit: contain; transition: transform 0.35s var(--ease); animation: fade-in 0.2s ease; }
-button.card:hover:not([aria-pressed="true"]) .card-frame { box-shadow: 0 0 0 1px var(--hairline-strong); }
+button.card:hover:not([aria-pressed="true"]):not(.ticked) .card-frame { box-shadow: 0 0 0 1px var(--hairline-strong); }
+/* Hovering a selected or ticked photo keeps its ring, a little darker. */
+button.card[aria-pressed="true"]:hover .card-frame { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--text-ring-hover); }
+button.card.ticked:hover .card-frame { box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent-ring-hover); }
+button.card.ticked[aria-pressed="true"]:hover .card-frame {
+  box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent-ring-hover), 0 0 0 6px var(--text-ring-hover);
+}
 button.card:hover .card-image img { transform: scale(1.015); }
 .card-caption { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 2px; height: 18px; }
 .card-name { font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -821,6 +831,23 @@ button.batch-export:hover:not(:disabled) { background: var(--hover-strong); colo
 .nav-row.album-row.drop { background: var(--hover-strong); color: var(--text); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .nav-new { padding: 2px 0 4px; }
 .nav-new .text-input { width: 100%; height: 30px; font-size: 13px; }
+/* Dragging several photos (ADR 0055): a stack of up to three cards, fanned a little, the
+   dragged photo on top, with the count in the accent colour. Shown for an instant under
+   the pointer while the drag image is taken. */
+.drag-stack { position: fixed; z-index: 100; width: 112px; height: 88px; pointer-events: none; }
+.drag-card {
+  position: absolute; left: 12px; top: 14px; width: 84px; height: 56px; border-radius: 6px; overflow: hidden;
+  background: var(--raised); box-shadow: 0 0 0 1.5px var(--canvas), 0 6px 16px rgb(0 0 0 / 45%);
+}
+.drag-card img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.drag-card.depth-0 { box-shadow: 0 0 0 2px var(--accent), 0 8px 18px rgb(0 0 0 / 50%); }
+.drag-card.depth-1 { transform: translate(7px, -5px) rotate(5deg); }
+.drag-card.depth-2 { transform: translate(-6px, -4px) rotate(-6deg); }
+.drag-count {
+  position: absolute; right: 4px; top: 2px; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; background: var(--accent); color: #0b0c0e;
+  font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; box-shadow: 0 2px 6px rgb(0 0 0 / 40%);
+}
 .ticked-count { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-2); }
 .popover-menu.album-menu { max-height: 240px; overflow-y: auto; }
 .album-menu .popover-item .grow { flex: 1 1 auto; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

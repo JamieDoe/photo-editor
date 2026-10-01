@@ -306,8 +306,12 @@ export function useLibrary() {
       }
       return changed;
     },
-    /** The photos an action applies to: the ticked ones in view, else the selected. */
-    targets: (): string[] => (batchInView.length > 0 ? batchInView : selected && photos.some((p) => p.path === selected) ? [selected] : []),
+    /** The photos an action applies to: the selected one (if in view) and the ticked
+     *  ones, as one selection (click one, ⌘-click others, as in the Finder). */
+    targets: (): string[] => {
+      const inView = selected !== null && photos.some((p) => p.path === selected);
+      return inView && !batchInView.includes(selected) ? [selected, ...batchInView] : batchInView;
+    },
     photos,
     visible,
     neighbour,

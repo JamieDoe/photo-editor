@@ -69,8 +69,8 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
     else if (e.shiftKey) library.tickRange(path);
     else setSelected(path);
   };
-  /** Dragging a ticked photo drags all the ticked ones. */
-  const drag = (path: string, e: DragEvent) => setDraggedPaths(e, ticked.has(path) ? library.batch : [path]);
+  /** Dragging one of the selected and ticked photos drags them all; another, just it. */
+  const drag = (path: string, e: DragEvent) => setDraggedPaths(e, targets.includes(path) ? targets : [path], path);
 
   // Keyboard: arrows move the selection, Enter opens, 0–5 / P / X / U mark it.
   useEffect(() => {
@@ -228,8 +228,8 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                 {indexText && <span className="index-status">{indexText}</span>}
                 {library.batch.length > 0 && (
                   <span className="ticked-count">
-                    {photosText(library.batch.length)} ticked
-                    <button className="icon-button" aria-label="Clear ticks" title="Clear ticks" onClick={library.clearBatch}>
+                    {photosText(targets.length)} selected
+                    <button className="icon-button" aria-label="Clear selection" title="Clear selection" onClick={library.clearBatch}>
                       <CloseIcon size={12} />
                     </button>
                   </span>

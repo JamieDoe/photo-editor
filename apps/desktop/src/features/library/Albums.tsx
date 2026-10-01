@@ -12,9 +12,53 @@ import type { LibraryApi } from "./useLibrary";
 /** Dragged photos carry their paths under this type. */
 const PHOTO_PATHS = "application/x-photo-paths";
 
-export function setDraggedPaths(e: DragEvent, paths: string[]) {
+/** Starts dragging `paths`, `dragged` being the photo the pointer took. Several photos
+ *  show as a stack of cards (the dragged one on top) with their count. */
+export function setDraggedPaths(e: DragEvent, paths: string[], dragged: string) {
   e.dataTransfer.setData(PHOTO_PATHS, JSON.stringify(paths));
   e.dataTransfer.effectAllowed = "copy";
+  if (paths.length < 2) return;
+  const stack = dragStack(paths, dragged);
+  // WebKit draws the drag image from the element as shown, so it is placed on screen
+  // under the pointer for this moment, then removed.
+  stack.style.left = `${e.clientX - STACK_GRAB[0]}px`;
+  stack.style.top = `${e.clientY - STACK_GRAB[1]}px`;
+  document.body.appendChild(stack);
+  e.dataTransfer.setDragImage(stack, STACK_GRAB[0], STACK_GRAB[1]);
+  window.setTimeout(() => stack.remove(), 0);
+}
+
+/** Where the pointer holds the stack (px from its top left). */
+const STACK_GRAB = [52, 40] as const;
+
+/** Up to three cards, the dragged photo on top and those whose thumbnails are on screen
+ *  under it, and a badge with how many photos. */
+function dragStack(paths: string[], dragged: string): HTMLElement {
+  const picture = (path: string) =>
+    document.querySelector<HTMLImageElement>(`[data-photo-path="${CSS.escape(path)}"] img`)?.src ?? null;
+  const others = paths.filter((p) => p !== dragged).map(picture);
+  const pictures = [picture(dragged), ...others.filter((s) => s !== null), ...others.filter((s) => s === null)].slice(0, 3);
+  const stack = document.createElement("div");
+  stack.className = "drag-stack";
+  // Back to front: the last drawn is on top.
+  pictures
+    .map((src, i) => ({ src, depth: i }))
+    .reverse()
+    .forEach(({ src, depth }) => {
+      const card = document.createElement("div");
+      card.className = `drag-card depth-${depth}`;
+      if (src) {
+        const img = document.createElement("img");
+        img.src = src;
+        card.appendChild(img);
+      }
+      stack.appendChild(card);
+    });
+  const count = document.createElement("span");
+  count.className = "drag-count";
+  count.textContent = String(paths.length);
+  stack.appendChild(count);
+  return stack;
 }
 
 function draggedPaths(e: DragEvent): string[] {
