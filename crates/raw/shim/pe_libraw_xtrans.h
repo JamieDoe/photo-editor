@@ -1,6 +1,6 @@
 /*
  * Internal to the shim: a LibRaw instance whose X-Trans processing is deterministic
- * under OpenMP. See pe_libraw_xtrans.cpp and docs/ADR/0060-deterministic-xtrans-decode.md.
+ * under OpenMP. See pe_libraw_xtrans.cpp and docs/ADR/0061-deterministic-xtrans-decode.md.
  */
 #ifndef PE_LIBRAW_XTRANS_H
 #define PE_LIBRAW_XTRANS_H

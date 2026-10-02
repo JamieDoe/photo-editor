@@ -1,5 +1,5 @@
 /*
- * Deterministic X-Trans processing on top of LibRaw (ADR 0060).
+ * Deterministic X-Trans processing on top of LibRaw (ADR 0061).
  *
  * LibRaw 0.22's OpenMP code has two data races that only affect X-Trans sensors, so
  * decoding the same RAF twice gives different pixels:

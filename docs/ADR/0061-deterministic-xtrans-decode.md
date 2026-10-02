@@ -1,4 +1,4 @@
-# ADR 0060: Deterministic X-Trans (Fujifilm) decoding
+# ADR 0061: Deterministic X-Trans (Fujifilm) decoding
 
 - Status: Accepted
 - Date: 2026-10-01
@@ -74,6 +74,8 @@ files take LibRaw's own paths: their decodes are byte-identical to before.
 
 Fujifilm X-T3 (26 MP), M1 Max, release build, LibRaw 0.22.2. Medians of 3–9 decodes,
 with `main` and this change run alternately (machine load 3–13):
+(measured before ADR 0060 added the Rec.2020 → sRGB step after LibRaw, which is
+per-pixel and unaffected by this change)
 
 | Decode | Threads | Before | After | Pixels differing between two decodes, before → after |
 |---|---|---|---|---|

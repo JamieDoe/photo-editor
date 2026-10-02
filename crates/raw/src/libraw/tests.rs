@@ -216,7 +216,7 @@ fn reports_the_as_shot_light() {
     }
 }
 
-// --- X-Trans determinism (ADR 0060) ---
+// --- X-Trans determinism (ADR 0061) ---
 //
 // LibRaw's OpenMP code races on X-Trans sensors (half-size binning and the strip-parallel
 // demosaic), so the same file used to decode to different pixels each time. The shim

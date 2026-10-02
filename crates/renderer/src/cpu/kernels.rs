@@ -733,9 +733,10 @@ impl Kernel {
                 let [wr, wg, wb] = REC709_LUMA;
                 for px in rgb.as_chunks_mut::<3>().0 {
                     let y = px[0] * wr + px[1] * wg + px[2] * wb;
-                    px[0] = (y + (px[0] - y) * f).max(0.0);
-                    px[1] = (y + (px[1] - y) * f).max(0.0);
-                    px[2] = (y + (px[2] - y) * f).max(0.0);
+                    // Out-of-gamut values pass on, for the output's compression.
+                    px[0] = y + (px[0] - y) * f;
+                    px[1] = y + (px[1] - y) * f;
+                    px[2] = y + (px[2] - y) * f;
                 }
             }
             Self::Mixer(table) => {

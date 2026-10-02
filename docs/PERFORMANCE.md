@@ -160,7 +160,7 @@ Same plan and pixels (max difference 1 code). ms, median of 10 runs after warm-u
    most of it is **inside LibRaw**.
    - `bench --decode-peak` measures a lone full decode in a fresh process: 17–18 B/px
      for Bayer files (Nikon 451 MB, 61 MP Sony 1.05 GB) and 24.5 B/px for X-Trans
-     (28.1 B/px at 10 threads since the deterministic X-Trans demosaic, §42).
+     (28.1 B/px at 10 threads since the deterministic X-Trans demosaic, §43).
      Our decoded result is 6 B/px.
    - LibRaw holds its raw buffer, a 4-channel working image and demosaic scratch at
      the same time. Removing our copy of its output would not lower the peak (the copy
@@ -843,7 +843,20 @@ thread pool), Screen sharpening:
 | Kept | 230 ms | 1.38 s |
 | Before sharpening (ADR 0057) | 128–171 ms | 1.40 s |
 
-## 42. Deterministic X-Trans decoding (ADR 0060)
+## 42. Soft gamut compression (ADR 0060)
+
+Per pixel over a 24 MP image (6064×4040), release build, every core, median of 5,
+machine load about 5:
+
+| Step | Time at 24 MP | At a 1516×1010 preview |
+|---|---|---|
+| Decode: Rec.2020 → sRGB with compression (every raw decode) | 67 ms | about 4 ms |
+| Output compression (only plans with colour edits; most pixels exit at once) | 26 ms | about 1.7 ms |
+
+For scale, a full-size raw decode takes about 1 s, so the conversion adds about 7%. A
+half-size preview decode (6 MP) adds about 17 ms.
+
+## 43. Deterministic X-Trans decoding (ADR 0061)
 
 Fujifilm X-T3, release build, `main` and the fix run alternately (median of 3–9
 decodes, machine load 3–13). "Differing" is the share of pixels that changed between
