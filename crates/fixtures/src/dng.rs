@@ -1,8 +1,9 @@
-//! Minimal uncompressed Bayer DNG writer for synthetic RAW fixtures.
+//! Minimal uncompressed mosaic DNG writer for synthetic RAW fixtures.
 //!
 //! The simulated sensor has per-channel sensitivities (so white balance matters) and
-//! an RGGB mosaic. Its colour matrix is chosen so that camera WB + matrix recover the
-//! scene-linear chart values, giving tests a known expected output.
+//! an RGGB (Bayer) or Fujifilm X-Trans mosaic. Its colour matrix is chosen so that
+//! camera WB + matrix recover the scene-linear chart values, giving tests a known
+//! expected output.
 
 use image_core::color::XYZ_TO_LINEAR_SRGB;
 
@@ -17,6 +18,17 @@ const BLACK_LEVEL: u16 = 512;
 const WHITE_LEVEL: u16 = 16383;
 /// RGGB: 0 = red, 1 = green, 2 = blue.
 const CFA: [u8; 4] = [0, 1, 1, 2];
+/// Fujifilm X-Trans 6x6 pattern, same colour codes.
+const XTRANS_CFA: [u8; 36] = [
+    1, 1, 0, 1, 1, 2, //
+    1, 1, 2, 1, 1, 0, //
+    2, 0, 1, 0, 2, 1, //
+    1, 1, 2, 1, 1, 0, //
+    1, 1, 0, 1, 1, 2, //
+    0, 2, 1, 2, 0, 1, //
+];
+/// Peak amplitude of the X-Trans chart's per-photosite texture (scene-linear).
+pub const XTRANS_TEXTURE: f32 = 0.02;
 
 const BYTE: u16 = 1;
 const ASCII: u16 = 2;
@@ -109,12 +121,35 @@ impl Tag {
 
 /// Generates the synthetic chart as a 14-bit uncompressed Bayer DNG.
 pub fn chart_dng(width: u32, height: u32) -> Vec<u8> {
+    mosaic_dng(width, height, &CFA, 2, 0.0)
+}
+
+/// Generates the synthetic chart as a 14-bit uncompressed X-Trans DNG.
+///
+/// Every photosite carries deterministic texture of up to [`XTRANS_TEXTURE`], so
+/// neighbouring samples of one colour differ and demosaic results depend on exactly
+/// which samples are used (the flat chart alone would hide ordering bugs).
+pub fn chart_xtrans_dng(width: u32, height: u32) -> Vec<u8> {
+    mosaic_dng(width, height, &XTRANS_CFA, 6, XTRANS_TEXTURE)
+}
+
+/// Deterministic value in [-1, 1] per photosite.
+fn texture(x: u32, y: u32) -> f32 {
+    let mut h = x.wrapping_mul(0x9E37_79B1) ^ y.wrapping_mul(0x85EB_CA77);
+    h ^= h >> 15;
+    h = h.wrapping_mul(0x2C1B_3C6D);
+    h ^= h >> 12;
+    (h & 0xFFFF) as f32 / 32767.5 - 1.0
+}
+
+fn mosaic_dng(width: u32, height: u32, cfa: &[u8], period: u32, texture_amp: f32) -> Vec<u8> {
+    debug_assert_eq!(cfa.len() as u32, period * period);
     let mut pixels = Vec::with_capacity(width as usize * height as usize * 2);
     let range = f32::from(WHITE_LEVEL - BLACK_LEVEL);
     for y in 0..height {
         for x in 0..width {
-            let c = CFA[((y % 2) * 2 + (x % 2)) as usize] as usize;
-            let scene = sample(x, y, width, height)[c];
+            let c = cfa[((y % period) * period + (x % period)) as usize] as usize;
+            let scene = sample(x, y, width, height)[c] + texture_amp * texture(x, y);
             let v = f32::from(BLACK_LEVEL) + scene * SENSITIVITY[c] * range;
             pixels.extend((v.round().clamp(0.0, f32::from(WHITE_LEVEL)) as u16).to_le_bytes());
         }
@@ -148,8 +183,8 @@ pub fn chart_dng(width: u32, height: u32) -> Vec<u8> {
         Tag::long(279, strip_bytes),
         Tag::short(284, 1),
         Tag::ascii(305, "photo-editor fixtures"),
-        Tag::shorts(33421, &[2, 2]),
-        Tag::bytes(33422, &CFA),
+        Tag::shorts(33421, &[period as u16, period as u16]),
+        Tag::bytes(33422, cfa),
         Tag::bytes(50706, &[1, 4, 0, 0]),
         Tag::bytes(50707, &[1, 1, 0, 0]),
         Tag::ascii(50708, &format!("{DNG_MAKE} {DNG_MODEL}")),
