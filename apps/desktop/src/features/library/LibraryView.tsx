@@ -21,7 +21,7 @@ interface Props {
   notify: (message: string) => void;
 }
 
-let defaultFolderTried = false;
+let startTried = false;
 
 const folderName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
 
@@ -31,12 +31,25 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
   const s = settings.settings;
   const defaultFolder = s?.library.defaultFolder ?? null;
 
-  // Show the default folder the first time the Library appears.
+  // The first time the Library appears, reopen where it was left (ADR 0065), or the
+  // default folder when that place is gone (a deleted album, a disconnected drive) or
+  // there is none yet.
   useEffect(() => {
-    if (defaultFolderTried || listing || !defaultFolder) return;
-    defaultFolderTried = true;
-    void library.openFolder(defaultFolder);
-  }, [defaultFolder, listing, library]);
+    if (startTried || listing || !s) return;
+    startTried = true;
+    const last = s.library.lastPlace;
+    void (async () => {
+      const reopened =
+        last === null
+          ? false
+          : last.kind === "folder"
+            ? (await library.openFolder(last.path)) !== null
+            : last.kind === "collection"
+              ? await library.openCollection(last.collection)
+              : await library.openAlbum(last.id);
+      if (!reopened && s.library.defaultFolder) await library.openFolder(s.library.defaultFolder);
+    })();
+  }, [s, listing, library]);
 
   const indexText = indexStatusText(library.indexing, library.lastIndex);
 
@@ -116,7 +129,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
     >
       {icon}
       <span className="grow">{COLLECTION_NAMES[kind]}</span>
-      <span className="count">{count ?? 0}</span>
+      <span className="count">{(count ?? 0).toLocaleString()}</span>
     </button>
   );
   const recent = s?.library.recentFolders ?? [];
@@ -156,11 +169,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
         <div className="sidebar-scroll scroll">
           <section className="nav-section" aria-label="Library">
             <div className="nav-label">Library</div>
-            <div className="nav-row">
-              <PhotosIcon />
-              <span className="grow">Indexed photos</span>
-              <span className="count">{library.status ? library.status.photos.toLocaleString() : "—"}</span>
-            </div>
+            {collectionRow("all", <PhotosIcon />, counts?.all)}
             {collectionRow("recent", <ImportIcon size={16} />, counts?.recent)}
             {collectionRow("picks", <PickIcon size={16} />, counts?.picks)}
             {collectionRow("rated", <RatingStar filled={false} />, counts?.rated)}
@@ -431,7 +440,8 @@ function emptyMessage(total: number, filter: LibraryFilter, collection: Collecti
     return `No photos labelled ${l.name.toLowerCase()} here.${l.key ? ` Select a photo and press ${l.key}.` : ""}`;
   }
   if (collection) {
-    const how = {
+    const how: Record<CollectionKindDto, string> = {
+      all: "Add a folder, and its photos show here once indexed.",
       picks: "Press P to pick the selected photo.",
       rated: "Press 1–5 to rate the selected photo.",
       rejected: "Press X to reject the selected photo.",

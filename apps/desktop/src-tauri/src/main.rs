@@ -86,6 +86,7 @@ fn main() {
             commands::system::report_client_error,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::settings::remember_place,
             commands::library::choose_folder,
             commands::library::list_folder,
             commands::library::set_default_folder,

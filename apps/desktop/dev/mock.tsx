@@ -42,7 +42,7 @@ let mockSettings: Record<string, unknown> = {
   version: 1,
   general: { theme: "system" },
   performance: { previewCacheMb: 256, backgroundIntensity: "balanced" },
-  library: { defaultFolder: null, recentFolders: [] },
+  library: { defaultFolder: null, recentFolders: [], view: { layout: "grid", filter: "all", label: null, sort: "captured" }, lastPlace: null },
   export: { format: "jpeg", sharpen: "screen", colourSpace: "srgb", keepMetadata: true, stripLocation: false, jpegQuality: 85, folder: null, longEdge: 2048, preset: "web" },
   backups: { copyFolder: null },
 };
@@ -139,6 +139,7 @@ async function mockThumbnail(path: string): Promise<ArrayBuffer> {
 function counts() {
   const all = (lastListing ?? mockListing("/Users/me/Photos/2026 Iceland")).photos.map((p, i) => marksOf(p.path, i));
   return {
+    all: all.length,
     picks: all.filter((m) => m.flag === "pick").length,
     rated: all.filter((m) => m.rating > 0).length,
     rejected: all.filter((m) => m.flag === "reject").length,
@@ -231,6 +232,9 @@ mockIPC((cmd, payload) => {
       return { appVersion: "0.0.1", os: "mock", arch: "mock", cpuThreads: 10, rendererVersion: 1, librawVersion: "mock", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", logDir: "/mock/logs" };
     case "report_client_error":
       return "E-MOCK-1";
+    case "remember_place":
+      (mockSettings.library as { lastPlace: unknown }).lastPlace = (payload as { place: unknown }).place;
+      return null;
     case "update_settings":
       mockSettings = (payload as { settings: Record<string, unknown> }).settings;
       return { settings: mockSettings, restartRequired: false, recoveredFrom: null };
@@ -373,11 +377,11 @@ mockIPC((cmd, payload) => {
       return new Promise((r) => setTimeout(() => r({ query, photos }), 40));
     }
     case "library_collection": {
-      const kind = (payload as { kind: "picks" | "rated" | "rejected" | "recent" }).kind;
+      const kind = (payload as { kind: "all" | "picks" | "rated" | "rejected" | "recent" }).kind;
       const all = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");
       const photos = all.photos
         .map((p, i) => ({ ...p, marks: marksOf(p.path, i) }))
-        .filter((p, i) => (kind === "recent" ? i < 64 : kind === "picks" ? p.marks.flag === "pick" : kind === "rejected" ? p.marks.flag === "reject" : p.marks.rating > 0));
+        .filter((p, i) => (kind === "all" ? true : kind === "recent" ? i < 64 : kind === "picks" ? p.marks.flag === "pick" : kind === "rejected" ? p.marks.flag === "reject" : p.marks.rating > 0));
       return { kind, photos };
     }
     case "library_thumbnail":

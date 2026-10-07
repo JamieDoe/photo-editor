@@ -292,6 +292,66 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       marks.labelOnly.flag === "none" &&
       marks.unlabelled?.label === "none";
 
+    // All photos (ADR 0065): every present photo, as many as the sidebar counts, the
+    // test folder's photos among them. Then the Library's view choices round-trip
+    // through the (temporary) settings file.
+    const allPhotos = await (async () => {
+      if (!indexing) return null;
+      const t = performance.now();
+      const all = await ipc.libraryCollection("all");
+      const ms = Math.round((performance.now() - t) * 10) / 10;
+      const status = await ipc.libraryStatus();
+      const folder = (await ipc.listFolder(indexing.folder)).photos.map((p) => p.path);
+      const listed = new Set(all.photos.map((p) => p.path));
+      const before = (await ipc.getSettings()).settings;
+      const chosen = { layout: "list", filter: "picks", label: "blue", sort: "newest" } as const;
+      const stored = (await ipc.updateSettings({ ...before, library: { ...before.library, view: chosen } })).settings.library.view;
+      await ipc.updateSettings(before);
+      // Where the Library was left: recorded by Rust (a folder only when granted, by
+      // its canonical path) and never by a settings update.
+      const placeOf = async () => (await ipc.getSettings()).settings.library.lastPlace;
+      await ipc.rememberPlace({ kind: "collection", collection: "all" });
+      const collectionPlace = await placeOf();
+      await ipc.rememberPlace({ kind: "folder", path: `${indexing.folder}/.` });
+      const folderPlace = await placeOf();
+      const outside = await ipc.rememberPlace({ kind: "folder", path: "/" }).then(
+        () => "stored",
+        () => "refused",
+      );
+      const afterOutside = await placeOf();
+      const current = (await ipc.getSettings()).settings;
+      await ipc.updateSettings({ ...current, library: { ...current.library, lastPlace: { kind: "album", id: 999 } } });
+      const afterUpdate = await placeOf();
+      return {
+        photos: all.photos.length,
+        count: status.collections.all,
+        folderPhotosListed: folder.filter((p) => listed.has(p)).length,
+        folderPhotos: folder.length,
+        ms,
+        viewStored: stored,
+        place: { collectionPlace, folderPlace, outside, afterOutside, afterUpdate },
+      };
+    })();
+    const allPhotosOk =
+      allPhotos !== null &&
+      allPhotos.photos > 0 &&
+      allPhotos.photos === allPhotos.count &&
+      allPhotos.folderPhotosListed === allPhotos.folderPhotos &&
+      allPhotos.viewStored.layout === "list" &&
+      allPhotos.viewStored.filter === "picks" &&
+      allPhotos.viewStored.label === "blue" &&
+      allPhotos.viewStored.sort === "newest";
+    const lastPlaceOk =
+      allPhotos !== null &&
+      allPhotos.place.collectionPlace?.kind === "collection" &&
+      allPhotos.place.collectionPlace.collection === "all" &&
+      allPhotos.place.folderPlace?.kind === "folder" &&
+      // Stored canonical: the "/." is gone.
+      allPhotos.place.folderPlace.path === indexing?.folder &&
+      allPhotos.place.outside === "refused" &&
+      JSON.stringify(allPhotos.place.afterOutside) === JSON.stringify(allPhotos.place.folderPlace) &&
+      JSON.stringify(allPhotos.place.afterUpdate) === JSON.stringify(allPhotos.place.folderPlace);
+
     // Albums (ADR 0055) through the real commands and catalogue: make one with two
     // photos, add a third (and one again), list it, take one out, rename and delete it.
     const albums = await (async () => {
@@ -1500,6 +1560,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       libraryThumbnails: thumbnailsOk,
       ratingsAndFlags: marksOk,
       colourLabels: labelsOk,
+      allPhotosAndView: allPhotosOk,
+      lastPlace: lastPlaceOk,
       albums: albumsOk,
       search: searchOk,
       savedEdits: editsOk,
@@ -1570,6 +1632,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       indexing,
       thumbnails,
       marks,
+      allPhotos,
       albums,
       search: searchCheck,
       edits,

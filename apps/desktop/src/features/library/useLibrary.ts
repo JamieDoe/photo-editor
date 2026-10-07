@@ -1,3 +1,6 @@
+import type { LibraryPlace } from "../../ipc/generated/LibraryPlace";
+import type { LibraryLayout } from "../../ipc/generated/LibraryLayout";
+import type { LibraryViewSettings } from "../../ipc/generated/LibraryViewSettings";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toAppError, type AppError } from "../../app/errors";
 import * as ipc from "../../ipc/client";
@@ -24,26 +27,64 @@ import {
 
 export type IndexProgress = Extract<IndexEvent, { type: "progress" }>;
 export type IndexFinished = Extract<IndexEvent, { type: "finished" }>;
-export type LibraryLayout = "grid" | "list";
+export type { LibraryLayout } from "../../ipc/generated/LibraryLayout";
+
+const DEFAULT_VIEW: LibraryViewSettings = { layout: "grid", filter: "all", label: null, sort: "captured" };
+
+/** Where the Library's view choices are remembered (settings, ADR 0065). */
+export interface RememberedView {
+  /** The stored choices; `null` until settings have loaded. */
+  view: LibraryViewSettings | null;
+  save: (view: LibraryViewSettings) => void;
+}
+
+/** Records where the Library is, to reopen it next launch (ADR 0065). Best effort: a
+ *  place that can't be recorded only means the default folder opens instead. */
+function remember(place: LibraryPlace) {
+  ipc.rememberPlace(place).catch(() => undefined);
+}
 
 /**
  * Library state: browsing (folder listings) and the catalogue (indexing, totals).
  * Folder access is enforced in Rust: only folders chosen in the native dialog (and
  * remembered ones) can be listed or indexed.
  */
-export function useLibrary() {
+export function useLibrary(remembered?: RememberedView) {
   const [listing, setListing] = useState<FolderListingDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<AppError | null>(null);
   const [indexing, setIndexing] = useState<IndexProgress | null>(null);
   const [lastIndex, setLastIndex] = useState<IndexFinished | null>(null);
   const [status, setStatus] = useState<LibraryStatusDto | null>(null);
-  // Kept here (not in the view) so they survive switching to Edit and back.
-  const [layout, setLayout] = useState<LibraryLayout>("grid");
-  const [filter, setFilter] = useState<LibraryFilter>("all");
-  /** The colour label shown alone, if one is chosen, and the order (ADR 0064). */
-  const [labelFilter, setLabelFilter] = useState<Label | null>(null);
-  const [sort, setSort] = useState<LibrarySort>("captured");
+  // Kept here (not in the view) so they survive switching to Edit and back, and
+  // remembered in settings so they survive quitting (ADR 0065): layout, filter, the
+  // colour label shown alone (ADR 0064) and the order.
+  const [view, setView] = useState<LibraryViewSettings>(DEFAULT_VIEW);
+  const viewRef = useRef(view);
+  const adopted = useRef(false);
+  const saveRef = useRef(remembered?.save);
+  saveRef.current = remembered?.save;
+  const storedView = remembered?.view ?? null;
+  useEffect(() => {
+    // Once, when settings arrive; not over choices made since.
+    if (adopted.current || !storedView) return;
+    adopted.current = true;
+    viewRef.current = storedView;
+    setView(storedView);
+  }, [storedView]);
+  const changeView = useCallback((change: Partial<LibraryViewSettings>) => {
+    adopted.current = true;
+    const next = { ...viewRef.current, ...change };
+    viewRef.current = next;
+    setView(next);
+    saveRef.current?.(next);
+  }, []);
+  const { layout, filter, sort } = view;
+  const labelFilter: Label | null = view.label;
+  const setLayout = useCallback((layout: LibraryLayout) => changeView({ layout }), [changeView]);
+  const setFilter = useCallback((filter: LibraryFilter) => changeView({ filter }), [changeView]);
+  const setLabelFilter = useCallback((label: Label | null) => changeView({ label }), [changeView]);
+  const setSort = useCallback((sort: LibrarySort) => changeView({ sort }), [changeView]);
   const [selected, setSelected] = useState<string | null>(null);
   /** Photos ticked for batch editing (ADR 0049), by path, in the order ticked; and
    *  where a ⇧-click range starts. */
@@ -161,13 +202,15 @@ export function useLibrary() {
         setCollection(null);
         setAlbum(null);
         clearSearch();
+        remember({ kind: "folder", path: result.path });
       }
       return result;
     },
     [load, clearSearch],
   );
 
-  const openCollection = useCallback(async (kind: CollectionKindDto) => {
+  /** Opens a library-wide collection; whether it opened. */
+  const openCollection = useCallback(async (kind: CollectionKindDto): Promise<boolean> => {
     setLoading(true);
     requestRef.current++; // a folder listing still in flight must not replace this view
     try {
@@ -175,14 +218,18 @@ export function useLibrary() {
       setAlbum(null);
       clearSearch();
       setError(null);
+      remember({ kind: "collection", collection: kind });
+      return true;
     } catch (e) {
       setError(await toAppError(e));
+      return false;
     } finally {
       setLoading(false);
     }
   }, [clearSearch]);
 
-  const openAlbum = useCallback(async (id: number) => {
+  /** Opens an album; whether it opened (it may have been deleted). */
+  const openAlbum = useCallback(async (id: number): Promise<boolean> => {
     setLoading(true);
     requestRef.current++; // a folder listing still in flight must not replace this view
     try {
@@ -192,9 +239,12 @@ export function useLibrary() {
       clearSearch();
       setAlbums((all) => all.map((a) => (a.id === id ? listing.album : a)));
       setError(null);
+      remember({ kind: "album", id });
+      return true;
     } catch (e) {
       setError(await toAppError(e));
       refreshAlbums();
+      return false;
     } finally {
       setLoading(false);
     }

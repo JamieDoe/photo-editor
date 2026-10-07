@@ -68,6 +68,7 @@ existing screens to the design now, and to match it for every screen built from 
 |---|---|
 | Library grid (3:2 cards, caption, stars, pick badge, rejects at 38%) | as designed |
 | Library header filter "All / Picks / ★ 3+" | as designed |
+| Library sidebar "All photos" with its count (ADR 0065) | as designed |
 | Sidebar Picks / Rated / Rejected with counts | as designed |
 | Edit header: name, mono file details, "● Edited", "N of M" counter | as designed |
 | Floating photo toolbar under the photo: rating stars, pick, reject | as designed (zoom and compare to follow) |
@@ -87,7 +88,6 @@ existing screens to the design now, and to match it for every screen built from 
 | Library cards | Click selects, double-click opens (design: click opens) | Culling needs a selection to rate with the keyboard |
 | Library header | Grid/List switch, Refresh, Set as default | The details list and folder actions predate the grid; the design has neither |
 | Colour labels and sort (ADR 0064) | Not in the design: a label dot before the name on cards, list rows and the filmstrip; five swatches after pick/reject in the Edit toolbar; a five-swatch label filter and a Sort menu (Capture time, Newest first, File name, Rating) after the header filter | Asked for (Lightroom parity for culling); built from the design's own pieces (toolbar buttons, the small segmented container, the settings select) |
-| Library sidebar | "Indexed photos" is a count, not a view | "All photos" as a library-wide view is not built yet |
 | Edit header | "Open photo…" button | Opening a file outside the library; the design has no equivalent |
 | Edit header | Edited and save notes ("Not saved…", "Couldn't save"); Reset moved to the panel footer as in the design (ADR 0048) | Honest save state for photos outside the library |
 | Edit header on narrow stages | The file details, then the name, end in an ellipsis (in full on hover); below a 760 px stage the save note shortens to "Not saved" (in full on hover); below 600 px "Open photo…" becomes an icon button | The design has no narrow layout; the header must fit the 800 px minimum window (a 480 px stage) without hiding an action |

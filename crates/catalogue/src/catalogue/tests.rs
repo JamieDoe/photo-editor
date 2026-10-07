@@ -592,9 +592,14 @@ fn marks_follow_a_moved_photo_and_collections_skip_missing_files() {
     assert_eq!(l.cat.collection(Collection::Rated).unwrap().len(), 1);
     // The rejected photo's file is missing: not listed, not counted.
     assert!(l.cat.collection(Collection::Rejected).unwrap().is_empty());
+    // All photos: the present one only.
+    let all = l.cat.collection(Collection::All).unwrap();
+    assert_eq!(all.len(), 1);
+    assert_eq!(all[0].path, new.canonicalize().unwrap());
     assert_eq!(
         l.cat.collection_counts().unwrap(),
         crate::CollectionCounts {
+            all: 1,
             picks: 1,
             rated: 1,
             rejected: 0,

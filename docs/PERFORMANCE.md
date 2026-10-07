@@ -918,3 +918,17 @@ capture times, names and ratings:
 
 A sort runs when the view, the order or a photo's marks change, not on scrolling.
 The work grows as n log n, so typical folders of a few hundred photos cost far less.
+
+## 47. All photos listing (ADR 0065)
+
+Release bench (`bench --index-scale 20000`: 20,000 synthetic files, indexed into an
+on-disk catalogue), two runs:
+
+| Step | Time |
+|---|---|
+| `collection(All)` query, with details and marks | 26.1–26.8 ms |
+| Grant filter by canonicalising each path (before) | 233.7–238.5 ms |
+| Grant filter by prefix on the stored canonical path (now) | 3.4–3.5 ms |
+
+The prefix check is about 70× faster and touches no files. Reads of listed files are
+still fully checked.

@@ -50,7 +50,7 @@ recorded as a deviation in ADR 0016.
    - **Behaviour change:** folders used to list by file name and now default to
      capture time. For most camera folders the two orders match.
    - Sort and the label filter last for the session, like the grid/list layout and
-     the filter. Remembering them across launches can follow with the layout.
+     the filter. (Since ADR 0065 all four are remembered across launches.)
 6. **Tests:**
    - **Catalogue:**
      - labels round-trip through the stored encoding;
@@ -85,3 +85,4 @@ design.
   consequences) would carry them to other tools.
 - **Persisted view choices:** remembering sort, layout and filters across launches
   (per folder, as Lightroom does, or globally) is a small settings change when wanted.
+  Built globally in ADR 0065.

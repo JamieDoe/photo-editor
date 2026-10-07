@@ -1,4 +1,6 @@
-use settings::Settings;
+use std::path::Path;
+
+use settings::{LibraryPlace, Settings};
 use tauri::State;
 
 use super::IpcResult;
@@ -48,12 +50,43 @@ pub async fn update_settings(
     Ok(view(&state))
 }
 
+/// Records where the Library is (ADR 0065), to reopen it at the next launch. A folder
+/// is kept only if it lies inside a granted folder, by its canonical path: like every
+/// folder in settings, it never comes from the UI unchecked, and it grants nothing.
+#[tauri::command]
+pub fn remember_place(state: State<'_, AppState>, place: LibraryPlace) -> IpcResult<()> {
+    let place = match place {
+        LibraryPlace::Folder { path } => {
+            let canonical = state
+                .folders
+                .check(Path::new(&path))
+                .ok_or_else(|| super::library::folder_unavailable(&path))?;
+            LibraryPlace::Folder {
+                path: canonical.display().to_string(),
+            }
+        }
+        other => other,
+    };
+    let mut settings = state.settings.get();
+    if settings.library.last_place.as_ref() == Some(&place) {
+        return Ok(());
+    }
+    settings.library.last_place = Some(place);
+    state
+        .settings
+        .update(settings)
+        .map_err(IpcError::internal)?;
+    Ok(())
+}
+
 /// Folders are chosen only through the native dialog (see the library, backup and
 /// export commands), so a settings update from the UI may *clear* the default folder but can
 /// never add or change a folder: that would grant access at next launch, or send
-/// backups somewhere the user never chose.
+/// backups somewhere the user never chose. The last place (ADR 0065) is recorded only
+/// by [`remember_place`].
 fn guard_library_changes(before: &Settings, mut requested: Settings) -> Settings {
     requested.library.recent_folders = before.library.recent_folders.clone();
+    requested.library.last_place = before.library.last_place.clone();
     if requested.library.default_folder.is_some() {
         requested.library.default_folder = before.library.default_folder.clone();
     }
@@ -81,6 +114,21 @@ mod tests {
         let result = guard_library_changes(&before, requested);
         assert_eq!(result.library, before.library);
         assert_eq!(result.export.jpeg_quality, 80, "other settings still apply");
+    }
+
+    #[test]
+    fn ui_cannot_set_the_last_place() {
+        let mut before = with_folders(Some("/Photos"), &["/Photos"]);
+        before.library.last_place = Some(LibraryPlace::Album { id: 3 });
+        let mut requested = before.clone();
+        requested.library.last_place = Some(LibraryPlace::Folder {
+            path: "/etc".into(),
+        });
+        let result = guard_library_changes(&before, requested);
+        assert_eq!(
+            result.library.last_place,
+            Some(LibraryPlace::Album { id: 3 })
+        );
     }
 
     #[test]
