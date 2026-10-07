@@ -130,11 +130,11 @@ The photographer chose **option 2**. It comes in two parts.
    different pixels (3.4% of pixels, up to 63 levels). The other cameras are
    deterministic. This is in LibRaw's X-Trans path and is tracked separately.
 
-### Part 2: the Colour space row (next)
+### Part 2: the Colour space row (ADR 0062)
 
 sRGB, Display P3 or Adobe RGB: a conversion from the sRGB working space with each
 space's transfer curve and an embedded profile (the generator, ADR 0057, takes any
-primaries).
+primaries). Built as ADR 0062.
 
 ## Option 1 later
 

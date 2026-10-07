@@ -179,11 +179,37 @@ pub fn file(path: &Path, iterations: usize) -> Value {
         destination: out_dir.join(format!("export-{i}.jpg")),
         format: ExportFormat::Jpeg { quality: 92 },
         sharpening: app_core::OutputSharpening::None,
+        colour_space: app_core::ExportColourSpace::Srgb,
     };
     let mut exports = Vec::new();
     for i in 0..full_iters {
         exports.push(engine.export(export_req(i), |_| {}).wait().expect("export"));
     }
+    // The same JPEG in the wider spaces (ADR 0062): rendered at 16 bits, converted and
+    // tagged; the conversion is counted in render_ms.
+    let in_spaces: Vec<Value> = [
+        ("display_p3", app_core::ExportColourSpace::DisplayP3),
+        ("adobe_rgb", app_core::ExportColourSpace::AdobeRgb),
+    ]
+    .into_iter()
+    .map(|(label, colour_space)| {
+        let runs: Vec<_> = (0..full_iters)
+            .map(|i| {
+                let req = ExportRequest {
+                    colour_space,
+                    ..export_req(i)
+                };
+                engine.export(req, |_| {}).wait().expect("export")
+            })
+            .collect();
+        json!({
+            "space": label,
+            "total_ms": median(runs.iter().map(|e| e.total_ms).collect()),
+            "render_ms": median(runs.iter().map(|e| e.render_ms).collect()),
+            "bytes": runs.first().map(|e| e.bytes),
+        })
+    })
+    .collect();
     let under_load = interactive_under_export(&engine, summary.id, export_req(99));
     let _ = std::fs::remove_dir_all(&out_dir);
 
@@ -215,6 +241,7 @@ pub fn file(path: &Path, iterations: usize) -> Value {
             "write_ms": median(exports.iter().map(|e| e.write_ms).collect()),
             "bytes": exports.first().map(|e| e.bytes),
         },
+        "export_colour_spaces": in_spaces,
         "interactive_under_export": under_load,
         "bench_process_peak_rss_mb": peak_rss_mb(),
     })
@@ -337,6 +364,7 @@ pub fn memory(path: &Path) -> Value {
         destination: out.clone(),
         format: ExportFormat::Jpeg { quality: 92 },
         sharpening: app_core::OutputSharpening::None,
+        colour_space: app_core::ExportColourSpace::Srgb,
     };
     engine.export(export, |_| {}).wait().expect("export");
     let _ = std::fs::remove_file(out);

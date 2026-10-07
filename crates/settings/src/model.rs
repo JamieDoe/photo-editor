@@ -129,6 +129,8 @@ pub struct ExportSettings {
     pub format: ExportFileFormat,
     /// What exports are sharpened for (ADR 0059).
     pub sharpen: OutputSharpening,
+    /// The colour space exports are written in (ADR 0062).
+    pub colour_space: ExportColourSpace,
     /// JPEG quality, 1-100.
     pub jpeg_quality: u8,
     /// The folder exports are saved to (ADR 0050). Set only through the native folder
@@ -189,6 +191,28 @@ impl<'de> Deserialize<'de> for OutputSharpening {
     }
 }
 
+/// The colour space an export is written in (ADR 0062).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum ExportColourSpace {
+    #[default]
+    Srgb,
+    DisplayP3,
+    AdobeRgb,
+}
+
+impl<'de> Deserialize<'de> for ExportColourSpace {
+    /// A space this version does not know (written by a newer one) reads as sRGB.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        Ok(match serde_json::Value::deserialize(d)?.as_str() {
+            Some("displayP3") => Self::DisplayP3,
+            Some("adobeRgb") => Self::AdobeRgb,
+            _ => Self::Srgb,
+        })
+    }
+}
+
 impl ExportSettings {
     pub const JPEG_QUALITY_MIN: u8 = 50;
     pub const JPEG_QUALITY_MAX: u8 = 100;
@@ -203,6 +227,7 @@ impl Default for ExportSettings {
         Self {
             format: ExportFileFormat::Jpeg,
             sharpen: OutputSharpening::Screen,
+            colour_space: ExportColourSpace::Srgb,
             jpeg_quality: 85,
             folder: None,
             long_edge: Some(2048),
@@ -316,6 +341,16 @@ mod tests {
         assert_eq!(
             s.export.sharpen,
             OutputSharpening::Screen,
+            "unknown: the default"
+        );
+        let s: Settings =
+            serde_json::from_str(r#"{"version":7,"export":{"colourSpace":"adobeRgb"}}"#).unwrap();
+        assert_eq!(s.export.colour_space, ExportColourSpace::AdobeRgb);
+        let s: Settings =
+            serde_json::from_str(r#"{"version":7,"export":{"colourSpace":"rec2020"}}"#).unwrap();
+        assert_eq!(
+            s.export.colour_space,
+            ExportColourSpace::Srgb,
             "unknown: the default"
         );
     }

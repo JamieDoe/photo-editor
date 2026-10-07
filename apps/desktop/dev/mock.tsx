@@ -43,7 +43,7 @@ let mockSettings: Record<string, unknown> = {
   general: { theme: "system" },
   performance: { previewCacheMb: 256, backgroundIntensity: "balanced" },
   library: { defaultFolder: null, recentFolders: [] },
-  export: { format: "jpeg", sharpen: "screen", jpegQuality: 85, folder: null, longEdge: 2048, preset: "web" },
+  export: { format: "jpeg", sharpen: "screen", colourSpace: "srgb", jpegQuality: 85, folder: null, longEdge: 2048, preset: "web" },
   backups: { copyFolder: null },
 };
 

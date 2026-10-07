@@ -872,3 +872,20 @@ two decodes of the same file.
 Peak memory of a lone full decode (`bench --decode-peak`): 640 → 734 MB at 10
 threads. It is unchanged at 5 threads (the export lane) and at 2 threads. Every Bayer
 fixture decodes byte-identically to before.
+
+## 44. Export colour space (ADR 0062)
+
+Release bench, full-size JPEG (q92) of the Nikon Z 6 (24.5 MP), median of 3, no
+sharpening, on a loaded machine:
+
+| Colour space | Render (incl. conversion) | Total | File |
+|---|---|---|---|
+| sRGB (8-bit render) | 766 ms | 1.83 s | 3.72 MB |
+| Display P3 (16-bit render, converted) | 989 ms | 2.03 s | 3.47 MB |
+| Adobe RGB (16-bit render, converted) | 957 ms | 2.00 s | 3.43 MB |
+
+The wider spaces cost about 0.2 s per full-size export: the 16-bit render and one pass
+of decode, matrix and encode per pixel across every core. The files are slightly
+smaller because sRGB colours sit further from the edges of the wider spaces, so the
+same image uses a narrower range of values. `cargo run -p bench --release` reports
+these as `export_colour_spaces`.

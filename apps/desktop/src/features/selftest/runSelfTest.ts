@@ -1,6 +1,7 @@
 import * as ipc from "../../ipc/client";
 import type { ExportFileFormat } from "../../ipc/generated/ExportFileFormat";
 import type { OutputSharpening } from "../../ipc/generated/OutputSharpening";
+import type { ExportColourSpace } from "../../ipc/generated/ExportColourSpace";
 import type { ExportQueueEvent } from "../../ipc/generated/ExportQueueEvent";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
@@ -436,6 +437,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         cancelAfterStart: boolean,
         format: ExportFileFormat = "jpeg",
         sharpen: OutputSharpening = "screen",
+        colourSpace: ExportColourSpace = "srgb",
       ) => {
         let progress = 0;
         let finished: Extract<ExportQueueEvent, { type: "finished" }> | null = null;
@@ -446,7 +448,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
           } else finished = e;
         });
         const t0 = performance.now();
-        await ipc.startExport({ items: items.map((path) => ({ path })), longEdge, quality: 85, format, sharpen, folder });
+        await ipc.startExport({ items: items.map((path) => ({ path })), longEdge, quality: 85, format, sharpen, colourSpace, folder });
         const done = await waitFor(() => finished, 120_000, "export queue").catch(() => null);
         unlisten();
         return { done, progress, ms: Math.round(performance.now() - t0) };
@@ -466,9 +468,23 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const sharpenedKb = async (sharpen: OutputSharpening) =>
         Math.round(((await run([config.imagePath], 1350, false, "jpeg", sharpen)).done?.outputs[0]?.bytes ?? 0) / 1024);
       const sharpening = { noneKb: await sharpenedKb("none"), screenKb: await sharpenedKb("screen"), matteKb: await sharpenedKb("matte") };
+      // Colour spaces (ADR 0062): the same JPEG in each space (converted and tagged,
+      // so a different file), and Full quality's 16-bit Adobe RGB TIFF.
+      const inSpace = async (colourSpace: ExportColourSpace, format: ExportFileFormat = "jpeg") => {
+        const r = await run([config.imagePath], 1350, false, format, "screen", colourSpace);
+        const o = r.done?.outputs[0];
+        return o ? { bytes: o.bytes, ms: r.ms } : null;
+      };
+      const colourSpaces = {
+        srgb: await inSpace("srgb"),
+        displayP3: await inSpace("displayP3"),
+        adobeRgb: await inSpace("adobeRgb"),
+        adobeRgbTiff: await inSpace("adobeRgb", "tiff"),
+      };
       return {
         formats,
         sharpening,
+        colourSpaces,
         exported: sized.done?.exported ?? null,
         longEdges: sized.done?.outputs.map((o) => Math.max(o.width, o.height)) ?? [],
         failed: sized.done?.failed.length ?? null,
@@ -492,6 +508,10 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       exportQueue.sharpening.noneKb > 0 &&
       exportQueue.sharpening.screenKb > exportQueue.sharpening.noneKb &&
       exportQueue.sharpening.matteKb > exportQueue.sharpening.screenKb;
+    const colourSpacesOk =
+      exportQueue !== null &&
+      Object.values(exportQueue.colourSpaces).every((o) => o !== null && o.bytes > 0) &&
+      new Set([exportQueue.colourSpaces.srgb, exportQueue.colourSpaces.displayP3, exportQueue.colourSpaces.adobeRgb].map((o) => o?.bytes)).size === 3;
     const exportQueueOk =
       exportQueue !== null &&
       exportQueue.exported === 3 &&
@@ -1450,6 +1470,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       exportQueue: exportQueueOk,
       exportFormats: formatsOk,
       outputSharpening: sharpeningOk,
+      exportColourSpace: colourSpacesOk,
       whiteBalanceLight: lightOk,
       colourGrading: gradingOk,
       calibration: calibrationOk,

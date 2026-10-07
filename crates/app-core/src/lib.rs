@@ -45,6 +45,7 @@ pub use types::{
 // Re-exported so shells depend on one crate for the engine API.
 pub use cache::DiskCacheStats;
 pub use export::ExportFormat;
+pub use export::colour::ExportColourSpace;
 pub use export::sharpen::OutputSharpening;
 pub use jobs::{CancelToken, JobError, JobHandle};
 pub use raw::SourceKind;
