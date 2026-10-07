@@ -145,7 +145,7 @@ pub fn from_file(text: &str) -> Result<(String, EditRecipe), PresetFileError> {
 
 impl EditRecipe {
     /// This recipe's look alone, as a preset holds it: without the exposure,
-    /// geometry, lens corrections, masks and spots, which belong to the photo.
+    /// geometry, lens corrections, masks, spots and removals, which belong to the photo.
     pub fn look_only(&self) -> EditRecipe {
         EditRecipe {
             exposure: 0.0,
@@ -153,12 +153,13 @@ impl EditRecipe {
             chromatic_aberration: None,
             masks: Vec::new(),
             spots: Vec::new(),
+            removals: Vec::new(),
             ..self.clone()
         }
     }
 
     /// This photo's recipe with `preset`'s look: the preset's settings, keeping this
-    /// recipe's exposure, geometry, lens corrections, masks and spots.
+    /// recipe's exposure, geometry, lens corrections, masks, spots and removals.
     pub fn with_look_of(&self, preset: &EditRecipe) -> EditRecipe {
         EditRecipe {
             version: self.version,
@@ -167,6 +168,7 @@ impl EditRecipe {
             chromatic_aberration: self.chromatic_aberration,
             masks: self.masks.clone(),
             spots: self.spots.clone(),
+            removals: self.removals.clone(),
             ..preset.look_only()
         }
     }
@@ -201,6 +203,15 @@ mod tests {
                 source_x: 0.7,
                 ..Default::default()
             }],
+            removals: vec![crate::remove::Removal {
+                strokes: vec![crate::masks::brush::Stroke {
+                    erase: false,
+                    size: 0.01,
+                    feather: 0.0,
+                    flow: 100.0,
+                    points: vec![[0.2, 0.3]],
+                }],
+            }],
             ..Default::default()
         }
     }
@@ -213,6 +224,7 @@ mod tests {
             (0.0, 40.0, -20.0)
         );
         assert!(look.geometry.is_none() && look.masks.is_empty() && look.spots.is_empty());
+        assert!(look.removals.is_empty());
     }
 
     #[test]
@@ -226,6 +238,7 @@ mod tests {
         assert_eq!(r.geometry, photo().geometry);
         assert_eq!(r.masks, photo().masks);
         assert_eq!(r.spots, photo().spots);
+        assert_eq!(r.removals, photo().removals);
         // Applying twice changes nothing more.
         assert_eq!(r.with_look_of(&mono.recipe), r);
     }

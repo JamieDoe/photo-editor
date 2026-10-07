@@ -1000,3 +1000,87 @@ fn sixteen_bit_output_matches_eight_bit_and_keeps_finer_steps() {
     let l16 = levels(deep.iter().step_by(3).map(|&v| u32::from(v)).collect());
     assert!(l16 > l8 * 4, "16-bit {l16} levels, 8-bit {l8}");
 }
+
+#[test]
+fn removals_fill_first_follow_the_photo_and_are_cached() {
+    // A dark post on grey, painted over; with a quarter turn it is still gone
+    // (removals are in the source's coordinates, filled before framing).
+    let (w, h) = (120u32, 90u32);
+    let data: Vec<u16> = (0..h)
+        .flat_map(|y| (0..w).map(move |x| (x, y)))
+        .flat_map(|(x, y)| {
+            let post = (40..44).contains(&x) && (20..70).contains(&y);
+            [if post { 500 } else { 20000 }; 3]
+        })
+        .collect();
+    let img = LinearImage::new(w, h, data).unwrap();
+    let removal = crate::remove::Removal {
+        strokes: vec![crate::masks::brush::Stroke {
+            erase: false,
+            size: 5.0 / 120f32.hypot(90.0),
+            feather: 0.0,
+            flow: 100.0,
+            points: vec![[42.0 / 120.0, 20.0 / 90.0], [42.0 / 120.0, 70.0 / 90.0]],
+        }],
+    };
+    let plain = EditRecipe {
+        sharpening: 0.0,
+        ..Default::default()
+    };
+    let removed = EditRecipe {
+        removals: vec![removal.clone()],
+        ..plain.clone()
+    };
+    let level = |o: &OutputImage, x: usize, y: usize| o.data()[(y * o.width() as usize + x) * 3];
+    let before = render(&plain, &img);
+    let after = render(&removed, &img);
+    assert!(level(&before, 42, 45) + 20 < level(&after, 42, 45));
+    assert!(level(&after, 42, 45).abs_diff(level(&after, 90, 10)) <= 1);
+    let turned = EditRecipe {
+        geometry: Some(crate::Geometry {
+            rotation: 1,
+            ..Default::default()
+        }),
+        ..removed.clone()
+    };
+    let out = render(&turned, &img);
+    assert_eq!((out.width(), out.height()), (90, 120));
+    let min = out.data().iter().copied().min().unwrap();
+    assert!(
+        min + 3 >= level(&after, 90, 10),
+        "a dark pixel is left: {min}"
+    );
+    // The same again (from the cache, and deterministic), and a spot after the
+    // removal still applies on top of it.
+    assert_eq!(render(&removed, &img).data(), after.data());
+    let with_spot = EditRecipe {
+        spots: vec![crate::retouch::Spot {
+            kind: crate::retouch::SpotKind::Clone,
+            x: 90.5 / 120.0,
+            y: 45.5 / 90.0,
+            source_x: 42.5 / 120.0,
+            source_y: 45.5 / 90.0,
+            radius: 3.0 / 120.0,
+            ..Default::default()
+        }],
+        ..removed.clone()
+    };
+    let cloned = render(&with_spot, &img);
+    assert!(level(&cloned, 90, 45).abs_diff(level(&after, 42, 45)) <= 1);
+    // A cancelled render fails rather than caching a half fill.
+    let moved = EditRecipe {
+        removals: vec![crate::remove::Removal {
+            strokes: vec![crate::masks::brush::Stroke {
+                points: vec![[80.0 / 120.0, 30.0 / 90.0]],
+                ..removal.strokes[0].clone()
+            }],
+        }],
+        ..plain.clone()
+    };
+    let plan = RenderPlan::from_recipe(&moved, None);
+    let cancelled = std::sync::atomic::AtomicBool::new(true);
+    assert!(matches!(
+        CpuRenderer.render(&plan, &img, PixelFormat::Rgb8, &cancelled),
+        Err(RenderError::Cancelled)
+    ));
+}

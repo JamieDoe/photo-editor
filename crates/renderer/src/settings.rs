@@ -79,7 +79,7 @@ pub fn setting_groups() -> Vec<SettingGroup> {
             false,
         ),
         group("masks", "Masks", &["masks"], false),
-        group("retouch", "Retouch", &["spots"], false),
+        group("retouch", "Retouch", &["spots", "removals"], false),
     ]
 }
 
@@ -218,6 +218,15 @@ mod tests {
                 Default::default(),
             )],
             spots: vec![crate::retouch::Spot::default()],
+            removals: vec![crate::remove::Removal {
+                strokes: vec![crate::masks::brush::Stroke {
+                    erase: false,
+                    size: 0.02,
+                    feather: 0.0,
+                    flow: 100.0,
+                    points: vec![[0.5, 0.5]],
+                }],
+            }],
             ..Default::default()
         };
         let json: serde_json::Value = serde_json::from_str(&r.to_json()).unwrap();

@@ -1356,6 +1356,55 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       calibrationCheck.magentaLift !== null &&
       calibrationCheck.magentaLift > 0.5;
 
+    // Remove (ADR 0066) on the real raw file: a short stroke is filled in; it changes
+    // what it covers and nothing well outside it (sharpening spreads a few pixels);
+    // with the fill cached, an exposure change renders about as fast as without it.
+    const removeCheck = await (async () => {
+      const base = { ...beforeCrop, masks: undefined, geometry: undefined, spots: undefined, removals: undefined };
+      const plain = await show(base, "frame before removing");
+      const stroke = { size: 0.008, feather: 10, flow: 100, points: [[0.3, 0.6], [0.38, 0.6]] as [number, number][] };
+      const removal = { strokes: [stroke] };
+      const t0 = performance.now();
+      const removed = await show({ ...base, removals: [removal] }, "frame with a removal", plain);
+      const firstMs = Math.round(performance.now() - t0);
+      const cached = await show({ ...base, removals: [removal], exposure: base.exposure + 0.3 }, "exposure with a removal", plain);
+      const brighter = await show({ ...base, exposure: base.exposure + 0.3 }, "exposure without a removal", plain);
+      if (!plain || !removed) return { insideChange: null, outsideChange: null, firstMs, cachedMs: null, plainMs: null };
+      const { width: w, height: h } = plain.frame;
+      const r = stroke.size * Math.hypot(w, h);
+      const [ax, bx, y0] = [stroke.points[0]![0] * w, stroke.points[1]![0] * w, stroke.points[0]![1] * h];
+      const [p, q] = [plain.frame.pixels, removed.frame.pixels];
+      let [inside, insideCount, outside] = [0, 0, 0];
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const px = Math.min(Math.max(x + 0.5, ax), bx);
+          const d = Math.hypot(x + 0.5 - px, y + 0.5 - y0);
+          const i = (y * w + x) * 4;
+          const change = Math.abs(p[i]! - q[i]!) + Math.abs(p[i + 1]! - q[i + 1]!) + Math.abs(p[i + 2]! - q[i + 2]!);
+          if (d < r * 0.8) {
+            inside += change / 3;
+            insideCount++;
+          } else if (d > r + 8) outside = Math.max(outside, change);
+        }
+      }
+      return {
+        insideChange: Math.round((inside / Math.max(insideCount, 1)) * 10) / 10,
+        outsideChange: outside,
+        firstMs,
+        cachedMs: cached?.frame.renderMs ?? null,
+        plainMs: brighter?.frame.renderMs ?? null,
+      };
+    })();
+    driver.editor().setRecipe(beforeCrop);
+    const removeOk =
+      removeCheck.insideChange !== null &&
+      removeCheck.insideChange > 0.2 &&
+      removeCheck.outsideChange !== null &&
+      removeCheck.outsideChange <= 6 &&
+      removeCheck.cachedMs !== null &&
+      removeCheck.plainMs !== null &&
+      removeCheck.cachedMs < removeCheck.plainMs * 2 + 20;
+
     // Retouch (ADR 0054) on the real raw file: the engine finds a source for a heal
     // spot; the spot changes its disc and nothing outside it; with the spot cached, an
     // exposure change renders about as fast as without spots.
@@ -1579,6 +1628,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       colourGrading: gradingOk,
       calibration: calibrationOk,
       retouch: retouchOk,
+      remove: removeOk,
       dust: dustOk,
       copyPaste: copyPasteOk,
       crop: cropOk,
@@ -1615,6 +1665,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       colourGrading: gradingCheck,
       calibration: calibrationCheck,
       retouch: retouchCheck,
+      remove: removeCheck,
       dust: dustCheck,
       copyPaste: copyPasteCheck,
       crop,

@@ -37,13 +37,13 @@ impl CpuRenderer {
         out: &mut OutputImage,
         cancel: &dyn Cancellation,
     ) -> Result<(), RenderError> {
-        // Spots first (ADR 0054): everything after works on the retouched source,
-        // which is cached while other controls change.
+        // Removals (ADR 0066), then spots (ADR 0054): everything after works on the
+        // retouched source, which is cached while other controls change.
         let retouched;
-        let source = if plan.spots.is_empty() {
+        let source = if plan.spots.is_empty() && plan.removals.is_empty() {
             source
         } else {
-            retouched = kernels::cached_retouch(source, &plan.spots);
+            retouched = kernels::cached_retouch(source, &plan.removals, &plan.spots, cancel)?;
             &*retouched
         };
         let (sw, sh) = (source.width(), source.height());

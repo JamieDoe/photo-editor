@@ -48,7 +48,8 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 22: adds colour grading (ADR 0052), written only when set.
 /// - 23: adds calibration (ADR 0053), written only when set.
 /// - 24: adds heal and clone spots (ADR 0054), written only when there are some.
-pub const RECIPE_VERSION: u32 = 24;
+/// - 25: adds removals (ADR 0066), written only when there are some.
+pub const RECIPE_VERSION: u32 = 25;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -151,6 +152,15 @@ pub struct EditRecipe {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[cfg_attr(feature = "ts", ts(as = "Option<Vec<crate::retouch::Spot>>", optional))]
     pub spots: Vec<crate::retouch::Spot>,
+    /// Removals (ADR 0066), in the order made: areas painted over to be filled in from
+    /// the rest of the photo, before the spots. Empty (and omitted from the JSON)
+    /// without any.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "ts",
+        ts(as = "Option<Vec<crate::remove::Removal>>", optional)
+    )]
+    pub removals: Vec<crate::remove::Removal>,
     /// The base look the adjustments start from.
     pub look: Look,
 }
@@ -187,6 +197,7 @@ impl Default for EditRecipe {
             channel_curves: None,
             masks: Vec::new(),
             spots: Vec::new(),
+            removals: Vec::new(),
             look: Look::Standard,
         }
     }
@@ -239,7 +250,7 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            7..=24 => Ok(Self {
+            7..=25 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
@@ -305,6 +316,12 @@ impl EditRecipe {
                 .map(crate::masks::Mask::sanitized)
                 .collect(),
             spots: self.spots.iter().map(|s| s.sanitized()).collect(),
+            removals: self
+                .removals
+                .iter()
+                .map(crate::remove::Removal::sanitized)
+                .filter(|r| !r.is_noop())
+                .collect(),
             look: self.look,
         }
     }
@@ -399,6 +416,33 @@ mod tests {
     }
 
     #[test]
+    fn removals_round_trip_and_older_recipes_have_none() {
+        let stroke = crate::masks::brush::Stroke {
+            erase: false,
+            size: 0.01,
+            feather: 0.0,
+            flow: 100.0,
+            points: vec![[0.25, 0.5], [0.75, 0.5]],
+        };
+        let r = EditRecipe {
+            removals: vec![
+                crate::remove::Removal {
+                    strokes: vec![stroke.clone()],
+                },
+                // Paints nothing: dropped.
+                crate::remove::Removal { strokes: vec![] },
+            ],
+            ..Default::default()
+        };
+        let back = EditRecipe::from_json(&r.to_json()).unwrap();
+        assert_eq!(back.removals.len(), 1);
+        assert_eq!(back.removals[0].strokes, vec![stroke]);
+        let v24 = EditRecipe::from_json(r#"{"version":24,"exposure":0.3}"#).unwrap();
+        assert!(v24.removals.is_empty());
+        assert_eq!(v24.version, RECIPE_VERSION);
+    }
+
+    #[test]
     fn serialised_form_is_stable() {
         let r = EditRecipe {
             exposure: 0.5,
@@ -406,7 +450,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":24,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":25,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 

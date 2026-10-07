@@ -112,6 +112,7 @@ Recorded in ADR 0016:
 
 - **Remove** (paint over anything to have it filled in) is not offered. It needs
   content-aware filling, which PRODUCT §06 lists as Later.
+  (The fill was built in ADR 0066, and the Remove brush follows it.)
 - The sensor-dust banner and Fix all are not built. Finding dust needs its own
   detection work.
 - Clone's hint says to drag the source circle or Option-click, rather than only

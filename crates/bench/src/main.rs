@@ -12,6 +12,7 @@ mod dust_bench;
 mod index_bench;
 mod look;
 mod measure;
+mod remove_bench;
 mod report;
 mod thumb_bench;
 
@@ -49,6 +50,14 @@ fn main() {
             "--look" => look = true,
             "--dust" => {
                 let result = dust_bench::run(&camera_files());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&result).expect("serialisable result")
+                );
+                return;
+            }
+            "--remove" => {
+                let result = remove_bench::run(&camera_files());
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&result).expect("serialisable result")

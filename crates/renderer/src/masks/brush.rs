@@ -169,11 +169,88 @@ fn rasterize_onto(
     strokes: &[Stroke],
     (mw, mh): (usize, usize),
 ) -> CoverageMap {
-    let diagonal = (mw as f32).hypot(mh as f32);
     let mut cover: Vec<f32> = match base {
         Some(b) if b.size() == (mw, mh) => b.data.iter().map(|&v| f32::from(v) / 65535.0).collect(),
         _ => vec![0.0f32; mw * mh],
     };
+    let whole = Window {
+        x: 0,
+        y: 0,
+        width: mw,
+        height: mh,
+    };
+    paint(&mut cover, whole, strokes, (mw, mh), true);
+    CoverageMap {
+        width: mw,
+        height: mh,
+        data: cover
+            .iter()
+            .map(|&c| (c * 65535.0).round() as u16)
+            .collect(),
+    }
+}
+
+/// A rectangle of a map, in map pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Window {
+    pub x: usize,
+    pub y: usize,
+    pub width: usize,
+    pub height: usize,
+}
+
+/// The pixels of a `size` map that `strokes` can reach (their brush's radius around
+/// their paths), or `None` when they reach none.
+pub fn reach(strokes: &[Stroke], (mw, mh): (usize, usize)) -> Option<Window> {
+    let diagonal = (mw as f32).hypot(mh as f32);
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for s in strokes.iter().map(Stroke::sanitized) {
+        if s.points.is_empty() || s.flow == 0.0 || s.erase {
+            continue;
+        }
+        let r = (s.size * diagonal).max(0.5);
+        for p in &s.points {
+            let (px, py) = (p[0] * mw as f32, p[1] * mh as f32);
+            x0 = x0.min(px - r);
+            y0 = y0.min(py - r);
+            x1 = x1.max(px + r);
+            y1 = y1.max(py + r);
+        }
+    }
+    let clampx = |v: f32| (v.max(0.0) as usize).min(mw);
+    let clampy = |v: f32| (v.max(0.0) as usize).min(mh);
+    let (wx0, wy0) = (clampx(x0.floor()), clampy(y0.floor()));
+    let (wx1, wy1) = (clampx(x1.ceil() + 1.0), clampy(y1.ceil() + 1.0));
+    // Lazily: with nothing painted the bounds are inverted, and the sizes would
+    // underflow.
+    (x0 <= x1 && wx0 < wx1 && wy0 < wy1).then(|| Window {
+        x: wx0,
+        y: wy0,
+        width: wx1 - wx0,
+        height: wy1 - wy0,
+    })
+}
+
+/// The strokes' coverage (0..1) over `window` of a `size` map, unrounded: for the
+/// Remove tool (ADR 0066), which needs a hole at full resolution but only around it.
+pub fn rasterize_window(strokes: &[Stroke], size: (usize, usize), window: Window) -> Vec<f32> {
+    let mut cover = vec![0.0f32; window.width * window.height];
+    paint(&mut cover, window, strokes, size, false);
+    cover
+}
+
+/// Paints `strokes` into `cover`, which holds `window` of a `(mw, mh)` map. With
+/// `quantize`, coverage is rounded to the map's 16-bit precision after each stroke.
+fn paint(
+    cover: &mut [f32],
+    window: Window,
+    strokes: &[Stroke],
+    (mw, mh): (usize, usize),
+    quantize: bool,
+) {
+    let diagonal = (mw as f32).hypot(mh as f32);
+    let (wx0, wy0) = (window.x, window.y);
+    let (wx1, wy1) = (window.x + window.width, window.y + window.height);
     for s in strokes.iter().map(Stroke::sanitized) {
         if s.points.is_empty() || s.flow == 0.0 {
             continue;
@@ -198,8 +275,8 @@ fn rasterize_onto(
         let y1 = segments.iter().map(|g| g.y1).fold(f32::MIN, f32::max);
         let x0 = segments.iter().map(|g| g.x0).fold(f32::MAX, f32::min);
         let x1 = segments.iter().map(|g| g.x1).fold(f32::MIN, f32::max);
-        let clampx = |v: f32| (v.max(0.0) as usize).min(mw);
-        let clampy = |v: f32| (v.max(0.0) as usize).min(mh);
+        let clampx = |v: f32| (v.max(0.0) as usize).clamp(wx0, wx1);
+        let clampy = |v: f32| (v.max(0.0) as usize).clamp(wy0, wy1);
         let (by0, by1) = (clampy(y0.floor()), clampy(y1.ceil() + 1.0));
         let (bx0, bx1) = (clampx(x0.floor()), clampx(x1.ceil() + 1.0));
         if by0 >= by1 || bx0 >= bx1 {
@@ -207,8 +284,9 @@ fn rasterize_onto(
         }
         let flow = s.flow / 100.0;
         let erase = s.erase;
-        cover[by0 * mw..by1 * mw]
-            .par_chunks_mut(mw)
+        let ww = window.width;
+        cover[(by0 - wy0) * ww..(by1 - wy0) * ww]
+            .par_chunks_mut(ww)
             .enumerate()
             .for_each_init(Vec::new, |row_cover, (r_off, row)| {
                 let y = by0 + r_off;
@@ -228,7 +306,7 @@ fn rasterize_onto(
                         }
                     }
                 }
-                for (c, v) in row[bx0..bx1].iter_mut().zip(row_cover.iter()) {
+                for (c, v) in row[bx0 - wx0..bx1 - wx0].iter_mut().zip(row_cover.iter()) {
                     if *v == 0.0 {
                         continue;
                     }
@@ -238,17 +316,13 @@ fn rasterize_onto(
                     } else {
                         *c + (1.0 - *c) * a
                     };
-                    *c = (next.clamp(0.0, 1.0) * 65535.0).round() / 65535.0;
+                    *c = if quantize {
+                        (next.clamp(0.0, 1.0) * 65535.0).round() / 65535.0
+                    } else {
+                        next.clamp(0.0, 1.0)
+                    };
                 }
             });
-    }
-    CoverageMap {
-        width: mw,
-        height: mh,
-        data: cover
-            .iter()
-            .map(|&c| (c * 65535.0).round() as u16)
-            .collect(),
     }
 }
 
@@ -345,6 +419,39 @@ fn profile(d: f32, inner: f32, r: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_window_paints_what_the_whole_map_paints_there() {
+        let strokes = vec![
+            stroke(
+                &[[0.2, 0.3], [0.5, 0.45], [0.7, 0.4]],
+                0.03,
+                40.0,
+                80.0,
+                false,
+            ),
+            stroke(&[[0.5, 0.45]], 0.01, 0.0, 100.0, true),
+        ];
+        let size = (300, 200);
+        let whole = rasterize(&strokes, size);
+        let window = reach(&strokes, size).expect("the strokes reach the map");
+        assert!(window.width < 300 && window.height < 200, "{window:?}");
+        let part = rasterize_window(&strokes, size, window);
+        for y in 0..window.height {
+            for x in 0..window.width {
+                let full = f32::from(whole.data[(window.y + y) * 300 + window.x + x]) / 65535.0;
+                assert!(
+                    (part[y * window.width + x] - full).abs() < 1e-3,
+                    "({x}, {y})"
+                );
+            }
+        }
+        // Nothing painted outside the reach.
+        let total: f32 = whole.data.iter().map(|&v| f32::from(v)).sum();
+        let inside: f32 = part.iter().map(|&v| v * 65535.0).sum();
+        assert!((total - inside).abs() / total.max(1.0) < 1e-3);
+        assert_eq!(reach(&[], size), None);
+    }
 
     fn stroke(points: &[[f32; 2]], size: f32, feather: f32, flow: f32, erase: bool) -> Stroke {
         Stroke {
