@@ -95,6 +95,8 @@ pub struct ExportRequest {
     pub sharpening: export::sharpen::OutputSharpening,
     /// The colour space written (ADR 0062).
     pub colour_space: export::colour::ExportColourSpace,
+    /// The capture facts written with it (ADR 0063).
+    pub metadata: export::metadata::MetadataChoice,
 }
 
 /// Exporting a photo straight from its file (ADR 0050), as the export queue does: it
@@ -111,6 +113,8 @@ pub struct FileExport {
     pub sharpening: export::sharpen::OutputSharpening,
     /// The colour space written (ADR 0062).
     pub colour_space: export::colour::ExportColourSpace,
+    /// The capture facts written with it (ADR 0063).
+    pub metadata: export::metadata::MetadataChoice,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

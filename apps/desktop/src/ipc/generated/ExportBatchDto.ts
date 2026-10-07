@@ -29,6 +29,14 @@ sharpen?: OutputSharpening,
  */
 colourSpace?: ExportColourSpace, 
 /**
+ * Whether to copy the photo's capture facts (ADR 0063); yes when left out.
+ */
+keepMetadata?: boolean, 
+/**
+ * Whether to leave the location out of them (ADR 0063); no when left out.
+ */
+stripLocation?: boolean, 
+/**
  * The folder to export to, for the self-test only; otherwise the one chosen in
  * the folder dialog (settings).
  */

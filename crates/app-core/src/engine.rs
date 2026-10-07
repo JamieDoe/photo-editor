@@ -367,6 +367,7 @@ impl Engine {
                 format: req.format,
                 sharpening: req.sharpening,
                 colour_space: req.colour_space,
+                metadata: req.metadata,
                 long_edge: None,
             },
             progress,
@@ -619,7 +620,28 @@ impl Shared {
             fraction: 0.8,
         });
         let t = Instant::now();
-        let bytes = export::encode_in(&rendered, req.format, req.colour_space)?;
+        // The source's capture facts (ADR 0063), read from its header: a few
+        // milliseconds. A file whose header cannot be read still exports, without them.
+        let entries = (req.metadata != export::metadata::MetadataChoice::None)
+            .then(|| {
+                let facts = self
+                    .decoders
+                    .read_metadata(&req.source)
+                    .map(|m| capture_facts(&m))
+                    .unwrap_or_else(|e| {
+                        log::warn!("no metadata for {}: {e}", req.source.display());
+                        export::metadata::CaptureFacts::default()
+                    });
+                export::metadata::entries(
+                    &facts,
+                    req.metadata,
+                    rendered.width(),
+                    rendered.height(),
+                    req.colour_space,
+                )
+            })
+            .flatten();
+        let bytes = export::encode_in(&rendered, req.format, req.colour_space, entries.as_ref())?;
         let encode_ms = ms(t);
         if token.is_cancelled() {
             return Err(EngineError::cancelled());
@@ -662,6 +684,21 @@ fn viewer_histogram(
     image: &OutputImage,
 ) -> Option<Arc<renderer::Histogram>> {
     (quality != PreviewQuality::Thumbnail).then(|| Arc::new(renderer::Histogram::of(image)))
+}
+
+/// What an export copies from the photo's metadata (ADR 0063).
+fn capture_facts(m: &raw::PhotoMetadata) -> export::metadata::CaptureFacts {
+    export::metadata::CaptureFacts {
+        camera_make: m.camera_make.clone(),
+        camera_model: m.camera_model.clone(),
+        lens: m.lens.clone(),
+        captured_at: m.captured_at.clone(),
+        iso: m.iso,
+        aperture: m.aperture,
+        shutter_seconds: m.shutter_seconds,
+        focal_length_mm: m.focal_length_mm,
+        gps: m.gps,
+    }
 }
 
 fn ms(since: Instant) -> f64 {

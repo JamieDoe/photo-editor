@@ -27,6 +27,7 @@ pub struct QueuedExport {
     pub format: ExportFormat,
     pub sharpening: app_core::OutputSharpening,
     pub colour_space: app_core::ExportColourSpace,
+    pub metadata: app_core::MetadataChoice,
 }
 
 #[derive(Default)]
@@ -158,6 +159,7 @@ async fn run_queue(app: AppHandle) {
                 long_edge: item.long_edge,
                 sharpening: item.sharpening,
                 colour_space: item.colour_space,
+                metadata: item.metadata,
             },
             move |p| {
                 let _ = progress_app.emit(

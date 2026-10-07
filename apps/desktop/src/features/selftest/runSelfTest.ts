@@ -459,6 +459,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         format: ExportFileFormat = "jpeg",
         sharpen: OutputSharpening = "screen",
         colourSpace: ExportColourSpace = "srgb",
+        metadata: { keepMetadata?: boolean; stripLocation?: boolean } = {},
       ) => {
         let progress = 0;
         let finished: Extract<ExportQueueEvent, { type: "finished" }> | null = null;
@@ -469,7 +470,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
           } else finished = e;
         });
         const t0 = performance.now();
-        await ipc.startExport({ items: items.map((path) => ({ path })), longEdge, quality: 85, format, sharpen, colourSpace, folder });
+        await ipc.startExport({ items: items.map((path) => ({ path })), longEdge, quality: 85, format, sharpen, colourSpace, ...metadata, folder });
         const done = await waitFor(() => finished, 120_000, "export queue").catch(() => null);
         unlisten();
         return { done, progress, ms: Math.round(performance.now() - t0) };
@@ -502,10 +503,20 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         adobeRgb: await inSpace("adobeRgb"),
         adobeRgbTiff: await inSpace("adobeRgb", "tiff"),
       };
+      // Metadata (ADR 0063): the same JPEG with everything, without the location, and
+      // with nothing. The pixels are identical, so only the EXIF changes the size.
+      const withMetadata = async (keepMetadata: boolean, stripLocation: boolean) =>
+        (await run([config.imagePath], 1350, false, "jpeg", "screen", "srgb", { keepMetadata, stripLocation })).done?.outputs[0]?.bytes ?? null;
+      const metadata = {
+        all: await withMetadata(true, false),
+        withoutLocation: await withMetadata(true, true),
+        none: await withMetadata(false, false),
+      };
       return {
         formats,
         sharpening,
         colourSpaces,
+        metadata,
         exported: sized.done?.exported ?? null,
         longEdges: sized.done?.outputs.map((o) => Math.max(o.width, o.height)) ?? [],
         failed: sized.done?.failed.length ?? null,
@@ -533,6 +544,14 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       exportQueue !== null &&
       Object.values(exportQueue.colourSpaces).every((o) => o !== null && o.bytes > 0) &&
       new Set([exportQueue.colourSpaces.srgb, exportQueue.colourSpaces.displayP3, exportQueue.colourSpaces.adobeRgb].map((o) => o?.bytes)).size === 3;
+    // EXIF is at least a few hundred bytes; the location (when the photo has one) more.
+    const metadataOk =
+      exportQueue !== null &&
+      exportQueue.metadata.none !== null &&
+      exportQueue.metadata.withoutLocation !== null &&
+      exportQueue.metadata.all !== null &&
+      exportQueue.metadata.withoutLocation - exportQueue.metadata.none > 200 &&
+      exportQueue.metadata.all >= exportQueue.metadata.withoutLocation;
     const exportQueueOk =
       exportQueue !== null &&
       exportQueue.exported === 3 &&
@@ -1493,6 +1512,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       exportFormats: formatsOk,
       outputSharpening: sharpeningOk,
       exportColourSpace: colourSpacesOk,
+      exportMetadata: metadataOk,
       whiteBalanceLight: lightOk,
       colourGrading: gradingOk,
       calibration: calibrationOk,

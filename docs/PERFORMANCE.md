@@ -890,6 +890,21 @@ smaller because sRGB colours sit further from the edges of the wider spaces, so 
 same image uses a narrower range of values. `cargo run -p bench --release` reports
 these as `export_colour_spaces`.
 
+## 45. Export metadata (ADR 0063)
+
+Reading a source's header for its capture facts, release build, mean of 20 reads after
+one warm-up:
+
+| File | Read |
+|---|---|
+| Nikon Z 6 (NEF) | 0.26 ms |
+| Canon EOS R6 (CR3) | 0.24 ms |
+| Ricoh GR III (DNG) | 0.22 ms |
+
+Writing the EXIF block is a few hundred bytes of serialisation. Both are negligible
+next to an export (1–2 s at full size). The block adds about 270 bytes to a JPEG
+without a location.
+
 ## 46. Library sorting (ADR 0064)
 
 The Library sorts in the UI (vitest, Node on the dev Mac), 20,000 photos with mixed

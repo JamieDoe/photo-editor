@@ -46,6 +46,7 @@ pub use types::{
 pub use cache::DiskCacheStats;
 pub use export::ExportFormat;
 pub use export::colour::ExportColourSpace;
+pub use export::metadata::MetadataChoice;
 pub use export::sharpen::OutputSharpening;
 pub use jobs::{CancelToken, JobError, JobHandle};
 pub use raw::SourceKind;

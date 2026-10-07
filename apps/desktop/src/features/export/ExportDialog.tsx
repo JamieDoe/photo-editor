@@ -67,7 +67,7 @@ function presetOf(c: Choice): string | null {
 
 /**
  * The design's export dialog: the photos, a preset, the format, JPEG quality, size,
- * colour space and output sharpening, the folder, and Export. The choices are remembered (settings); the folder is chosen only in the
+ * colour space and output sharpening, what metadata to keep, the folder, and Export. The choices are remembered (settings); the folder is chosen only in the
  * system's dialog.
  */
 export function ExportDialog({
@@ -205,6 +205,21 @@ export function ExportDialog({
             </div>
           </div>
         </div>
+        <div className="export-toggles">
+          <ExportSwitch
+            label="Keep metadata"
+            hint="Camera, lens, exposure and when it was taken"
+            on={settings.keepMetadata}
+            onChange={(keepMetadata) => onChange({ keepMetadata })}
+          />
+          <ExportSwitch
+            label="Strip location"
+            hint={settings.keepMetadata ? "Leave out where it was taken" : "No metadata is kept, so no location either"}
+            on={settings.stripLocation}
+            disabled={!settings.keepMetadata}
+            onChange={(stripLocation) => onChange({ stripLocation })}
+          />
+        </div>
         <div className="export-footer">
           <button className="export-folder" onClick={onChooseFolder} title={settings.folder ?? "Choose where exported photos go"}>
             <span className="export-folder-label">Save to</span>
@@ -224,5 +239,30 @@ export function ExportDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+/** One of the design's switch tiles under the rows (ADR 0063). They are not part of
+ *  the presets, which leave them as they are. */
+function ExportSwitch({
+  label,
+  hint,
+  on,
+  disabled = false,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  on: boolean;
+  disabled?: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  return (
+    <button className="export-switch" role="switch" aria-checked={on} disabled={disabled} title={hint} onClick={() => onChange(!on)}>
+      <span>{label}</span>
+      <span className="switch" aria-hidden="true">
+        <span className="switch-knob" />
+      </span>
+    </button>
   );
 }

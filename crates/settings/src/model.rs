@@ -131,6 +131,12 @@ pub struct ExportSettings {
     pub sharpen: OutputSharpening,
     /// The colour space exports are written in (ADR 0062).
     pub colour_space: ExportColourSpace,
+    /// Whether exports carry the photo's capture facts: camera, lens, exposure, capture
+    /// time (ADR 0063). The design's "Keep metadata", on by default.
+    pub keep_metadata: bool,
+    /// Whether the location is left out of them. The design's "Strip location", off by
+    /// default.
+    pub strip_location: bool,
     /// JPEG quality, 1-100.
     pub jpeg_quality: u8,
     /// The folder exports are saved to (ADR 0050). Set only through the native folder
@@ -228,6 +234,8 @@ impl Default for ExportSettings {
             format: ExportFileFormat::Jpeg,
             sharpen: OutputSharpening::Screen,
             colour_space: ExportColourSpace::Srgb,
+            keep_metadata: true,
+            strip_location: false,
             jpeg_quality: 85,
             folder: None,
             long_edge: Some(2048),
@@ -353,6 +361,14 @@ mod tests {
             ExportColourSpace::Srgb,
             "unknown: the default"
         );
+        // Metadata switches (ADR 0063): kept, location kept, unless stored otherwise.
+        let s: Settings = serde_json::from_str(r#"{"version":7,"export":{}}"#).unwrap();
+        assert!(s.export.keep_metadata && !s.export.strip_location);
+        let s: Settings = serde_json::from_str(
+            r#"{"version":7,"export":{"keepMetadata":false,"stripLocation":true}}"#,
+        )
+        .unwrap();
+        assert!(!s.export.keep_metadata && s.export.strip_location);
     }
 
     #[test]
