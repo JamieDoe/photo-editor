@@ -9,6 +9,10 @@
 //! Only facts are copied, never the source file's maker notes or thumbnails: those can
 //! hold serial numbers and other details nobody chose to share, and describe the
 //! original rather than the export.
+//!
+//! The photographer's own marks (ADR 0067), the star rating, a reject and the colour
+//! label, go with them as XMP, where other photo tools read them: an APP1 segment in
+//! JPEGs, an `iTXt` chunk in PNGs, tag 700 in TIFFs.
 
 use crate::colour::ExportColourSpace;
 
@@ -52,6 +56,79 @@ pub struct CaptureFacts {
     pub gps: Option<(f64, f64)>,
 }
 
+/// The photographer's marks on a photo, as other photo tools read them from XMP
+/// (ADR 0067).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Judgements {
+    /// 0 (unrated) to 5 stars.
+    pub rating: u8,
+    /// Rejected: written as a rating of -1, as Bridge and Lightroom do.
+    pub rejected: bool,
+    pub label: Option<LabelName>,
+}
+
+/// A colour label, by the names Lightroom and Bridge write and read.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LabelName {
+    Red,
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+}
+
+impl LabelName {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Red => "Red",
+            Self::Yellow => "Yellow",
+            Self::Green => "Green",
+            Self::Blue => "Blue",
+            Self::Purple => "Purple",
+        }
+    }
+}
+
+/// The XMP packet for `judgements`, or `None` when there is nothing to say (unrated,
+/// not rejected, unlabelled). Pick flags have no common XMP property and are not
+/// written.
+pub fn xmp_packet(judgements: &Judgements) -> Option<String> {
+    let rating = if judgements.rejected {
+        Some(-1)
+    } else {
+        (judgements.rating > 0).then(|| i32::from(judgements.rating.min(5)))
+    };
+    if rating.is_none() && judgements.label.is_none() {
+        return None;
+    }
+    let mut properties = String::new();
+    if let Some(r) = rating {
+        properties.push_str(&format!(" xmp:Rating=\"{r}\""));
+    }
+    if let Some(l) = judgements.label {
+        properties.push_str(&format!(" xmp:Label=\"{}\"", l.as_str()));
+    }
+    Some(format!(
+        "<?xpacket begin=\"\u{feff}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
+         <x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n \
+         <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n  \
+         <rdf:Description rdf:about=\"\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"{properties}/>\n \
+         </rdf:RDF>\n</x:xmpmeta>\n<?xpacket end=\"w\"?>"
+    ))
+}
+
+/// The JPEG APP1 segment's signature for XMP.
+const XMP_SIGNATURE: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
+
+/// `jpeg` with `packet` as an APP1 XMP segment, after SOI and the JFIF APP0 segment.
+pub fn jpeg_with_xmp(jpeg: &[u8], packet: &str) -> Vec<u8> {
+    let mut segment = vec![0xFF, 0xE1];
+    segment.extend(((2 + XMP_SIGNATURE.len() + packet.len()) as u16).to_be_bytes());
+    segment.extend(XMP_SIGNATURE);
+    segment.extend(packet.as_bytes());
+    crate::colour::insert_after_app0(jpeg, &segment)
+}
+
 /// An EXIF field value.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -73,6 +150,8 @@ pub struct Entries {
     pub exif: Vec<(u16, Value)>,
     /// The GPS directory; empty when there is no location or it is stripped.
     pub gps: Vec<(u16, Value)>,
+    /// The photographer's marks as an XMP packet (ADR 0067), if any.
+    pub xmp: Option<String>,
 }
 
 pub mod tag {
@@ -102,6 +181,7 @@ pub mod tag {
 /// is to write no metadata.
 pub fn entries(
     facts: &CaptureFacts,
+    judgements: &Judgements,
     choice: MetadataChoice,
     width: u32,
     height: u32,
@@ -170,7 +250,12 @@ pub fn entries(
         ));
         gps.push((tag::GPS_LONGITUDE, Value::Rational(degrees(lon))));
     }
-    Some(Entries { main, exif, gps })
+    Some(Entries {
+        main,
+        exif,
+        gps,
+        xmp: xmp_packet(judgements),
+    })
 }
 
 fn text(s: &Option<String>) -> Option<&str> {
@@ -352,6 +437,55 @@ mod tests {
     }
 
     #[test]
+    fn marks_are_written_as_other_tools_read_them() {
+        let packet = |rating, rejected, label| {
+            xmp_packet(&Judgements {
+                rating,
+                rejected,
+                label,
+            })
+        };
+        assert_eq!(packet(0, false, None), None, "nothing to say");
+        let p = packet(3, false, Some(LabelName::Red)).unwrap();
+        assert!(
+            p.contains(r#"xmp:Rating="3""#) && p.contains(r#"xmp:Label="Red""#),
+            "{p}"
+        );
+        assert!(p.starts_with("<?xpacket begin=") && p.ends_with(r#"<?xpacket end="w"?>"#));
+        assert!(p.contains(r#"xmlns:xmp="http://ns.adobe.com/xap/1.0/""#));
+        // A reject is -1, whatever the stars; a label alone has no rating.
+        assert!(
+            packet(5, true, None)
+                .unwrap()
+                .contains(r#"xmp:Rating="-1""#)
+        );
+        let label_only = packet(0, false, Some(LabelName::Green)).unwrap();
+        assert!(!label_only.contains("xmp:Rating") && label_only.contains(r#"xmp:Label="Green""#));
+    }
+
+    #[test]
+    fn jpegs_get_xmp_after_jfif() {
+        let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
+        jpeg.extend(b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0");
+        jpeg.extend([0xFF, 0xDB, 0x00, 0x02]);
+        let p = xmp_packet(&Judgements {
+            rating: 2,
+            ..Default::default()
+        })
+        .unwrap();
+        let out = jpeg_with_xmp(&jpeg, &p);
+        let at = 2 + 2 + 16;
+        assert_eq!(&out[at..at + 2], &[0xFF, 0xE1]);
+        let len = usize::from(u16::from_be_bytes([out[at + 2], out[at + 3]]));
+        assert_eq!(&out[at + 4..at + 4 + XMP_SIGNATURE.len()], XMP_SIGNATURE);
+        assert_eq!(
+            &out[at + 4 + XMP_SIGNATURE.len()..at + 2 + len],
+            p.as_bytes()
+        );
+        assert_eq!(&out[out.len() - 4..], &[0xFF, 0xDB, 0x00, 0x02]);
+    }
+
+    #[test]
     fn switches_choose_what_is_written() {
         assert_eq!(
             MetadataChoice::from_switches(true, false),
@@ -372,6 +506,7 @@ mod tests {
         assert!(
             entries(
                 &facts(),
+                &Judgements::default(),
                 MetadataChoice::None,
                 10,
                 10,
@@ -386,6 +521,7 @@ mod tests {
         use exif::{In, Tag};
         let e = entries(
             &facts(),
+            &Judgements::default(),
             MetadataChoice::All,
             1350,
             899,
@@ -426,6 +562,7 @@ mod tests {
         use exif::{In, Tag};
         let e = entries(
             &facts(),
+            &Judgements::default(),
             MetadataChoice::WithoutLocation,
             100,
             100,
@@ -451,6 +588,7 @@ mod tests {
         use exif::{In, Tag};
         let e = entries(
             &CaptureFacts::default(),
+            &Judgements::default(),
             MetadataChoice::All,
             64,
             48,
@@ -501,7 +639,15 @@ mod tests {
         let mut jpeg = vec![0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10];
         jpeg.extend(b"JFIF\0\x01\x01\0\0\x01\0\x01\0\0");
         jpeg.extend([0xFF, 0xDB, 0x00, 0x02]);
-        let e = entries(&facts(), MetadataChoice::All, 8, 8, ExportColourSpace::Srgb).unwrap();
+        let e = entries(
+            &facts(),
+            &Judgements::default(),
+            MetadataChoice::All,
+            8,
+            8,
+            ExportColourSpace::Srgb,
+        )
+        .unwrap();
         let block = exif_block(&e);
         let out = jpeg_with_exif(&jpeg, &block);
         let at = 2 + 2 + 16;

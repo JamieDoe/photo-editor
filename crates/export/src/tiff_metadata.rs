@@ -46,8 +46,17 @@ pub(crate) fn write_main<W: Write + Seek>(
     if let Some(gps) = pointers.gps {
         dir.write_tag(Tag::GpsDirectory, gps)?;
     }
+    // The photographer's marks as XMP (ADR 0067): tag 700, XMLPacket, as bytes.
+    if let Some(packet) = &entries.xmp {
+        align(dir)?;
+        dir.write_tag(Tag::from_u16_exhaustive(XMP_PACKET), packet.as_bytes())?;
+        align(dir)?;
+    }
     Ok(())
 }
+
+/// TIFF's XMLPacket tag.
+const XMP_PACKET: u16 = 700;
 
 fn write_fields<W: Write + Seek>(
     dir: &mut DirectoryEncoder<'_, W, TiffKindStandard>,

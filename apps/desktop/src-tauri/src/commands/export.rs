@@ -49,6 +49,11 @@ pub async fn export_image(
         }
     };
 
+    let judgements = state
+        .engine
+        .image_path(ImageId(request.image_id))
+        .map(|path| marks_at(&state.catalogue, &path))
+        .unwrap_or_default();
     let job_id = state.next_export_id.fetch_add(1, Ordering::Relaxed);
     let progress_app = app.clone();
     let handle = state.engine.export(
@@ -63,6 +68,7 @@ pub async fn export_image(
                 let s = state.settings.get().export;
                 app_core::MetadataChoice::from_switches(s.keep_metadata, s.strip_location)
             },
+            judgements,
         },
         move |p| {
             let event = ExportEvent::Progress {
@@ -120,6 +126,19 @@ pub(crate) fn output_sharpening(s: settings::OutputSharpening) -> app_core::Outp
 }
 
 /// The colour space for the remembered settings' choice (ADR 0062).
+/// The marks of the photo whose file is at `path`, as an export writes them (ADR
+/// 0067); none for a file outside the library or when the catalogue cannot say.
+fn marks_at(catalogue: &app_core::Catalogue, path: &std::path::Path) -> app_core::Judgements {
+    let marks = catalogue
+        .photo_at(path)
+        .and_then(|photo| photo.map(|p| catalogue.marks(p)).transpose())
+        .unwrap_or_else(|e| {
+            log::warn!("marks lookup failed for {}: {e}", path.display());
+            None
+        });
+    marks.map(|m| app_core::judgements(&m)).unwrap_or_default()
+}
+
 pub(crate) fn colour_space(s: settings::ExportColourSpace) -> app_core::ExportColourSpace {
     match s {
         settings::ExportColourSpace::Srgb => app_core::ExportColourSpace::Srgb,
@@ -234,7 +253,7 @@ pub async fn start_export(
         )
     });
     let catalogue = std::sync::Arc::clone(&state.catalogue);
-    let resolved: Vec<Result<(PathBuf, EditRecipe), FileFailureDto>> = batch
+    let resolved: Vec<Result<(PathBuf, EditRecipe, app_core::Judgements), FileFailureDto>> = batch
         .items
         .into_iter()
         .map(|item| {
@@ -266,16 +285,18 @@ pub async fn start_export(
                         .unwrap_or_default()
                 }
             };
-            Ok((source, recipe))
+            let judgements = marks_at(&catalogue, &source);
+            Ok((source, recipe, judgements))
         })
         .collect();
     let mut items = Vec::new();
     let mut refused = Vec::new();
     for r in resolved {
         match r {
-            Ok((source, recipe)) => items.push(QueuedExport {
+            Ok((source, recipe, judgements)) => items.push(QueuedExport {
                 source,
                 recipe,
+                judgements,
                 folder: folder.clone(),
                 long_edge,
                 format,

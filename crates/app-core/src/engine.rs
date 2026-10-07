@@ -368,6 +368,7 @@ impl Engine {
                 sharpening: req.sharpening,
                 colour_space: req.colour_space,
                 metadata: req.metadata,
+                judgements: req.judgements,
                 long_edge: None,
             },
             progress,
@@ -634,6 +635,7 @@ impl Shared {
                     });
                 export::metadata::entries(
                     &facts,
+                    &req.judgements,
                     req.metadata,
                     rendered.width(),
                     rendered.height(),
@@ -684,6 +686,24 @@ fn viewer_histogram(
     image: &OutputImage,
 ) -> Option<Arc<renderer::Histogram>> {
     (quality != PreviewQuality::Thumbnail).then(|| Arc::new(renderer::Histogram::of(image)))
+}
+
+/// The photographer's marks as an export writes them (ADR 0067). Picks have no common
+/// XMP property; a reject is written in place of the rating.
+pub fn judgements(marks: &catalogue::Marks) -> export::metadata::Judgements {
+    use export::metadata::LabelName;
+    export::metadata::Judgements {
+        rating: marks.rating.stars(),
+        rejected: marks.flag == catalogue::Flag::Reject,
+        label: match marks.label {
+            catalogue::ColourLabel::None => None,
+            catalogue::ColourLabel::Red => Some(LabelName::Red),
+            catalogue::ColourLabel::Yellow => Some(LabelName::Yellow),
+            catalogue::ColourLabel::Green => Some(LabelName::Green),
+            catalogue::ColourLabel::Blue => Some(LabelName::Blue),
+            catalogue::ColourLabel::Purple => Some(LabelName::Purple),
+        },
+    }
 }
 
 /// What an export copies from the photo's metadata (ADR 0063).

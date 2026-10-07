@@ -97,6 +97,8 @@ pub struct ExportRequest {
     pub colour_space: export::colour::ExportColourSpace,
     /// The capture facts written with it (ADR 0063).
     pub metadata: export::metadata::MetadataChoice,
+    /// The photographer's marks, written with the metadata as XMP (ADR 0067).
+    pub judgements: export::metadata::Judgements,
 }
 
 /// Exporting a photo straight from its file (ADR 0050), as the export queue does: it
@@ -115,6 +117,8 @@ pub struct FileExport {
     pub colour_space: export::colour::ExportColourSpace,
     /// The capture facts written with it (ADR 0063).
     pub metadata: export::metadata::MetadataChoice,
+    /// The photographer's marks, written with the metadata as XMP (ADR 0067).
+    pub judgements: export::metadata::Judgements,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
