@@ -51,6 +51,25 @@ pub fn run(n: usize) -> Value {
     }
     let changed = index();
 
+    // All photos (ADR 0065): reading the whole library as one collection, then the
+    // granted-folder filter on every path, by canonicalising (one filesystem call per
+    // photo) and by a prefix check on the stored canonical path.
+    let t = Instant::now();
+    let all = catalogue
+        .collection(app_core::Collection::All)
+        .expect("all photos");
+    let all_ms = ms(t);
+    let t = Instant::now();
+    let canonical = all
+        .iter()
+        .filter(|e| e.path.canonicalize().is_ok_and(|c| c.starts_with(&root)))
+        .count();
+    let canonicalise_ms = ms(t);
+    let t = Instant::now();
+    let prefix = all.iter().filter(|e| e.path.starts_with(&root)).count();
+    let prefix_ms = ms(t);
+    assert_eq!(canonical, prefix);
+
     let db_bytes: u64 = std::fs::read_dir(dir.path())
         .map(|rd| {
             rd.filter_map(|e| e.ok())
@@ -67,6 +86,12 @@ pub fn run(n: usize) -> Value {
         "first": summary(&first),
         "rescan_unchanged": summary(&rescan),
         "rescan_1pct_changed": summary(&changed),
+        "all_photos": {
+            "photos": all.len(),
+            "query_ms": all_ms,
+            "filter_canonicalise_ms": canonicalise_ms,
+            "filter_prefix_ms": prefix_ms,
+        },
         "catalogue_mb": db_bytes as f64 / 1e6,
     })
 }

@@ -127,6 +127,8 @@ pub enum MarkChange {
 /// joined the library.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Collection {
+    /// Every present photo (ADR 0065).
+    All,
     Picks,
     /// One star or more.
     Rated,
@@ -146,6 +148,7 @@ fn recent_cutoff_ms() -> i64 {
 impl Collection {
     fn condition(self) -> String {
         match self {
+            Self::All => "1 = 1".into(),
             Self::Picks => "p.flag = 1".into(),
             Self::Rated => "p.rating > 0".into(),
             Self::Rejected => "p.flag = -1".into(),
@@ -156,6 +159,8 @@ impl Collection {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CollectionCounts {
+    /// Every present photo (All photos, ADR 0065).
+    pub all: usize,
     pub picks: usize,
     pub rated: usize,
     pub rejected: usize,
@@ -310,13 +315,16 @@ impl Catalogue {
                 ))
             },
         )?;
-        let recent: i64 = conn.query_row(
-            "SELECT COUNT(DISTINCT p.id) FROM photos p JOIN files f ON f.photo_id = p.id
-             WHERE f.missing = 0 AND p.created_at_ms >= ?1",
+        let (all, recent): (i64, i64) = conn.query_row(
+            "SELECT COUNT(DISTINCT p.id),
+                    COUNT(DISTINCT CASE WHEN p.created_at_ms >= ?1 THEN p.id END)
+             FROM photos p JOIN files f ON f.photo_id = p.id
+             WHERE f.missing = 0",
             [recent_cutoff_ms()],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         Ok(CollectionCounts {
+            all: all as usize,
             picks: picks as usize,
             rated: rated as usize,
             rejected: rejected as usize,

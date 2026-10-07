@@ -116,7 +116,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
     >
       {icon}
       <span className="grow">{COLLECTION_NAMES[kind]}</span>
-      <span className="count">{count ?? 0}</span>
+      <span className="count">{(count ?? 0).toLocaleString()}</span>
     </button>
   );
   const recent = s?.library.recentFolders ?? [];
@@ -156,11 +156,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
         <div className="sidebar-scroll scroll">
           <section className="nav-section" aria-label="Library">
             <div className="nav-label">Library</div>
-            <div className="nav-row">
-              <PhotosIcon />
-              <span className="grow">Indexed photos</span>
-              <span className="count">{library.status ? library.status.photos.toLocaleString() : "—"}</span>
-            </div>
+            {collectionRow("all", <PhotosIcon />, counts?.all)}
             {collectionRow("recent", <ImportIcon size={16} />, counts?.recent)}
             {collectionRow("picks", <PickIcon size={16} />, counts?.picks)}
             {collectionRow("rated", <RatingStar filled={false} />, counts?.rated)}
@@ -431,7 +427,8 @@ function emptyMessage(total: number, filter: LibraryFilter, collection: Collecti
     return `No photos labelled ${l.name.toLowerCase()} here.${l.key ? ` Select a photo and press ${l.key}.` : ""}`;
   }
   if (collection) {
-    const how = {
+    const how: Record<CollectionKindDto, string> = {
+      all: "Add a folder, and its photos show here once indexed.",
       picks: "Press P to pick the selected photo.",
       rated: "Press 1–5 to rate the selected photo.",
       rejected: "Press X to reject the selected photo.",

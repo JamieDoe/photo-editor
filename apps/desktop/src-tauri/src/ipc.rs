@@ -757,11 +757,14 @@ pub enum MarkChangeDto {
     Label { label: ColourLabelDto },
 }
 
-/// Library-wide collections: built from marks, or the recently imported photos.
+/// Library-wide collections: every photo, those built from marks, or the recently
+/// imported photos.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub enum CollectionKindDto {
+    /// Every present photo in the library's folders (ADR 0065).
+    All,
     Picks,
     Rated,
     Rejected,
@@ -772,6 +775,7 @@ pub enum CollectionKindDto {
 impl From<CollectionKindDto> for app_core::Collection {
     fn from(k: CollectionKindDto) -> Self {
         match k {
+            CollectionKindDto::All => Self::All,
             CollectionKindDto::Picks => Self::Picks,
             CollectionKindDto::Rated => Self::Rated,
             CollectionKindDto::Rejected => Self::Rejected,
@@ -784,6 +788,8 @@ impl From<CollectionKindDto> for app_core::Collection {
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct CollectionCountsDto {
+    /// Every present photo (All photos, ADR 0065).
+    pub all: u32,
     pub picks: u32,
     pub rated: u32,
     pub rejected: u32,
@@ -793,6 +799,7 @@ pub struct CollectionCountsDto {
 impl From<app_core::CollectionCounts> for CollectionCountsDto {
     fn from(c: app_core::CollectionCounts) -> Self {
         Self {
+            all: c.all as u32,
             picks: c.picks as u32,
             rated: c.rated as u32,
             rejected: c.rejected as u32,

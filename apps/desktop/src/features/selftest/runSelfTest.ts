@@ -292,6 +292,40 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       marks.labelOnly.flag === "none" &&
       marks.unlabelled?.label === "none";
 
+    // All photos (ADR 0065): every present photo, as many as the sidebar counts, the
+    // test folder's photos among them. Then the Library's view choices round-trip
+    // through the (temporary) settings file.
+    const allPhotos = await (async () => {
+      if (!indexing) return null;
+      const t = performance.now();
+      const all = await ipc.libraryCollection("all");
+      const ms = Math.round((performance.now() - t) * 10) / 10;
+      const status = await ipc.libraryStatus();
+      const folder = (await ipc.listFolder(indexing.folder)).photos.map((p) => p.path);
+      const listed = new Set(all.photos.map((p) => p.path));
+      const before = (await ipc.getSettings()).settings;
+      const chosen = { layout: "list", filter: "picks", label: "blue", sort: "newest" } as const;
+      const stored = (await ipc.updateSettings({ ...before, library: { ...before.library, view: chosen } })).settings.library.view;
+      await ipc.updateSettings(before);
+      return {
+        photos: all.photos.length,
+        count: status.collections.all,
+        folderPhotosListed: folder.filter((p) => listed.has(p)).length,
+        folderPhotos: folder.length,
+        ms,
+        viewStored: stored,
+      };
+    })();
+    const allPhotosOk =
+      allPhotos !== null &&
+      allPhotos.photos > 0 &&
+      allPhotos.photos === allPhotos.count &&
+      allPhotos.folderPhotosListed === allPhotos.folderPhotos &&
+      allPhotos.viewStored.layout === "list" &&
+      allPhotos.viewStored.filter === "picks" &&
+      allPhotos.viewStored.label === "blue" &&
+      allPhotos.viewStored.sort === "newest";
+
     // Albums (ADR 0055) through the real commands and catalogue: make one with two
     // photos, add a third (and one again), list it, take one out, rename and delete it.
     const albums = await (async () => {
@@ -1500,6 +1534,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       libraryThumbnails: thumbnailsOk,
       ratingsAndFlags: marksOk,
       colourLabels: labelsOk,
+      allPhotosAndView: allPhotosOk,
       albums: albumsOk,
       search: searchOk,
       savedEdits: editsOk,
@@ -1570,6 +1605,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       indexing,
       thumbnails,
       marks,
+      allPhotos,
       albums,
       search: searchCheck,
       edits,

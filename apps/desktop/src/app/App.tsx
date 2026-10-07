@@ -26,7 +26,10 @@ let selfTestStarted = false;
 export function App() {
   const editor = useEditor();
   const settings = useSettings();
-  const library = useLibrary();
+  const library = useLibrary({
+    view: settings.settings?.library.view ?? null,
+    save: (view) => settings.update((s) => ({ ...s, library: { ...s.library, view } })),
+  });
   const [mode, setMode] = useState<Mode>("library");
   const editorRef = useRef(editor);
   editorRef.current = editor;

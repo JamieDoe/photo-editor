@@ -12,7 +12,7 @@ mod store;
 
 pub use model::{
     BackgroundIntensity, BackupSettings, ExportColourSpace, ExportFileFormat, ExportSettings,
-    GeneralSettings, LibrarySettings, OutputSharpening, PerformanceSettings, SETTINGS_VERSION,
-    Settings, Theme,
+    GeneralSettings, LibraryFilter, LibraryLabel, LibraryLayout, LibrarySettings, LibrarySort,
+    LibraryViewSettings, OutputSharpening, PerformanceSettings, SETTINGS_VERSION, Settings, Theme,
 };
 pub use store::{LoadOutcome, SettingsStore};

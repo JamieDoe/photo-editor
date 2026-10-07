@@ -109,6 +109,88 @@ pub struct LibrarySettings {
     pub default_folder: Option<String>,
     /// Most recently opened folders, newest first.
     pub recent_folders: Vec<String>,
+    /// How the Library shows photos, remembered between launches (ADR 0065).
+    pub view: LibraryViewSettings,
+}
+
+/// The Library's view choices (ADR 0065). Each reads leniently: a value this version
+/// does not know (written by a newer one) falls back to its default rather than
+/// failing the settings file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct LibraryViewSettings {
+    pub layout: LibraryLayout,
+    pub filter: LibraryFilter,
+    /// The one colour label shown, if chosen (ADR 0064).
+    pub label: Option<LibraryLabel>,
+    pub sort: LibrarySort,
+}
+
+impl<'de> Deserialize<'de> for LibraryViewSettings {
+    /// Field by field: a missing or unknown value is that field's default.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(d)?;
+        Ok(Self {
+            layout: lenient(&value, "layout"),
+            filter: lenient(&value, "filter"),
+            label: lenient(&value, "label"),
+            sort: lenient(&value, "sort"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum LibraryLayout {
+    #[default]
+    Grid,
+    List,
+}
+
+/// The Library header's filter: everything, picks, or three stars and up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum LibraryFilter {
+    #[default]
+    All,
+    Picks,
+    Rated3,
+}
+
+/// A colour label to show alone (ADR 0064).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum LibraryLabel {
+    Red,
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+}
+
+/// The Library's order (ADR 0064): capture time first, as in other photo tools.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum LibrarySort {
+    #[default]
+    Captured,
+    Newest,
+    Name,
+    Rating,
+}
+
+/// `object[field]` read as `T`, or `T`'s default when it is missing or not a value this
+/// version knows.
+fn lenient<T: serde::de::DeserializeOwned + Default>(object: &serde_json::Value, field: &str) -> T {
+    object
+        .get(field)
+        .and_then(|v| serde_json::from_value(v.clone()).ok())
+        .unwrap_or_default()
 }
 
 /// Library backups (ADR 0021).
@@ -369,6 +451,44 @@ mod tests {
         )
         .unwrap();
         assert!(!s.export.keep_metadata && s.export.strip_location);
+    }
+
+    #[test]
+    fn library_view_is_remembered_and_read_leniently() {
+        // Defaults: grid, everything, no label, capture time.
+        let s: Settings = serde_json::from_str(r#"{"version":7}"#).unwrap();
+        assert_eq!(s.library.view, LibraryViewSettings::default());
+        assert_eq!(s.library.view.sort, LibrarySort::Captured);
+        // A stored view loads.
+        let s: Settings = serde_json::from_str(
+            r#"{"version":7,"library":{"view":{"layout":"list","filter":"rated3","label":"purple","sort":"name"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            s.library.view,
+            LibraryViewSettings {
+                layout: LibraryLayout::List,
+                filter: LibraryFilter::Rated3,
+                label: Some(LibraryLabel::Purple),
+                sort: LibrarySort::Name,
+            }
+        );
+        // Values from a newer version fall back, one by one; the rest still load.
+        let s: Settings = serde_json::from_str(
+            r#"{"version":7,"library":{"defaultFolder":"/p","view":{"layout":"filmstrip","filter":"rated3","label":"orange","sort":"size"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(s.library.default_folder.as_deref(), Some("/p"));
+        assert_eq!(s.library.view.layout, LibraryLayout::Grid);
+        assert_eq!(s.library.view.filter, LibraryFilter::Rated3);
+        assert_eq!(s.library.view.label, None);
+        assert_eq!(s.library.view.sort, LibrarySort::Captured);
+        // And it round-trips as the UI writes it.
+        let json = serde_json::to_string(&s.library.view).unwrap();
+        assert_eq!(
+            json,
+            r#"{"layout":"grid","filter":"rated3","label":null,"sort":"captured"}"#
+        );
     }
 
     #[test]

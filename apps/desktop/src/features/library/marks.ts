@@ -1,5 +1,7 @@
 /** Ratings, flags, colour labels, filters and sorting: pure rules shared by the Library
  *  and Edit views. */
+import type { LibraryFilter } from "../../ipc/generated/LibraryFilter";
+import type { LibrarySort } from "../../ipc/generated/LibrarySort";
 import type { CollectionKindDto } from "../../ipc/generated/CollectionKindDto";
 import type { ColourLabelDto } from "../../ipc/generated/ColourLabelDto";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
@@ -63,7 +65,7 @@ export function applyChange(marks: MarksDto, change: MarkChangeDto): MarksDto {
   }
 }
 
-export type LibraryFilter = "all" | "picks" | "rated3";
+export type { LibraryFilter } from "../../ipc/generated/LibraryFilter";
 
 export const FILTERS: ReadonlyArray<{ id: LibraryFilter; label: string }> = [
   { id: "all", label: "All" },
@@ -84,6 +86,8 @@ export function matchesFilter(marks: MarksDto, filter: LibraryFilter): boolean {
 
 export function inCollection(marks: MarksDto, kind: CollectionKindDto): boolean {
   switch (kind) {
+    case "all":
+      return true;
     case "picks":
       return marks.flag === "pick";
     case "rated":
@@ -97,6 +101,7 @@ export function inCollection(marks: MarksDto, kind: CollectionKindDto): boolean 
 }
 
 export const COLLECTION_NAMES: Record<CollectionKindDto, string> = {
+  all: "All photos",
   picks: "Picks",
   rated: "Rated",
   rejected: "Rejected",
@@ -124,7 +129,7 @@ export function visiblePhotos(
 }
 
 /** The Library's orders (ADR 0064). Capture time first, as in other photo tools. */
-export type LibrarySort = "captured" | "newest" | "name" | "rating";
+export type { LibrarySort } from "../../ipc/generated/LibrarySort";
 
 export const SORTS: ReadonlyArray<{ id: LibrarySort; label: string }> = [
   { id: "captured", label: "Capture time" },

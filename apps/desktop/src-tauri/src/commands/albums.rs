@@ -164,7 +164,7 @@ pub async fn album_photos(state: State<'_, AppState>, id: i64) -> IpcResult<Albu
     let raw = raw_extensions(&state.engine.info().extensions);
     let photos = entries
         .into_iter()
-        .filter(|e| state.folders.check(&e.path).is_some())
+        .filter(|e| state.folders.covers(&e.path))
         .map(|e| {
             entry_dto(
                 &e.path,
