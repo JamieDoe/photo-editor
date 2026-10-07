@@ -307,6 +307,21 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const chosen = { layout: "list", filter: "picks", label: "blue", sort: "newest" } as const;
       const stored = (await ipc.updateSettings({ ...before, library: { ...before.library, view: chosen } })).settings.library.view;
       await ipc.updateSettings(before);
+      // Where the Library was left: recorded by Rust (a folder only when granted, by
+      // its canonical path) and never by a settings update.
+      const placeOf = async () => (await ipc.getSettings()).settings.library.lastPlace;
+      await ipc.rememberPlace({ kind: "collection", collection: "all" });
+      const collectionPlace = await placeOf();
+      await ipc.rememberPlace({ kind: "folder", path: `${indexing.folder}/.` });
+      const folderPlace = await placeOf();
+      const outside = await ipc.rememberPlace({ kind: "folder", path: "/" }).then(
+        () => "stored",
+        () => "refused",
+      );
+      const afterOutside = await placeOf();
+      const current = (await ipc.getSettings()).settings;
+      await ipc.updateSettings({ ...current, library: { ...current.library, lastPlace: { kind: "album", id: 999 } } });
+      const afterUpdate = await placeOf();
       return {
         photos: all.photos.length,
         count: status.collections.all,
@@ -314,6 +329,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         folderPhotos: folder.length,
         ms,
         viewStored: stored,
+        place: { collectionPlace, folderPlace, outside, afterOutside, afterUpdate },
       };
     })();
     const allPhotosOk =
@@ -325,6 +341,16 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       allPhotos.viewStored.filter === "picks" &&
       allPhotos.viewStored.label === "blue" &&
       allPhotos.viewStored.sort === "newest";
+    const lastPlaceOk =
+      allPhotos !== null &&
+      allPhotos.place.collectionPlace?.kind === "collection" &&
+      allPhotos.place.collectionPlace.collection === "all" &&
+      allPhotos.place.folderPlace?.kind === "folder" &&
+      // Stored canonical: the "/." is gone.
+      allPhotos.place.folderPlace.path === indexing?.folder &&
+      allPhotos.place.outside === "refused" &&
+      JSON.stringify(allPhotos.place.afterOutside) === JSON.stringify(allPhotos.place.folderPlace) &&
+      JSON.stringify(allPhotos.place.afterUpdate) === JSON.stringify(allPhotos.place.folderPlace);
 
     // Albums (ADR 0055) through the real commands and catalogue: make one with two
     // photos, add a third (and one again), list it, take one out, rename and delete it.
@@ -1535,6 +1561,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       ratingsAndFlags: marksOk,
       colourLabels: labelsOk,
       allPhotosAndView: allPhotosOk,
+      lastPlace: lastPlaceOk,
       albums: albumsOk,
       search: searchOk,
       savedEdits: editsOk,

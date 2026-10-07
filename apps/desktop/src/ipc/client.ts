@@ -4,6 +4,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { LibraryPlace } from "./generated/LibraryPlace";
 import type { ChromaticAberration } from "./generated/ChromaticAberration";
 import type { EngineInfoDto } from "./generated/EngineInfoDto";
 import type { BackupStatusDto } from "./generated/BackupStatusDto";
@@ -87,6 +88,8 @@ export const getSettings = () => invoke<SettingsViewDto>("get_settings");
 
 /** Saves settings; the result holds the values actually stored (clamped). */
 export const updateSettings = (settings: Settings) => invoke<SettingsViewDto>("update_settings", { settings });
+/** Records where the Library is, to reopen it next launch (ADR 0065); folders are checked in Rust. */
+export const rememberPlace = (place: LibraryPlace) => invoke<void>("remember_place", { place });
 
 /** Native folder picker; grants and lists the folder. Null if the user cancelled. */
 export const chooseFolder = () => invoke<FolderListingDto | null>("choose_folder");

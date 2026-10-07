@@ -101,16 +101,64 @@ impl Default for PerformanceSettings {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
 pub struct LibrarySettings {
-    /// Folder the library opens at start-up, if set.
+    /// Folder the library opens at start-up when the last place can't be reopened.
     pub default_folder: Option<String>,
     /// Most recently opened folders, newest first.
     pub recent_folders: Vec<String>,
     /// How the Library shows photos, remembered between launches (ADR 0065).
     pub view: LibraryViewSettings,
+    /// Where the Library was left, reopened at the next launch (ADR 0065). Recorded by
+    /// Rust (a folder only once its access is checked), never by a settings update.
+    pub last_place: Option<LibraryPlace>,
+}
+
+impl<'de> Deserialize<'de> for LibrarySettings {
+    /// Field by field, like the view: one unreadable value (say, a place kind from a
+    /// newer version) is that field's default, not a reset of the whole file.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(d)?;
+        Ok(Self {
+            default_folder: lenient(&value, "defaultFolder"),
+            recent_folders: lenient(&value, "recentFolders"),
+            view: lenient(&value, "view"),
+            last_place: lenient(&value, "lastPlace"),
+        })
+    }
+}
+
+/// A place the Library shows (ADR 0065): a folder, a library-wide collection, or an
+/// album.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum LibraryPlace {
+    Folder {
+        path: String,
+    },
+    Collection {
+        collection: LibraryCollection,
+    },
+    Album {
+        // Album ids are small; a JS number holds them exactly.
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        id: i64,
+    },
+}
+
+/// The library-wide collections, as the sidebar lists them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum LibraryCollection {
+    All,
+    Recent,
+    Picks,
+    Rated,
+    Rejected,
 }
 
 /// The Library's view choices (ADR 0065). Each reads leniently: a value this version
@@ -488,6 +536,47 @@ mod tests {
         assert_eq!(
             json,
             r#"{"layout":"grid","filter":"rated3","label":null,"sort":"captured"}"#
+        );
+    }
+
+    #[test]
+    fn the_last_place_is_remembered_and_read_leniently() {
+        for (json, want) in [
+            (
+                r#"{"kind":"folder","path":"/p/2026"}"#,
+                Some(LibraryPlace::Folder {
+                    path: "/p/2026".into(),
+                }),
+            ),
+            (
+                r#"{"kind":"collection","collection":"all"}"#,
+                Some(LibraryPlace::Collection {
+                    collection: LibraryCollection::All,
+                }),
+            ),
+            (
+                r#"{"kind":"album","id":7}"#,
+                Some(LibraryPlace::Album { id: 7 }),
+            ),
+            // From a newer version, or damaged: no place, and the rest still loads.
+            (r#"{"kind":"smartCollection","id":3}"#, None),
+            (r#"{"kind":"collection","collection":"flagged"}"#, None),
+            (r#""somewhere""#, None),
+        ] {
+            let s: Settings = serde_json::from_str(&format!(
+                r#"{{"version":7,"library":{{"defaultFolder":"/p","lastPlace":{json},"view":{{"sort":"name"}}}}}}"#
+            ))
+            .unwrap();
+            assert_eq!(s.library.last_place, want, "{json}");
+            assert_eq!(s.library.default_folder.as_deref(), Some("/p"), "{json}");
+            assert_eq!(s.library.view.sort, LibrarySort::Name, "{json}");
+        }
+        let place = LibraryPlace::Collection {
+            collection: LibraryCollection::Picks,
+        };
+        assert_eq!(
+            serde_json::to_string(&place).unwrap(),
+            r#"{"kind":"collection","collection":"picks"}"#
         );
     }
 

@@ -1,3 +1,4 @@
+import type { LibraryPlace } from "../../ipc/generated/LibraryPlace";
 import type { LibraryLayout } from "../../ipc/generated/LibraryLayout";
 import type { LibraryViewSettings } from "../../ipc/generated/LibraryViewSettings";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -35,6 +36,12 @@ export interface RememberedView {
   /** The stored choices; `null` until settings have loaded. */
   view: LibraryViewSettings | null;
   save: (view: LibraryViewSettings) => void;
+}
+
+/** Records where the Library is, to reopen it next launch (ADR 0065). Best effort: a
+ *  place that can't be recorded only means the default folder opens instead. */
+function remember(place: LibraryPlace) {
+  ipc.rememberPlace(place).catch(() => undefined);
 }
 
 /**
@@ -195,13 +202,15 @@ export function useLibrary(remembered?: RememberedView) {
         setCollection(null);
         setAlbum(null);
         clearSearch();
+        remember({ kind: "folder", path: result.path });
       }
       return result;
     },
     [load, clearSearch],
   );
 
-  const openCollection = useCallback(async (kind: CollectionKindDto) => {
+  /** Opens a library-wide collection; whether it opened. */
+  const openCollection = useCallback(async (kind: CollectionKindDto): Promise<boolean> => {
     setLoading(true);
     requestRef.current++; // a folder listing still in flight must not replace this view
     try {
@@ -209,14 +218,18 @@ export function useLibrary(remembered?: RememberedView) {
       setAlbum(null);
       clearSearch();
       setError(null);
+      remember({ kind: "collection", collection: kind });
+      return true;
     } catch (e) {
       setError(await toAppError(e));
+      return false;
     } finally {
       setLoading(false);
     }
   }, [clearSearch]);
 
-  const openAlbum = useCallback(async (id: number) => {
+  /** Opens an album; whether it opened (it may have been deleted). */
+  const openAlbum = useCallback(async (id: number): Promise<boolean> => {
     setLoading(true);
     requestRef.current++; // a folder listing still in flight must not replace this view
     try {
@@ -226,9 +239,12 @@ export function useLibrary(remembered?: RememberedView) {
       clearSearch();
       setAlbums((all) => all.map((a) => (a.id === id ? listing.album : a)));
       setError(null);
+      remember({ kind: "album", id });
+      return true;
     } catch (e) {
       setError(await toAppError(e));
       refreshAlbums();
+      return false;
     } finally {
       setLoading(false);
     }
