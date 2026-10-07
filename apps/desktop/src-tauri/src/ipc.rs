@@ -31,6 +31,10 @@ pub struct ExportBatchDto {
     #[serde(default)]
     #[ts(optional)]
     pub sharpen: Option<settings::OutputSharpening>,
+    /// The colour space to write (ADR 0061); sRGB when left out.
+    #[serde(default)]
+    #[ts(optional)]
+    pub colour_space: Option<settings::ExportColourSpace>,
     /// The folder to export to, for the self-test only; otherwise the one chosen in
     /// the folder dialog (settings).
     #[ts(optional)]

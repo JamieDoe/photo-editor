@@ -1,20 +1,36 @@
 import { useEffect, useRef } from "react";
 import { CloseIcon, FolderIcon } from "../../components/icons";
 import type { PreviewFrame } from "../../ipc/frame";
+import type { ExportColourSpace } from "../../ipc/generated/ExportColourSpace";
 import type { ExportFileFormat } from "../../ipc/generated/ExportFileFormat";
 import type { ExportSettings } from "../../ipc/generated/ExportSettings";
 import type { OutputSharpening } from "../../ipc/generated/OutputSharpening";
 
 /** The settings a preset sets. */
-type Choice = { format: ExportFileFormat; longEdge: number | null; jpegQuality: number; sharpen: OutputSharpening };
+type Choice = {
+  format: ExportFileFormat;
+  longEdge: number | null;
+  jpegQuality: number;
+  colourSpace: ExportColourSpace;
+  sharpen: OutputSharpening;
+};
 
-/** The dialog's presets (ADRs 0050, 0057, 0059): the design's Web, Social and Full
- *  quality (a 16-bit TIFF at the original size), each sharpened for the screen as the
- *  design has them. */
+/** The dialog's presets (ADRs 0050, 0057, 0059, 0061), as the design has them: Web and
+ *  Social (sRGB JPEGs) and Full quality (a 16-bit Adobe RGB TIFF at the original size),
+ *  each sharpened for the screen. */
 export const EXPORT_PRESETS: ReadonlyArray<{ id: string; label: string; sub: string } & Choice> = [
-  { id: "web", label: "Web", sub: "JPEG · 2048 px", format: "jpeg", longEdge: 2048, jpegQuality: 85, sharpen: "screen" },
-  { id: "social", label: "Social", sub: "JPEG · 1350 px", format: "jpeg", longEdge: 1350, jpegQuality: 90, sharpen: "screen" },
-  { id: "full", label: "Full quality", sub: "TIFF · original", format: "tiff", longEdge: null, jpegQuality: 95, sharpen: "screen" },
+  { id: "web", label: "Web", sub: "JPEG · 2048 px", format: "jpeg", longEdge: 2048, jpegQuality: 85, colourSpace: "srgb", sharpen: "screen" },
+  { id: "social", label: "Social", sub: "JPEG · 1350 px", format: "jpeg", longEdge: 1350, jpegQuality: 90, colourSpace: "srgb", sharpen: "screen" },
+  { id: "full", label: "Full quality", sub: "TIFF · original", format: "tiff", longEdge: null, jpegQuality: 95, colourSpace: "adobeRgb", sharpen: "screen" },
+];
+
+/** The design's Colour space choices (ADR 0061). The photo is edited in sRGB (with
+ *  colours beyond it brought in softly), so the wider spaces hold the same colours,
+ *  tagged as their space for displays, labs and workflows that ask for it. */
+const COLOUR_SPACES: ReadonlyArray<{ id: ExportColourSpace; label: string; hint: string }> = [
+  { id: "srgb", label: "sRGB", hint: "For the web, phones and most screens" },
+  { id: "displayP3", label: "Display P3", hint: "Tagged for wide-gamut screens (the colours are sRGB's)" },
+  { id: "adobeRgb", label: "Adobe RGB", hint: "Tagged for print labs and print workflows (the colours are sRGB's)" },
 ];
 
 /** The design's Sharpen for choices, and None for files that will be edited further. */
@@ -44,13 +60,14 @@ function presetOf(c: Choice): string | null {
     p.format === c.format &&
     p.longEdge === c.longEdge &&
     p.sharpen === c.sharpen &&
+    p.colourSpace === c.colourSpace &&
     (c.format !== "jpeg" || p.jpegQuality === c.jpegQuality);
   return EXPORT_PRESETS.find(matches)?.id ?? null;
 }
 
 /**
- * The design's export dialog: the photos, a preset, the format, JPEG quality, size and
- * output sharpening, the folder, and Export. The choices are remembered (settings); the folder is chosen only in the
+ * The design's export dialog: the photos, a preset, the format, JPEG quality, size,
+ * colour space and output sharpening, the folder, and Export. The choices are remembered (settings); the folder is chosen only in the
  * system's dialog.
  */
 export function ExportDialog({
@@ -90,7 +107,13 @@ export function ExportDialog({
 
   const longEdge = settings.longEdge;
   const format = settings.format;
-  const current: Choice = { format, longEdge, jpegQuality: settings.jpegQuality, sharpen: settings.sharpen };
+  const current: Choice = {
+    format,
+    longEdge,
+    jpegQuality: settings.jpegQuality,
+    colourSpace: settings.colourSpace,
+    sharpen: settings.sharpen,
+  };
   const set = (change: Partial<Choice>) => {
     const next = { ...current, ...change };
     onChange({ ...next, preset: presetOf(next) });
@@ -115,7 +138,7 @@ export function ExportDialog({
         </div>
         <div className="export-presets">
           {EXPORT_PRESETS.map((p) => (
-            <button key={p.id} className="export-preset" aria-pressed={settings.preset === p.id} onClick={() => set({ format: p.format, longEdge: p.longEdge, jpegQuality: p.jpegQuality, sharpen: p.sharpen })}>
+            <button key={p.id} className="export-preset" aria-pressed={settings.preset === p.id} onClick={() => set({ format: p.format, longEdge: p.longEdge, jpegQuality: p.jpegQuality, colourSpace: p.colourSpace, sharpen: p.sharpen })}>
               <span className="export-preset-label">{p.label}</span>
               <span className="export-preset-sub">{p.sub}</span>
             </button>
@@ -157,6 +180,16 @@ export function ExportDialog({
               {SIZES.map((s) => (
                 <button key={s.label} role="radio" aria-checked={longEdge === s.longEdge} onClick={() => set({ longEdge: s.longEdge })}>
                   {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="export-row">
+            <span>Colour space</span>
+            <div className="segmented small" role="radiogroup" aria-label="Colour space">
+              {COLOUR_SPACES.map((o) => (
+                <button key={o.id} role="radio" aria-checked={settings.colourSpace === o.id} title={o.hint} onClick={() => set({ colourSpace: o.id })}>
+                  {o.label}
                 </button>
               ))}
             </div>

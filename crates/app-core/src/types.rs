@@ -93,6 +93,8 @@ pub struct ExportRequest {
     pub format: ExportFormat,
     /// Output sharpening (ADR 0059), after any resize.
     pub sharpening: export::sharpen::OutputSharpening,
+    /// The colour space written (ADR 0061).
+    pub colour_space: export::colour::ExportColourSpace,
 }
 
 /// Exporting a photo straight from its file (ADR 0050), as the export queue does: it
@@ -107,6 +109,8 @@ pub struct FileExport {
     pub long_edge: Option<u32>,
     /// Output sharpening (ADR 0059), after any resize.
     pub sharpening: export::sharpen::OutputSharpening,
+    /// The colour space written (ADR 0061).
+    pub colour_space: export::colour::ExportColourSpace,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

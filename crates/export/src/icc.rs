@@ -1,11 +1,108 @@
-//! A compact sRGB ICC profile (version 2.1, a matrix/TRC display profile), generated
-//! here rather than shipped as a file (ADR 0057), so its terms are ours. Embedded in
-//! TIFF exports so colour-managed applications (Photoshop, print RIPs) read the pixels
-//! as sRGB instead of guessing.
+//! Compact ICC profiles (version 2.1, matrix/TRC display profiles) for the export
+//! colour spaces, generated here rather than shipped as files (ADRs 0057, 0061), so
+//! their terms are ours. Embedded in exports so colour-managed applications
+//! (Photoshop, print RIPs, browsers) read the pixels in the right space instead of
+//! guessing.
 //!
-//! The colorants are sRGB's primaries adapted to the profile connection space's D50
-//! white with the Bradford transform; the tone curve is the sRGB curve sampled at 1024
-//! points; the media white is D65, as version 2 display profiles record it.
+//! A space is its primaries' and white's chromaticities and its tone curve. The
+//! colorants are worked out from those and adapted to the profile connection space's
+//! D50 white with the Bradford transform; the media white is the space's own (D65),
+//! as version 2 display profiles record it.
+
+/// An RGB colour space as a profile describes it.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Space {
+    pub name: &'static str,
+    /// x, y chromaticities of red, green and blue.
+    pub primaries: [[f64; 2]; 3],
+    /// x, y of the white.
+    pub white: [f64; 2],
+    pub curve: Curve,
+}
+
+/// A space's tone curve (encoded value to linear light).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Curve {
+    /// The sRGB curve (also Display P3's).
+    Srgb,
+    /// A pure power, as Adobe RGB's 563/256.
+    Gamma(f64),
+}
+
+const D65: [f64; 2] = [0.3127, 0.3290];
+
+pub const SRGB: Space = Space {
+    name: "sRGB",
+    primaries: [[0.64, 0.33], [0.30, 0.60], [0.15, 0.06]],
+    white: D65,
+    curve: Curve::Srgb,
+};
+
+pub const DISPLAY_P3: Space = Space {
+    name: "Display P3",
+    primaries: [[0.680, 0.320], [0.265, 0.690], [0.150, 0.060]],
+    white: D65,
+    curve: Curve::Srgb,
+};
+
+pub const ADOBE_RGB: Space = Space {
+    name: "Adobe RGB (1998) compatible",
+    primaries: [[0.64, 0.33], [0.21, 0.71], [0.15, 0.06]],
+    white: D65,
+    curve: Curve::Gamma(563.0 / 256.0),
+};
+
+fn xyz_of([x, y]: [f64; 2]) -> [f64; 3] {
+    [x / y, 1.0, (1.0 - x - y) / y]
+}
+
+fn mul3(a: &[[f64; 3]; 3], v: [f64; 3]) -> [f64; 3] {
+    [0, 1, 2].map(|r| a[r][0] * v[0] + a[r][1] * v[1] + a[r][2] * v[2])
+}
+
+fn mat_mul(a: &[[f64; 3]; 3], b: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    std::array::from_fn(|r| std::array::from_fn(|c| (0..3).map(|k| a[r][k] * b[k][c]).sum()))
+}
+
+pub(crate) fn invert(m: &[[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    let [[a, b, c], [d, e, f], [g, h, i]] = *m;
+    let co = [e * i - f * h, f * g - d * i, d * h - e * g];
+    let det = a * co[0] + b * co[1] + c * co[2];
+    [
+        [co[0] / det, (c * h - b * i) / det, (b * f - c * e) / det],
+        [co[1] / det, (a * i - c * g) / det, (c * d - a * f) / det],
+        [co[2] / det, (b * g - a * h) / det, (a * e - b * d) / det],
+    ]
+}
+
+/// The space's linear RGB to XYZ (its own white at Y = 1): columns are the primaries,
+/// scaled so that they add up to the white.
+pub(crate) fn rgb_to_xyz(space: &Space) -> [[f64; 3]; 3] {
+    let p = space.primaries.map(xyz_of);
+    let m = [0, 1, 2].map(|r| [p[0][r], p[1][r], p[2][r]]);
+    let s = mul3(&invert(&m), xyz_of(space.white));
+    [0, 1, 2].map(|r| [m[r][0] * s[0], m[r][1] * s[1], m[r][2] * s[2]])
+}
+
+/// The colorants (XYZ of red, green and blue) adapted to D50 with Bradford.
+fn colorants(space: &Space) -> [[f64; 3]; 3] {
+    const BRADFORD: [[f64; 3]; 3] = [
+        [0.8951, 0.2664, -0.1614],
+        [-0.7502, 1.7135, 0.0367],
+        [0.0389, -0.0685, 1.0296],
+    ];
+    // The D50 white the published colorants are adapted to.
+    let d50 = [0.964_22, 1.0, 0.825_21];
+    let (src, dst) = (mul3(&BRADFORD, xyz_of(space.white)), mul3(&BRADFORD, d50));
+    let scale = [
+        [dst[0] / src[0], 0.0, 0.0],
+        [0.0, dst[1] / src[1], 0.0],
+        [0.0, 0.0, dst[2] / src[2]],
+    ];
+    let adapt = mat_mul(&invert(&BRADFORD), &mat_mul(&scale, &BRADFORD));
+    let m = mat_mul(&adapt, &rgb_to_xyz(space));
+    [0, 1, 2].map(|c| [m[0][c], m[1][c], m[2][c]])
+}
 
 /// s15Fixed16 numbers, as ICC writes XYZ values.
 fn fixed(v: f64) -> [u8; 4] {
@@ -20,10 +117,16 @@ fn xyz_tag(x: f64, y: f64, z: f64) -> Vec<u8> {
     t
 }
 
-/// The sRGB curve (encoded value to linear light) as a 1024-point table.
-fn curve_tag() -> Vec<u8> {
+/// The space's curve: the sRGB curve as a 1024-point table, or a gamma as one number.
+fn curve_tag(curve: Curve) -> Vec<u8> {
     const POINTS: u32 = 1024;
     let mut t = b"curv\0\0\0\0".to_vec();
+    if let Curve::Gamma(g) = curve {
+        // One entry: the gamma as u8Fixed8 (563/256 exactly for Adobe RGB).
+        t.extend(1u32.to_be_bytes());
+        t.extend(((g * 256.0).round() as u16).to_be_bytes());
+        return t;
+    }
     t.extend(POINTS.to_be_bytes());
     for i in 0..POINTS {
         let v = f64::from(i) / f64::from(POINTS - 1);
@@ -56,15 +159,23 @@ fn text_tag(text: &str) -> Vec<u8> {
 }
 
 /// The profile's bytes.
+#[cfg(test)]
 pub fn srgb_profile() -> Vec<u8> {
-    let curve = curve_tag();
+    profile(&SRGB)
+}
+
+/// `space`'s profile.
+pub fn profile(space: &Space) -> Vec<u8> {
+    let curve = curve_tag(space.curve);
+    let [r, g, b] = colorants(space);
+    let w = xyz_of(space.white);
     let tags: [(&[u8; 4], Vec<u8>); 9] = [
-        (b"desc", description_tag("sRGB")),
+        (b"desc", description_tag(space.name)),
         (b"cprt", text_tag("No copyright, use freely")),
-        (b"wtpt", xyz_tag(0.950_455, 1.0, 1.089_06)),
-        (b"rXYZ", xyz_tag(0.436_074_7, 0.222_504_5, 0.013_932_2)),
-        (b"gXYZ", xyz_tag(0.385_064_9, 0.716_878_6, 0.097_104_5)),
-        (b"bXYZ", xyz_tag(0.143_080_4, 0.060_616_9, 0.714_173_3)),
+        (b"wtpt", xyz_tag(w[0], w[1], w[2])),
+        (b"rXYZ", xyz_tag(r[0], r[1], r[2])),
+        (b"gXYZ", xyz_tag(g[0], g[1], g[2])),
+        (b"bXYZ", xyz_tag(b[0], b[1], b[2])),
         (b"rTRC", curve.clone()),
         (b"gTRC", curve.clone()),
         (b"bTRC", curve),
@@ -192,5 +303,63 @@ mod tests {
         assert!((f64::from(mid) / 65535.0 - 0.2144).abs() < 0.002, "{mid}");
         // The same bytes every time.
         assert_eq!(srgb_profile(), p);
+    }
+
+    #[test]
+    fn colorants_are_worked_out_as_published() {
+        // sRGB's Bradford-adapted colorants, as every sRGB profile has them.
+        let c = colorants(&SRGB);
+        let published = [
+            [0.436_074_7, 0.222_504_5, 0.013_932_2],
+            [0.385_064_9, 0.716_878_6, 0.097_104_5],
+            [0.143_080_4, 0.060_616_9, 0.714_173_3],
+        ];
+        for (got, want) in c.iter().zip(published) {
+            for (g, w) in got.iter().zip(want) {
+                assert!((g - w).abs() < 2e-4, "{c:?}");
+            }
+        }
+        // Display P3's, likewise (as Apple's profile has them).
+        let p3 = colorants(&DISPLAY_P3);
+        assert!(
+            (p3[0][0] - 0.5151).abs() < 2e-4 && (p3[1][1] - 0.6922).abs() < 2e-4,
+            "{p3:?}"
+        );
+    }
+
+    #[test]
+    fn every_space_makes_a_well_formed_profile() {
+        for space in [SRGB, DISPLAY_P3, ADOBE_RGB] {
+            let p = profile(&space);
+            assert_eq!(u32_at(&p, 0) as usize, p.len(), "{}", space.name);
+            assert_eq!(&p[36..40], b"acsp");
+            // Colorants add up to D50 whatever the space.
+            let sum = |c: usize| -> f64 {
+                [b"rXYZ", b"gXYZ", b"bXYZ"]
+                    .iter()
+                    .map(|s| {
+                        f64::from(i32::from_be_bytes(
+                            tag(&p, s).unwrap()[8 + c * 4..12 + c * 4]
+                                .try_into()
+                                .unwrap(),
+                        )) / 65536.0
+                    })
+                    .sum()
+            };
+            assert!(
+                (sum(0) - 0.9642).abs() < 0.001 && (sum(2) - 0.8249).abs() < 0.001,
+                "{}",
+                space.name
+            );
+        }
+        // Adobe RGB's curve: one gamma, 563/256 exactly.
+        let p = profile(&ADOBE_RGB);
+        let curve = tag(&p, b"rTRC").unwrap();
+        assert_eq!(
+            (u32_at(curve, 8), u16::from_be_bytes([curve[12], curve[13]])),
+            (1, 563)
+        );
+        // Different spaces, different profiles.
+        assert_ne!(profile(&DISPLAY_P3), profile(&SRGB));
     }
 }

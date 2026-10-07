@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 
 use image_core::{OutputImage, PixelFormat};
 
+pub mod colour;
 mod icc;
 pub mod resize;
 pub mod sharpen;
@@ -141,9 +142,31 @@ impl JpegEncoder {
     }
 }
 
-/// Encodes `image` to bytes with the preferred JPEG encoder.
+/// Encodes `image` (sRGB) to bytes with the preferred JPEG encoder.
 pub fn encode(image: &OutputImage, format: ExportFormat) -> Result<Vec<u8>, ExportError> {
     encode_with(image, format, JpegEncoder::preferred())
+}
+
+/// Encodes `image`, already in `space` (see [`colour::convert`]), carrying that
+/// space's profile (ADR 0061). sRGB is marked as before: a JPEG untagged, a PNG with
+/// its sRGB chunk, a TIFF with the sRGB profile.
+pub fn encode_in(
+    image: &OutputImage,
+    format: ExportFormat,
+    space: colour::ExportColourSpace,
+) -> Result<Vec<u8>, ExportError> {
+    match format {
+        ExportFormat::Jpeg { .. } => {
+            let jpeg = encode(image, format)?;
+            Ok(if space == colour::ExportColourSpace::Srgb {
+                jpeg
+            } else {
+                colour::jpeg_with_profile(&jpeg, &space.profile())
+            })
+        }
+        ExportFormat::Png => encode_png(image, space),
+        ExportFormat::Tiff => encode_tiff(image, space),
+    }
 }
 
 /// Encodes with a specific JPEG encoder (benchmarks and parity tests).
@@ -154,8 +177,8 @@ pub fn encode_with(
 ) -> Result<Vec<u8>, ExportError> {
     let quality = match format {
         ExportFormat::Jpeg { quality } => quality.clamp(1, 100),
-        ExportFormat::Png => return encode_png(image),
-        ExportFormat::Tiff => return encode_tiff(image),
+        ExportFormat::Png => return encode_png(image, colour::ExportColourSpace::Srgb),
+        ExportFormat::Tiff => return encode_tiff(image, colour::ExportColourSpace::Srgb),
     };
     if image.format() == PixelFormat::Rgb16 {
         return Err(ExportError::Encode(
@@ -195,8 +218,11 @@ fn encode_pure_rust(image: &OutputImage, quality: u8) -> Result<Vec<u8>, ExportE
 }
 
 /// PNG: 8-bit RGB (or RGBA), marked as sRGB so browsers and viewers show it as
-/// rendered.
-fn encode_png(image: &OutputImage) -> Result<Vec<u8>, ExportError> {
+/// rendered, or carrying another space's profile.
+fn encode_png(
+    image: &OutputImage,
+    space: colour::ExportColourSpace,
+) -> Result<Vec<u8>, ExportError> {
     let err = |e: png::EncodingError| ExportError::Encode(e.to_string());
     let (color, depth) = match image.format() {
         PixelFormat::Rgb8 => (png::ColorType::Rgb, png::BitDepth::Eight),
@@ -204,10 +230,16 @@ fn encode_png(image: &OutputImage) -> Result<Vec<u8>, ExportError> {
         PixelFormat::Rgb16 => (png::ColorType::Rgb, png::BitDepth::Sixteen),
     };
     let mut out = Vec::with_capacity(image.byte_size() / 2);
-    let mut encoder = png::Encoder::new(&mut out, image.width(), image.height());
-    encoder.set_color(color);
-    encoder.set_depth(depth);
-    encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
+    let mut info = png::Info::with_size(image.width(), image.height());
+    info.color_type = color;
+    info.bit_depth = depth;
+    if space != colour::ExportColourSpace::Srgb {
+        info.icc_profile = Some(space.profile().into());
+    }
+    let mut encoder = png::Encoder::with_info(&mut out, info).map_err(err)?;
+    if space == colour::ExportColourSpace::Srgb {
+        encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
+    }
     encoder.set_compression(png::Compression::Balanced);
     let mut writer = encoder.write_header().map_err(err)?;
     match image.format() {
@@ -229,9 +261,12 @@ fn encode_png(image: &OutputImage) -> Result<Vec<u8>, ExportError> {
 }
 
 /// TIFF: 16-bit RGB (or 8-bit, as given), Deflate with the horizontal predictor
-/// (lossless, about half the size of uncompressed), the sRGB profile embedded, at a
+/// (lossless, about half the size of uncompressed), the space's profile embedded, at a
 /// nominal 300 ppi.
-fn encode_tiff(image: &OutputImage) -> Result<Vec<u8>, ExportError> {
+fn encode_tiff(
+    image: &OutputImage,
+    space: colour::ExportColourSpace,
+) -> Result<Vec<u8>, ExportError> {
     use tiff::encoder::{Compression, Rational, TiffEncoder, colortype, compression::DeflateLevel};
     use tiff::tags::{Predictor, ResolutionUnit, Tag};
     let err = |e: tiff::TiffError| ExportError::Encode(e.to_string());
@@ -240,7 +275,7 @@ fn encode_tiff(image: &OutputImage) -> Result<Vec<u8>, ExportError> {
         .map_err(err)?
         .with_compression(Compression::Deflate(DeflateLevel::Balanced))
         .with_predictor(Predictor::Horizontal);
-    let profile = icc::srgb_profile();
+    let profile = space.profile();
     let (w, h) = (image.width(), image.height());
     macro_rules! write {
         ($color:ty, $data:expr) => {{
@@ -479,5 +514,34 @@ mod tests {
         assert_eq!(ExportFormat::Png.pixel_format(), PixelFormat::Rgb8);
         // JPEG never takes 16-bit pixels.
         assert!(encode(&ramp16(4, 4), JPEG).is_err());
+    }
+
+    #[test]
+    fn wide_spaces_carry_their_profiles() {
+        use colour::ExportColourSpace::{AdobeRgb, DisplayP3};
+        // TIFF: the space's profile in its tag.
+        let bytes = encode_in(&ramp16(9, 7), ExportFormat::Tiff, DisplayP3).unwrap();
+        let mut dec = tiff::decoder::Decoder::new(std::io::Cursor::new(bytes)).unwrap();
+        let profile = dec.get_tag_u8_vec(tiff::tags::Tag::IccProfile).unwrap();
+        assert_eq!(profile, DisplayP3.profile());
+        // PNG: the profile instead of the sRGB chunk.
+        let img = OutputImage::from_raw(4, 4, PixelFormat::Rgb8, vec![90; 48]).unwrap();
+        let bytes = encode_in(&img, ExportFormat::Png, AdobeRgb).unwrap();
+        let reader = png::Decoder::new(std::io::Cursor::new(bytes))
+            .read_info()
+            .unwrap();
+        assert!(reader.info().srgb.is_none());
+        assert_eq!(
+            reader.info().icc_profile.as_deref(),
+            Some(&AdobeRgb.profile()[..])
+        );
+        // JPEG: an ICC_PROFILE segment; an sRGB JPEG has none.
+        let tagged = encode_in(&img, JPEG, DisplayP3).unwrap();
+        assert!(tagged.windows(12).any(|w| w == b"ICC_PROFILE\0"));
+        let plain = encode_in(&img, JPEG, colour::ExportColourSpace::Srgb).unwrap();
+        assert!(!plain.windows(12).any(|w| w == b"ICC_PROFILE\0"));
+        // The tagged JPEG still decodes.
+        let (w, h, _) = decode(tagged);
+        assert_eq!((w, h), (4, 4));
     }
 }

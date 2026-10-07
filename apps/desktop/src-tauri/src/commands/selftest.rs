@@ -6,6 +6,7 @@ use crate::ipc::SelfTestConfigDto;
 #[tauri::command]
 pub fn self_test_config(state: State<'_, AppState>) -> Option<SelfTestConfigDto> {
     let image = state.self_test.as_ref()?;
+    log::info!("self-test: the page asked for its config; starting");
     let export = std::env::temp_dir().join("photo-editor-self-test-export.jpg");
     Some(SelfTestConfigDto {
         image_path: image.display().to_string(),

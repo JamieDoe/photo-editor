@@ -58,6 +58,7 @@ pub async fn export_image(
             destination: destination.clone(),
             format: single_format(&state),
             sharpening: output_sharpening(state.settings.get().export.sharpen),
+            colour_space: colour_space(state.settings.get().export.colour_space),
         },
         move |p| {
             let event = ExportEvent::Progress {
@@ -111,6 +112,15 @@ pub(crate) fn output_sharpening(s: settings::OutputSharpening) -> app_core::Outp
         settings::OutputSharpening::Screen => app_core::OutputSharpening::Screen,
         settings::OutputSharpening::Matte => app_core::OutputSharpening::Matte,
         settings::OutputSharpening::Glossy => app_core::OutputSharpening::Glossy,
+    }
+}
+
+/// The colour space for the remembered settings' choice (ADR 0061).
+pub(crate) fn colour_space(s: settings::ExportColourSpace) -> app_core::ExportColourSpace {
+    match s {
+        settings::ExportColourSpace::Srgb => app_core::ExportColourSpace::Srgb,
+        settings::ExportColourSpace::DisplayP3 => app_core::ExportColourSpace::DisplayP3,
+        settings::ExportColourSpace::AdobeRgb => app_core::ExportColourSpace::AdobeRgb,
     }
 }
 
@@ -208,6 +218,7 @@ pub async fn start_export(
     );
     let format = export_format(batch.format.unwrap_or_default(), quality);
     let sharpening = output_sharpening(batch.sharpen.unwrap_or_default());
+    let colour_space = colour_space(batch.colour_space.unwrap_or_default());
     let long_edge = batch.long_edge.map(|e| {
         e.clamp(
             settings::ExportSettings::LONG_EDGE_MIN,
@@ -261,6 +272,7 @@ pub async fn start_export(
                 long_edge,
                 format,
                 sharpening,
+                colour_space,
             }),
             Err(f) => refused.push(f),
         }

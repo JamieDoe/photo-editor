@@ -366,6 +366,7 @@ impl Engine {
                 destination: req.destination,
                 format: req.format,
                 sharpening: req.sharpening,
+                colour_space: req.colour_space,
                 long_edge: None,
             },
             progress,
@@ -591,9 +592,16 @@ impl Shared {
         });
         let t = Instant::now();
         let plan = RenderPlan::from_recipe(&req.recipe, decoded.info.as_shot_white);
-        let rendered =
-            self.renderer
-                .render(&plan, &decoded.image, req.format.pixel_format(), token)?;
+        // Another colour space is converted from a 16-bit render, so the file is
+        // rounded once, at its own depth (ADR 0061).
+        let render_format = if req.colour_space == export::colour::ExportColourSpace::Srgb {
+            req.format.pixel_format()
+        } else {
+            image_core::PixelFormat::Rgb16
+        };
+        let rendered = self
+            .renderer
+            .render(&plan, &decoded.image, render_format, token)?;
         drop(decoded);
         let rendered = match req.long_edge {
             Some(edge) => export::resize::fit_long_edge(&rendered, edge),
@@ -601,6 +609,9 @@ impl Shared {
         };
         // Sharpened for its medium at the size it is written (ADR 0059).
         let rendered = export::sharpen::sharpen(&rendered, req.sharpening);
+        // In the chosen colour space (ADR 0061), rounded to the file's depth once.
+        let rendered =
+            export::colour::convert(&rendered, req.colour_space, req.format.pixel_format());
         let render_ms = ms(t);
 
         progress(ExportProgress {
@@ -608,7 +619,7 @@ impl Shared {
             fraction: 0.8,
         });
         let t = Instant::now();
-        let bytes = export::encode(&rendered, req.format)?;
+        let bytes = export::encode_in(&rendered, req.format, req.colour_space)?;
         let encode_ms = ms(t);
         if token.is_cancelled() {
             return Err(EngineError::cancelled());

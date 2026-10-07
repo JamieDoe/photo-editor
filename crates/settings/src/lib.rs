@@ -11,7 +11,8 @@ mod model;
 mod store;
 
 pub use model::{
-    BackgroundIntensity, BackupSettings, ExportFileFormat, ExportSettings, GeneralSettings,
-    LibrarySettings, OutputSharpening, PerformanceSettings, SETTINGS_VERSION, Settings, Theme,
+    BackgroundIntensity, BackupSettings, ExportColourSpace, ExportFileFormat, ExportSettings,
+    GeneralSettings, LibrarySettings, OutputSharpening, PerformanceSettings, SETTINGS_VERSION,
+    Settings, Theme,
 };
 pub use store::{LoadOutcome, SettingsStore};
