@@ -51,7 +51,9 @@ let mockSettings: Record<string, unknown> = {
 let mockBackups = { enabled: true, count: 5, totalBytes: 11_800_000, latestAtMs: Date.now() - 2 * 3600_000, folder: "/Users/me/Library/Application Support/app/backups", copy: null as null | { folder: string; connected: boolean; count: number; latestAtMs: number | null } };
 const mockEdits = new Map<string, Record<string, number>>();
 let openedPath = "/mock.nef";
-const mockMarks = new Map<string, { rating: number; flag: "none" | "pick" | "reject" }>();
+type MockLabel = "none" | "red" | "yellow" | "green" | "blue" | "purple";
+const mockMarks = new Map<string, { rating: number; flag: "none" | "pick" | "reject"; label: MockLabel }>();
+const MOCK_LABELS: MockLabel[] = ["red", "yellow", "green", "blue", "purple"];
 /** Dev-only albums: name and member paths, by id. */
 const mockAlbums = new Map<number, { name: string; paths: string[] }>([[1, { name: "Portfolio", paths: [] }]]);
 let nextAlbum = 2;
@@ -61,7 +63,11 @@ const albumDto = (id: number) => {
 };
 const albumList = () => [...mockAlbums.keys()].map(albumDto).sort((x, y) => x.name.localeCompare(y.name));
 const marksOf = (path: string, i: number) =>
-  mockMarks.get(path) ?? { rating: i % 9 === 0 ? 4 : i % 13 === 0 ? 2 : 0, flag: i % 7 === 0 ? ("pick" as const) : i % 17 === 0 ? ("reject" as const) : ("none" as const) };
+  mockMarks.get(path) ?? {
+    rating: i % 9 === 0 ? 4 : i % 13 === 0 ? 2 : 0,
+    flag: i % 7 === 0 ? ("pick" as const) : i % 17 === 0 ? ("reject" as const) : ("none" as const),
+    label: i % 5 === 1 ? MOCK_LABELS[(i / 5) % 5 | 0]! : ("none" as const),
+  };
 let lastListing: ReturnType<typeof mockListing> | null = null;
 
 function mockListing(path: string) {
@@ -242,12 +248,13 @@ mockIPC((cmd, payload) => {
       lastListing = mockListing((payload as { path: string }).path);
       return lastListing;
     case "set_photo_marks": {
-      const { paths, change } = payload as { paths: string[]; change: { type: "rating"; stars: number } | { type: "flag"; flag: "none" | "pick" | "reject" } };
+      const { paths, change } = payload as { paths: string[]; change: { type: "rating"; stars: number } | { type: "flag"; flag: "none" | "pick" | "reject" } | { type: "label"; label: MockLabel } };
       for (const p of paths) {
         const i = lastListing?.photos.findIndex((x) => x.path === p) ?? -1;
         const m = { ...marksOf(p, i) };
         if (change.type === "rating") m.rating = change.stars;
-        else m.flag = change.flag;
+        else if (change.type === "flag") m.flag = change.flag;
+        else m.label = change.label;
         mockMarks.set(p, m);
       }
       return counts();

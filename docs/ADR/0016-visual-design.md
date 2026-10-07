@@ -86,6 +86,7 @@ existing screens to the design now, and to match it for every screen built from 
 |---|---|---|
 | Library cards | Click selects, double-click opens (design: click opens) | Culling needs a selection to rate with the keyboard |
 | Library header | Grid/List switch, Refresh, Set as default | The details list and folder actions predate the grid; the design has neither |
+| Colour labels and sort (ADR 0064) | Not in the design: a label dot before the name on cards, list rows and the filmstrip; five swatches after pick/reject in the Edit toolbar; a five-swatch label filter and a Sort menu (Capture time, Newest first, File name, Rating) after the header filter | Asked for (Lightroom parity for culling); built from the design's own pieces (toolbar buttons, the small segmented container, the settings select) |
 | Library sidebar | "Indexed photos" is a count, not a view | "All photos" as a library-wide view is not built yet |
 | Edit header | "Open photo…" button | Opening a file outside the library; the design has no equivalent |
 | Edit header | Edited and save notes ("Not saved…", "Couldn't save"); Reset moved to the panel footer as in the design (ADR 0048) | Honest save state for photos outside the library |

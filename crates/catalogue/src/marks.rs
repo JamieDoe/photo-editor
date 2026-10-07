@@ -1,4 +1,4 @@
-//! Ratings and pick/reject flags: the photographer's own judgements (PRODUCT.md §17,
+//! Ratings, pick/reject flags and colour labels: the photographer's own judgements (PRODUCT.md §17,
 //! "application metadata"). Stored on the photo, so they follow it across moves and
 //! renames, and never written into the original file.
 //!
@@ -57,10 +57,56 @@ impl Flag {
     }
 }
 
+/// A colour label (ADR 0064): the photographer's own meaning, as in other photo tools
+/// (say, red for "to print", green for "delivered").
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash)]
+pub enum ColourLabel {
+    #[default]
+    None,
+    Red,
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+}
+
+impl ColourLabel {
+    pub const ALL: [Self; 5] = [
+        Self::Red,
+        Self::Yellow,
+        Self::Green,
+        Self::Blue,
+        Self::Purple,
+    ];
+
+    fn to_db(self) -> i64 {
+        match self {
+            Self::None => 0,
+            Self::Red => 1,
+            Self::Yellow => 2,
+            Self::Green => 3,
+            Self::Blue => 4,
+            Self::Purple => 5,
+        }
+    }
+
+    fn from_db(v: i64) -> Self {
+        match v {
+            1 => Self::Red,
+            2 => Self::Yellow,
+            3 => Self::Green,
+            4 => Self::Blue,
+            5 => Self::Purple,
+            _ => Self::None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Marks {
     pub rating: Rating,
     pub flag: Flag,
+    pub label: ColourLabel,
 }
 
 impl Marks {
@@ -74,6 +120,7 @@ impl Marks {
 pub enum MarkChange {
     Rating(Rating),
     Flag(Flag),
+    Label(ColourLabel),
 }
 
 /// Library-wide views: built from marks, or (Recently imported) from when photos
@@ -129,10 +176,11 @@ pub struct CollectionEntry {
     pub edited: bool,
 }
 
-fn marks_from(rating: i64, flag: i64) -> Marks {
+fn marks_from(rating: i64, flag: i64, label: i64) -> Marks {
     Marks {
         rating: Rating::new(rating.clamp(0, 5) as u8).unwrap_or_default(),
         flag: Flag::from_db(flag),
+        label: ColourLabel::from_db(label),
     }
 }
 
@@ -160,6 +208,7 @@ impl Catalogue {
                     i64::from(r.stars()),
                 ),
                 MarkChange::Flag(f) => ("UPDATE photos SET flag = ?2 WHERE id = ?1", f.to_db()),
+                MarkChange::Label(l) => ("UPDATE photos SET label = ?2 WHERE id = ?1", l.to_db()),
             };
             let mut stmt = tx.prepare_cached(sql)?;
             for photo in photos {
@@ -173,9 +222,9 @@ impl Catalogue {
         let conn = self.conn();
         Ok(conn
             .query_row(
-                "SELECT rating, flag FROM photos WHERE id = ?1",
+                "SELECT rating, flag, label FROM photos WHERE id = ?1",
                 [photo.0],
-                |r| Ok(marks_from(r.get(0)?, r.get(1)?)),
+                |r| Ok(marks_from(r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?
             .unwrap_or_default())
@@ -188,13 +237,13 @@ impl Catalogue {
             .to_owned();
         let conn = self.conn();
         let mut stmt = conn.prepare_cached(
-            "SELECT f.path, p.rating, p.flag FROM files f JOIN photos p ON p.id = f.photo_id
-             WHERE f.dir = ?1 AND f.missing = 0 AND (p.rating > 0 OR p.flag <> 0)",
+            "SELECT f.path, p.rating, p.flag, p.label FROM files f JOIN photos p ON p.id = f.photo_id
+             WHERE f.dir = ?1 AND f.missing = 0 AND (p.rating > 0 OR p.flag <> 0 OR p.label <> 0)",
         )?;
         let rows = stmt.query_map([dir], |r| {
             Ok((
                 PathBuf::from(r.get::<_, String>(0)?),
-                marks_from(r.get(1)?, r.get(2)?),
+                marks_from(r.get(1)?, r.get(2)?, r.get(3)?),
             ))
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -216,7 +265,7 @@ impl Catalogue {
         let conn = self.conn();
         let sql = format!(
             "SELECT p.id, f.path, f.size, f.modified_ns, p.rating, p.flag, p.metadata_version,
-                    EXISTS(SELECT 1 FROM edits e WHERE e.photo_id = p.id), {}
+                    EXISTS(SELECT 1 FROM edits e WHERE e.photo_id = p.id), p.label, {}
              FROM photos p JOIN files f ON f.photo_id = p.id
              WHERE f.missing = 0 AND {condition}
              ORDER BY p.captured_at IS NULL, p.captured_at, f.path",
@@ -230,9 +279,9 @@ impl Catalogue {
                 path: PathBuf::from(r.get::<_, String>(1)?),
                 size: r.get::<_, i64>(2)? as u64,
                 modified_ns: r.get(3)?,
-                marks: marks_from(r.get(4)?, r.get(5)?),
+                marks: marks_from(r.get(4)?, r.get(5)?, r.get(8)?),
                 details: if indexed > 0 {
-                    Some(crate::details::from_row(r, 8)?)
+                    Some(crate::details::from_row(r, 9)?)
                 } else {
                     None
                 },
@@ -285,6 +334,14 @@ mod tests {
         assert_eq!(Rating::new(5).map(Rating::stars), Some(5));
         assert_eq!(Rating::new(6), None);
         assert_eq!(Rating::default().stars(), 0);
+    }
+
+    #[test]
+    fn labels_round_trip_through_the_database_encoding() {
+        for l in std::iter::once(ColourLabel::None).chain(ColourLabel::ALL) {
+            assert_eq!(ColourLabel::from_db(l.to_db()), l);
+        }
+        assert_eq!(ColourLabel::from_db(9), ColourLabel::None);
     }
 
     #[test]

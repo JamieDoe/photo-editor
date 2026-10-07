@@ -1,12 +1,35 @@
-/** Ratings, flags and filters: pure rules shared by the Library and Edit views. */
+/** Ratings, flags, colour labels, filters and sorting: pure rules shared by the Library
+ *  and Edit views. */
 import type { CollectionKindDto } from "../../ipc/generated/CollectionKindDto";
+import type { ColourLabelDto } from "../../ipc/generated/ColourLabelDto";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../../ipc/generated/MarksDto";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 
-/** Keyboard shortcuts (as in other photo tools): 0–5 rate, P pick, X reject, U unflag. */
-export function markChangeForKey(key: string): MarkChangeDto | null {
+export type Label = Exclude<ColourLabelDto, "none">;
+
+/** The colour labels (ADR 0064), with Lightroom's keys: 6–9 for the first four. */
+export const LABELS: ReadonlyArray<{ id: Label; name: string; key: string | null }> = [
+  { id: "red", name: "Red", key: "6" },
+  { id: "yellow", name: "Yellow", key: "7" },
+  { id: "green", name: "Green", key: "8" },
+  { id: "blue", name: "Blue", key: "9" },
+  { id: "purple", name: "Purple", key: null },
+];
+
+/** Choosing the label a photo already has removes it (as with stars and flags). */
+export function labelClick(current: ColourLabelDto, clicked: Label): MarkChangeDto {
+  return { type: "label", label: current === clicked ? "none" : clicked };
+}
+
+/**
+ * Keyboard shortcuts (as in other photo tools): 0–5 rate, P pick, X reject, U unflag,
+ * 6–9 red, yellow, green and blue (again to remove, judged by `current`).
+ */
+export function markChangeForKey(key: string, current?: MarksDto): MarkChangeDto | null {
   if (/^[0-5]$/.test(key)) return { type: "rating", stars: Number(key) };
+  const label = LABELS.find((l) => l.key === key);
+  if (label) return labelClick(current?.label ?? "none", label.id);
   switch (key.toLowerCase()) {
     case "p":
       return { type: "flag", flag: "pick" };
@@ -30,7 +53,14 @@ export function flagClick(current: MarksDto["flag"], clicked: "pick" | "reject")
 }
 
 export function applyChange(marks: MarksDto, change: MarkChangeDto): MarksDto {
-  return change.type === "rating" ? { ...marks, rating: change.stars } : { ...marks, flag: change.flag };
+  switch (change.type) {
+    case "rating":
+      return { ...marks, rating: change.stars };
+    case "flag":
+      return { ...marks, flag: change.flag };
+    case "label":
+      return { ...marks, label: change.label };
+  }
 }
 
 export type LibraryFilter = "all" | "picks" | "rated3";
@@ -75,13 +105,58 @@ export const COLLECTION_NAMES: Record<CollectionKindDto, string> = {
 
 export const starsText = (rating: number) => "★".repeat(Math.max(0, Math.min(5, rating)));
 
-/** Photos shown for a view: collection membership (marks can change while viewing), then the filter. */
+/**
+ * Photos shown for a view: collection membership (marks can change while viewing), then
+ * the filter and the colour label chosen, if any.
+ */
 export function visiblePhotos(
   photos: readonly PhotoEntryDto[],
   filter: LibraryFilter,
   collection: CollectionKindDto | null,
+  label: Label | null = null,
 ): PhotoEntryDto[] {
-  return photos.filter((p) => (collection === null || inCollection(p.marks, collection)) && matchesFilter(p.marks, filter));
+  return photos.filter(
+    (p) =>
+      (collection === null || inCollection(p.marks, collection)) &&
+      matchesFilter(p.marks, filter) &&
+      (label === null || p.marks.label === label),
+  );
+}
+
+/** The Library's orders (ADR 0064). Capture time first, as in other photo tools. */
+export type LibrarySort = "captured" | "newest" | "name" | "rating";
+
+export const SORTS: ReadonlyArray<{ id: LibrarySort; label: string }> = [
+  { id: "captured", label: "Capture time" },
+  { id: "newest", label: "Newest first" },
+  { id: "name", label: "File name" },
+  { id: "rating", label: "Rating" },
+];
+
+/** File names as people read them: DSC_9 before DSC_10, case ignored. */
+const names = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+/**
+ * `photos` in `sort` order. Photos whose capture time is not known yet (not indexed)
+ * come after the rest, by name; ties go to the name too, so the order is stable.
+ */
+export function sortPhotos(photos: readonly PhotoEntryDto[], sort: LibrarySort): PhotoEntryDto[] {
+  const byName = (a: PhotoEntryDto, b: PhotoEntryDto) => names.compare(a.name, b.name) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+  const byTime = (a: PhotoEntryDto, b: PhotoEntryDto, newest: boolean) => {
+    const x = a.details?.capturedAt ?? null;
+    const y = b.details?.capturedAt ?? null;
+    if (x === y) return byName(a, b);
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return (x < y ? -1 : 1) * (newest ? -1 : 1);
+  };
+  const compare: (a: PhotoEntryDto, b: PhotoEntryDto) => number =
+    sort === "name"
+      ? byName
+      : sort === "rating"
+        ? (a, b) => b.marks.rating - a.marks.rating || byTime(a, b, false)
+        : (a, b) => byTime(a, b, sort === "newest");
+  return [...photos].sort(compare);
 }
 
 /**

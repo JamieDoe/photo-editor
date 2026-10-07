@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::CatalogueError;
 
 /// Schema version this build creates and understands.
-pub const SCHEMA_VERSION: i64 = 8;
+pub const SCHEMA_VERSION: i64 = 9;
 
 const MIGRATIONS: &[&str] = &[
     // 1: library folders, photos, files.
@@ -118,6 +118,12 @@ const MIGRATIONS: &[&str] = &[
     // 8: Recently imported (ADR 0056) reads photos by when they joined the library.
     r#"
     CREATE INDEX photos_by_created ON photos(created_at_ms);
+    "#,
+    // 9: colour labels (ADR 0064), a third mark beside rating and flag: 0 none, then
+    // red, yellow, green, blue, purple.
+    r#"
+    ALTER TABLE photos ADD COLUMN label INTEGER NOT NULL DEFAULT 0 CHECK (label BETWEEN 0 AND 5);
+    CREATE INDEX photos_by_label ON photos(label) WHERE label <> 0;
     "#,
 ];
 

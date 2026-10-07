@@ -52,6 +52,7 @@ Library V1 needs ratings (0–5), pick/reject flags and filtering (PRODUCT.md §
     licensing-clean XMP writer).
   - Until then the old file is kept, so marks can be recovered by hand.
 - Colour labels (PRODUCT.md §3.1) follow the same pattern: one more column, key and
-  filter. They wait until the design shows them.
+  filter. Built in ADR 0064 at the photographer's request, though the design does
+  not show them (recorded in ADR 0016).
 - Multi-select and batch marking reuse `set_marks(&[PhotoId], …)`, which already
   takes many photos.

@@ -889,3 +889,17 @@ of decode, matrix and encode per pixel across every core. The files are slightly
 smaller because sRGB colours sit further from the edges of the wider spaces, so the
 same image uses a narrower range of values. `cargo run -p bench --release` reports
 these as `export_colour_spaces`.
+
+## 46. Library sorting (ADR 0064)
+
+The Library sorts in the UI (vitest, Node on the dev Mac), 20,000 photos with mixed
+capture times, names and ratings:
+
+| Order | Time |
+|---|---|
+| Capture time | 39 ms |
+| File name (natural, `Intl.Collator`) | 58 ms |
+| Rating, then capture time | 33 ms |
+
+A sort runs when the view, the order or a photo's marks change, not on scrolling.
+The work grows as n log n, so typical folders of a few hundred photos cost far less.

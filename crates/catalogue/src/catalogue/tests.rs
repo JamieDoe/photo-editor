@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use super::*;
-use crate::{Collection, Flag, MarkChange, Marks};
+use crate::{Collection, ColourLabel, Flag, MarkChange, Marks};
 
 struct Library {
     _dir: fixtures::TempDir,
@@ -464,7 +464,8 @@ fn marks_are_set_read_and_listed_per_folder() {
         l.cat.marks(ids[1]).unwrap(),
         Marks {
             rating: crate::Rating::new(4).unwrap(),
-            flag: Flag::Pick
+            flag: Flag::Pick,
+            label: ColourLabel::None,
         }
     );
     // A rating change leaves the flag alone, and 0 clears the rating.
@@ -491,6 +492,59 @@ fn marks_are_set_read_and_listed_per_folder() {
             ("b.nef".to_owned(), 0, Flag::Pick)
         ]
     );
+}
+
+#[test]
+fn colour_labels_are_a_third_independent_mark() {
+    let l = library("cat-labels");
+    let ids: Vec<PhotoId> = ["a.nef", "b.nef"]
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            l.cat
+                .record_file(
+                    l.folder,
+                    &write(&l.root.join(name), &photo_bytes(i as u8 + 1)),
+                    ScanId(1),
+                )
+                .unwrap()
+                .0
+        })
+        .collect();
+    l.cat.set_marks(&ids, rate(3)).unwrap();
+    l.cat
+        .set_marks(&ids[..1], MarkChange::Label(ColourLabel::Purple))
+        .unwrap();
+    // Setting a label leaves rating and flag alone, and the reverse.
+    l.cat
+        .set_marks(&ids[..1], MarkChange::Flag(Flag::Pick))
+        .unwrap();
+    assert_eq!(
+        l.cat.marks(ids[0]).unwrap(),
+        Marks {
+            rating: crate::Rating::new(3).unwrap(),
+            flag: Flag::Pick,
+            label: ColourLabel::Purple,
+        }
+    );
+    assert_eq!(l.cat.marks(ids[1]).unwrap().label, ColourLabel::None);
+    // A photo with only a label is listed with the folder's marks.
+    l.cat.set_marks(&ids, rate(0)).unwrap();
+    l.cat.set_marks(&ids, MarkChange::Flag(Flag::None)).unwrap();
+    let here = l.cat.marks_in_dir(&l.root).unwrap();
+    assert_eq!(here.len(), 1);
+    assert_eq!(here[0].1.label, ColourLabel::Purple);
+    // Collections and searches carry it.
+    l.cat
+        .set_marks(&ids[..1], MarkChange::Flag(Flag::Pick))
+        .unwrap();
+    let picks = l.cat.collection(Collection::Picks).unwrap();
+    assert_eq!(picks[0].marks.label, ColourLabel::Purple);
+    // Clearing it.
+    l.cat
+        .set_marks(&ids[..1], MarkChange::Label(ColourLabel::None))
+        .unwrap();
+    assert_eq!(l.cat.marks(ids[0]).unwrap().label, ColourLabel::None);
 }
 
 #[test]

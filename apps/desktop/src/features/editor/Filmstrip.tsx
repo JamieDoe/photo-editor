@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react";
+import { LabelDot } from "../../components/ColourLabels";
 import { CheckIcon, CloseIcon, PickIcon, SyncIcon } from "../../components/icons";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import { FILTERS } from "../library/marks";
@@ -159,6 +160,7 @@ function StripThumb({
         <span className="strip-marks">
           <span className="strip-stars">{rating > 0 ? "★".repeat(rating) : ""}</span>
           <span className="strip-flags">
+            <LabelDot label={photo.marks.label} />
             {photo.edited && <span className="strip-edited" title="Edited" />}
             {flag === "pick" && <PickIcon size={9} filled />}
           </span>

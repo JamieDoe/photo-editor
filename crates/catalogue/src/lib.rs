@@ -27,7 +27,8 @@ pub use edits::StoredEdit;
 pub use error::CatalogueError;
 pub use identity::SourceIdentity;
 pub use marks::{
-    Collection, CollectionCounts, CollectionEntry, Flag, MarkChange, Marks, RECENT_DAYS, Rating,
+    Collection, CollectionCounts, CollectionEntry, ColourLabel, Flag, MarkChange, Marks,
+    RECENT_DAYS, Rating,
 };
 pub use presets::{PresetId, StoredPreset};
 pub use schema::SCHEMA_VERSION;
