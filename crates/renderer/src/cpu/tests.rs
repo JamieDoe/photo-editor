@@ -168,8 +168,17 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
         }
     }
     image
+        .as_chunks::<3>()
+        .0
         .iter()
-        .map(|&c| (color::linear_to_srgb(c.clamp(0.0, 1.0)) * 255.0).round() as u8)
+        .flat_map(|px| {
+            if plan.compresses_output() {
+                image_core::gamut::compress(*px, &image_core::gamut::ON_OUTPUT)
+            } else {
+                *px
+            }
+        })
+        .map(|c| (color::linear_to_srgb(c.clamp(0.0, 1.0)) * 255.0).round() as u8)
         .collect()
 }
 

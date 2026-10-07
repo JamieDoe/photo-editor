@@ -36,7 +36,8 @@ pub fn apply(rgb: [f32; 3], amount: f32) -> [f32; 3] {
     };
     let factor = 1.0 + amount * weight;
     let y = r * REC709_LUMA[0] + g * REC709_LUMA[1] + b * REC709_LUMA[2];
-    rgb.map(|c| (y + (c - y) * factor).max(0.0))
+    // Out-of-gamut values pass on, for the output's compression (ADR 0060).
+    rgb.map(|c| y + (c - y) * factor)
 }
 
 /// 1 at the centre of the skin-hue band, falling to 0 at its edges.

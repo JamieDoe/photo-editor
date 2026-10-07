@@ -593,7 +593,7 @@ impl Shared {
         let t = Instant::now();
         let plan = RenderPlan::from_recipe(&req.recipe, decoded.info.as_shot_white);
         // Another colour space is converted from a 16-bit render, so the file is
-        // rounded once, at its own depth (ADR 0061).
+        // rounded once, at its own depth (ADR 0062).
         let render_format = if req.colour_space == export::colour::ExportColourSpace::Srgb {
             req.format.pixel_format()
         } else {
@@ -609,7 +609,7 @@ impl Shared {
         };
         // Sharpened for its medium at the size it is written (ADR 0059).
         let rendered = export::sharpen::sharpen(&rendered, req.sharpening);
-        // In the chosen colour space (ADR 0061), rounded to the file's depth once.
+        // In the chosen colour space (ADR 0062), rounded to the file's depth once.
         let rendered =
             export::colour::convert(&rendered, req.colour_space, req.format.pixel_format());
         let render_ms = ms(t);

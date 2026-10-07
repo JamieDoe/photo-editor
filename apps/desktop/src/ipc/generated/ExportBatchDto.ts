@@ -25,7 +25,7 @@ format?: ExportFileFormat,
  */
 sharpen?: OutputSharpening, 
 /**
- * The colour space to write (ADR 0061); sRGB when left out.
+ * The colour space to write (ADR 0062); sRGB when left out.
  */
 colourSpace?: ExportColourSpace, 
 /**

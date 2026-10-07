@@ -129,7 +129,7 @@ pub struct ExportSettings {
     pub format: ExportFileFormat,
     /// What exports are sharpened for (ADR 0059).
     pub sharpen: OutputSharpening,
-    /// The colour space exports are written in (ADR 0061).
+    /// The colour space exports are written in (ADR 0062).
     pub colour_space: ExportColourSpace,
     /// JPEG quality, 1-100.
     pub jpeg_quality: u8,
@@ -191,7 +191,7 @@ impl<'de> Deserialize<'de> for OutputSharpening {
     }
 }
 
-/// The colour space an export is written in (ADR 0061).
+/// The colour space an export is written in (ADR 0062).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]

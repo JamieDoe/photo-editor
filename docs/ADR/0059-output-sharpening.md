@@ -45,7 +45,7 @@ output.
    written. The first version kept float copies of every sample and of the output,
    about 1 GB at 24 MP; this one holds about 190 MB.
 4. **Colour space** stays hidden until the working space is wide (the next
-   milestone). It was added later as a tagged conversion (ADR 0061).
+   milestone). It was added later as a tagged conversion (ADR 0062).
 5. **Tests:**
    - **Export crate:**
      - edges get crisper with overshoot on both sides, flat areas far from them are

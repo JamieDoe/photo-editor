@@ -185,7 +185,7 @@ pub fn file(path: &Path, iterations: usize) -> Value {
     for i in 0..full_iters {
         exports.push(engine.export(export_req(i), |_| {}).wait().expect("export"));
     }
-    // The same JPEG in the wider spaces (ADR 0061): rendered at 16 bits, converted and
+    // The same JPEG in the wider spaces (ADR 0062): rendered at 16 bits, converted and
     // tagged; the conversion is counted in render_ms.
     let in_spaces: Vec<Value> = [
         ("display_p3", app_core::ExportColourSpace::DisplayP3),

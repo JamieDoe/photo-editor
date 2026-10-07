@@ -15,7 +15,7 @@ type Choice = {
   sharpen: OutputSharpening;
 };
 
-/** The dialog's presets (ADRs 0050, 0057, 0059, 0061), as the design has them: Web and
+/** The dialog's presets (ADRs 0050, 0057, 0059, 0062), as the design has them: Web and
  *  Social (sRGB JPEGs) and Full quality (a 16-bit Adobe RGB TIFF at the original size),
  *  each sharpened for the screen. */
 export const EXPORT_PRESETS: ReadonlyArray<{ id: string; label: string; sub: string } & Choice> = [
@@ -24,7 +24,7 @@ export const EXPORT_PRESETS: ReadonlyArray<{ id: string; label: string; sub: str
   { id: "full", label: "Full quality", sub: "TIFF · original", format: "tiff", longEdge: null, jpegQuality: 95, colourSpace: "adobeRgb", sharpen: "screen" },
 ];
 
-/** The design's Colour space choices (ADR 0061). The photo is edited in sRGB (with
+/** The design's Colour space choices (ADR 0062). The photo is edited in sRGB (with
  *  colours beyond it brought in softly), so the wider spaces hold the same colours,
  *  tagged as their space for displays, labs and workflows that ask for it. */
 const COLOUR_SPACES: ReadonlyArray<{ id: ExportColourSpace; label: string; hint: string }> = [

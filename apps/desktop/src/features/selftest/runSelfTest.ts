@@ -468,7 +468,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const sharpenedKb = async (sharpen: OutputSharpening) =>
         Math.round(((await run([config.imagePath], 1350, false, "jpeg", sharpen)).done?.outputs[0]?.bytes ?? 0) / 1024);
       const sharpening = { noneKb: await sharpenedKb("none"), screenKb: await sharpenedKb("screen"), matteKb: await sharpenedKb("matte") };
-      // Colour spaces (ADR 0061): the same JPEG in each space (converted and tagged,
+      // Colour spaces (ADR 0062): the same JPEG in each space (converted and tagged,
       // so a different file), and Full quality's 16-bit Adobe RGB TIFF.
       const inSpace = async (colourSpace: ExportColourSpace, format: ExportFileFormat = "jpeg") => {
         const r = await run([config.imagePath], 1350, false, format, "screen", colourSpace);

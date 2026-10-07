@@ -1,4 +1,5 @@
-//! Compiles the LibRaw C shim and links the thread-safe LibRaw (`libraw_r`).
+//! Compiles the LibRaw shim (C, plus a C++ LibRaw subclass) and links the thread-safe
+//! LibRaw (`libraw_r`).
 //!
 //! LibRaw is located via `LIBRAW_DIR` (containing `include/` and `lib/`), falling back
 //! to common Homebrew/system prefixes. Linking is dynamic; see ADR 0003.
@@ -10,6 +11,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=LIBRAW_DIR");
     println!("cargo:rerun-if-changed=shim/pe_libraw.c");
     println!("cargo:rerun-if-changed=shim/pe_libraw.h");
+    println!("cargo:rerun-if-changed=shim/pe_libraw_xtrans.cpp");
+    println!("cargo:rerun-if-changed=shim/pe_libraw_xtrans.h");
     #[cfg(feature = "libraw")]
     build_shim();
 }
@@ -29,6 +32,15 @@ fn build_shim() {
         .include(prefix.join("include"))
         .warnings(true)
         .compile("pe_libraw");
+    // Compiled after the C shim, which references it (link order matters for GNU ld).
+    // `cpp(true)` also links the C++ standard library.
+    cc::Build::new()
+        .cpp(true)
+        .std("c++17")
+        .file("shim/pe_libraw_xtrans.cpp")
+        .include(prefix.join("include"))
+        .warnings(true)
+        .compile("pe_libraw_xtrans");
 
     println!(
         "cargo:rustc-link-search=native={}",

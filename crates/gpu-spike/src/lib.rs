@@ -260,5 +260,8 @@ fn params_for(plan: &RenderPlan, pixel_count: u32) -> Result<Params, RenderError
             }
         }
     }
+    if plan.compresses_output() {
+        p.flags |= 8;
+    }
     Ok(p)
 }

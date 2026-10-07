@@ -1,5 +1,5 @@
 //! Compact ICC profiles (version 2.1, matrix/TRC display profiles) for the export
-//! colour spaces, generated here rather than shipped as files (ADRs 0057, 0061), so
+//! colour spaces, generated here rather than shipped as files (ADRs 0057, 0062), so
 //! their terms are ours. Embedded in exports so colour-managed applications
 //! (Photoshop, print RIPs, browsers) read the pixels in the right space instead of
 //! guessing.

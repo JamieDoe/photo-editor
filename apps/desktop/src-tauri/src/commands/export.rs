@@ -115,7 +115,7 @@ pub(crate) fn output_sharpening(s: settings::OutputSharpening) -> app_core::Outp
     }
 }
 
-/// The colour space for the remembered settings' choice (ADR 0061).
+/// The colour space for the remembered settings' choice (ADR 0062).
 pub(crate) fn colour_space(s: settings::ExportColourSpace) -> app_core::ExportColourSpace {
     match s {
         settings::ExportColourSpace::Srgb => app_core::ExportColourSpace::Srgb,

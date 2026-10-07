@@ -13,7 +13,7 @@ format: ExportFileFormat,
  */
 sharpen: OutputSharpening, 
 /**
- * The colour space exports are written in (ADR 0061).
+ * The colour space exports are written in (ADR 0062).
  */
 colourSpace: ExportColourSpace, 
 /**

@@ -148,7 +148,7 @@ pub fn encode(image: &OutputImage, format: ExportFormat) -> Result<Vec<u8>, Expo
 }
 
 /// Encodes `image`, already in `space` (see [`colour::convert`]), carrying that
-/// space's profile (ADR 0061). sRGB is marked as before: a JPEG untagged, a PNG with
+/// space's profile (ADR 0062). sRGB is marked as before: a JPEG untagged, a PNG with
 /// its sRGB chunk, a TIFF with the sRGB profile.
 pub fn encode_in(
     image: &OutputImage,

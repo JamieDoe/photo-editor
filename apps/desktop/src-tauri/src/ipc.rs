@@ -31,7 +31,7 @@ pub struct ExportBatchDto {
     #[serde(default)]
     #[ts(optional)]
     pub sharpen: Option<settings::OutputSharpening>,
-    /// The colour space to write (ADR 0061); sRGB when left out.
+    /// The colour space to write (ADR 0062); sRGB when left out.
     #[serde(default)]
     #[ts(optional)]
     pub colour_space: Option<settings::ExportColourSpace>,

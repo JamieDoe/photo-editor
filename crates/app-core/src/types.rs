@@ -93,7 +93,7 @@ pub struct ExportRequest {
     pub format: ExportFormat,
     /// Output sharpening (ADR 0059), after any resize.
     pub sharpening: export::sharpen::OutputSharpening,
-    /// The colour space written (ADR 0061).
+    /// The colour space written (ADR 0062).
     pub colour_space: export::colour::ExportColourSpace,
 }
 
@@ -109,7 +109,7 @@ pub struct FileExport {
     pub long_edge: Option<u32>,
     /// Output sharpening (ADR 0059), after any resize.
     pub sharpening: export::sharpen::OutputSharpening,
-    /// The colour space written (ADR 0061).
+    /// The colour space written (ADR 0062).
     pub colour_space: export::colour::ExportColourSpace,
 }
 

@@ -1,4 +1,4 @@
-# ADR 0061: Export colour space (sRGB, Display P3, Adobe RGB)
+# ADR 0062: Export colour space (sRGB, Display P3, Adobe RGB)
 
 - Status: Accepted
 - Date: 2026-10-01
@@ -70,7 +70,7 @@ file. It is still worth offering:
    - **Release self-test:** the test photo is exported through the queue as a 1,350 px
      JPEG in each space (three different files) and as Full quality's 16-bit Adobe RGB
      TIFF.
-6. **Performance** (PERFORMANCE §42): a full-size JPEG export of the 24.5 MP Nikon Z 6
+6. **Performance** (PERFORMANCE §44): a full-size JPEG export of the 24.5 MP Nikon Z 6
    takes about 0.2 s longer in P3 or Adobe RGB (about 2.0 s against 1.8 s). The time
    goes on the 16-bit render and the conversion.
 

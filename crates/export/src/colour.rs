@@ -1,4 +1,4 @@
-//! Export colour spaces (ADR 0061): sRGB, Display P3 or Adobe RGB, as the design's
+//! Export colour spaces (ADR 0062): sRGB, Display P3 or Adobe RGB, as the design's
 //! "Colour space" row offers.
 //!
 //! The working space is sRGB, with colours beyond it softly compressed in (ADR 0060),

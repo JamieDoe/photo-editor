@@ -7,6 +7,7 @@
 pub mod buffer;
 pub mod cancel;
 pub mod color;
+pub mod gamut;
 pub mod pyramid;
 pub mod resize;
 

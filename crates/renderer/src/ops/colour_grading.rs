@@ -216,9 +216,10 @@ pub fn apply(rgb: [f32; 3], t: &GradeTable) -> [f32; 3] {
     let l = cbrt(rgb[0] * wr + rgb[1] * wg + rgb[2] * wb);
     let [gain, tr, tg, tb] = t.gains_at(l);
     [
-        (rgb[0] * gain + tr).max(0.0),
-        (rgb[1] * gain + tg).max(0.0),
-        (rgb[2] * gain + tb).max(0.0),
+        // Out-of-gamut values pass on, for the output's compression (ADR 0060).
+        rgb[0] * gain + tr,
+        rgb[1] * gain + tg,
+        rgb[2] * gain + tb,
     ]
 }
 
