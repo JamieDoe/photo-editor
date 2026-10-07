@@ -17,6 +17,16 @@ sharpen: OutputSharpening,
  */
 colourSpace: ExportColourSpace, 
 /**
+ * Whether exports carry the photo's capture facts: camera, lens, exposure, capture
+ * time (ADR 0063). The design's "Keep metadata", on by default.
+ */
+keepMetadata: boolean, 
+/**
+ * Whether the location is left out of them. The design's "Strip location", off by
+ * default.
+ */
+stripLocation: boolean, 
+/**
  * JPEG quality, 1-100.
  */
 jpegQuality: number, 

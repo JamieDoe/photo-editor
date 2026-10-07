@@ -112,7 +112,11 @@ pub fn jpeg_with_profile(jpeg: &[u8], profile: &[u8]) -> Vec<u8> {
     segment.extend(SIGNATURE);
     segment.extend([1, 1]); // part 1 of 1
     segment.extend(profile);
-    // After SOI, and after APP0 (JFIF) when it comes first.
+    insert_after_app0(jpeg, &segment)
+}
+
+/// `jpeg` with `segment` inserted after SOI, and after APP0 (JFIF) when it comes first.
+pub(crate) fn insert_after_app0(jpeg: &[u8], segment: &[u8]) -> Vec<u8> {
     let mut at = 2;
     if jpeg.len() > 6 && jpeg[2] == 0xFF && jpeg[3] == 0xE0 {
         at = 4 + usize::from(u16::from_be_bytes([jpeg[4], jpeg[5]]));

@@ -1164,6 +1164,7 @@ dependencies = [
  "image-core",
  "jpeg-encoder",
  "jpeg-turbo",
+ "kamadak-exif",
  "platform",
  "png 0.18.1",
  "rayon",

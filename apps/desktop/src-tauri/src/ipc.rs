@@ -35,6 +35,14 @@ pub struct ExportBatchDto {
     #[serde(default)]
     #[ts(optional)]
     pub colour_space: Option<settings::ExportColourSpace>,
+    /// Whether to copy the photo's capture facts (ADR 0063); yes when left out.
+    #[serde(default)]
+    #[ts(optional)]
+    pub keep_metadata: Option<bool>,
+    /// Whether to leave the location out of them (ADR 0063); no when left out.
+    #[serde(default)]
+    #[ts(optional)]
+    pub strip_location: Option<bool>,
     /// The folder to export to, for the self-test only; otherwise the one chosen in
     /// the folder dialog (settings).
     #[ts(optional)]
