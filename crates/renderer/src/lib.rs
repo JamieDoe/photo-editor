@@ -20,6 +20,7 @@ mod plan;
 pub mod presets;
 mod quality;
 mod recipe;
+pub mod remove;
 pub mod retouch;
 pub mod settings;
 

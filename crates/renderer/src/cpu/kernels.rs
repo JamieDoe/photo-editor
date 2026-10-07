@@ -1,9 +1,10 @@
 use std::sync::{Arc, Mutex};
 
-use image_core::LinearImage;
 use image_core::color::{REC709_LUMA, linear_to_srgb, srgb_to_linear};
+use image_core::{Cancellation, LinearImage};
 
 use super::lut::CurveLut;
+use crate::RenderError;
 use crate::chromatic::ChromaticAberration;
 use crate::geometry::Geometry;
 use crate::masks::{Frame, LocalField};
@@ -114,21 +115,41 @@ fn source_key(source: &LinearImage) -> SourceKey {
 
 type GainBits = [u32; 3];
 
-/// Retouched sources (ADR 0054) for the latest spots: one per source, for the last
-/// two sources (the interactive and detail previews' levels take turns), so dragging
-/// other controls does not retouch again and the caches keyed on the retouched image
-/// keep hitting.
+/// Retouched sources for the latest removals (ADR 0066) and spots (ADR 0054): one per
+/// source, for the last two sources (the interactive and detail previews' levels take
+/// turns), so dragging other controls does not retouch (or fill) again and the caches
+/// keyed on the retouched image keep hitting. A cancelled fill is not cached.
 pub(super) fn cached_retouch(
     source: &LinearImage,
+    removals: &[crate::remove::Removal],
     spots: &[crate::retouch::Spot],
-) -> Arc<LinearImage> {
+    cancel: &dyn Cancellation,
+) -> Result<Arc<LinearImage>, RenderError> {
     type Key = (SourceKey, Vec<u32>);
     static LAST: Mutex<Vec<(Key, Arc<LinearImage>)>> = Mutex::new(Vec::new());
+    // Exact: every number of every removal and spot, so no two ever share a key.
+    let removal_bits = removals.iter().flat_map(|r| {
+        std::iter::once(r.strokes.len() as u32).chain(r.strokes.iter().flat_map(|s| {
+            [
+                u32::from(s.erase),
+                s.size.to_bits(),
+                s.feather.to_bits(),
+                s.flow.to_bits(),
+                s.points.len() as u32,
+            ]
+            .into_iter()
+            .chain(
+                s.points
+                    .iter()
+                    .flat_map(|p| [p[0].to_bits(), p[1].to_bits()]),
+            )
+        }))
+    });
     let key: Key = (
         source_key(source),
-        spots
-            .iter()
-            .flat_map(|s| {
+        std::iter::once(removals.len() as u32)
+            .chain(removal_bits)
+            .chain(spots.iter().flat_map(|s| {
                 [
                     s.kind as u32,
                     s.x.to_bits(),
@@ -139,7 +160,7 @@ pub(super) fn cached_retouch(
                     s.feather.to_bits(),
                     s.opacity.to_bits(),
                 ]
-            })
+            }))
             .collect(),
     );
     if let Some((_, image)) = LAST
@@ -148,16 +169,25 @@ pub(super) fn cached_retouch(
         .iter()
         .find(|(k, _)| *k == key)
     {
-        return Arc::clone(image);
+        return Ok(Arc::clone(image));
     }
-    let image = Arc::new(crate::retouch::retouch(source, spots));
+    let image = Arc::new(if removals.is_empty() {
+        crate::retouch::retouch(source, spots)
+    } else {
+        let filled = crate::remove::remove(source, removals, cancel)?;
+        if spots.is_empty() {
+            filled
+        } else {
+            crate::retouch::retouch(&filled, spots)
+        }
+    });
     let mut cache = LAST.lock().unwrap_or_else(|e| e.into_inner());
     cache.retain(|((id, _), _)| *id != key.0);
     if cache.len() >= 2 {
         cache.remove(0);
     }
     cache.push((key, Arc::clone(&image)));
-    image
+    Ok(image)
 }
 
 /// The most recent framed (cropped, straightened, perspective- and CA-corrected)

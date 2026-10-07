@@ -932,3 +932,34 @@ on-disk catalogue), two runs:
 
 The prefix check is about 70× faster and touches no files. Reads of listed files are
 still fully checked.
+
+## 48. Remove: content-aware fill (ADR 0066)
+
+`bench --remove`: the fill alone on each camera file, at the preview size the
+interactive view uses (a half-size decode) and at full size. Release build, every core,
+median of 3, two runs. The removals, in photo fractions:
+
+- **Small:** a dab 1 % of the diagonal across, a bird or a sign.
+- **Wire:** a 0.3 %-wide stroke across the whole frame.
+- **Person:** a stroke 8 % of the diagonal wide and 30 % of the height long.
+
+| File | Small, preview / full | Wire, preview / full | Person, preview / full |
+|---|---|---|---|
+| Canon EOS R6 (20 MP) | 12 / 23 ms | 166 / 423–428 ms | 258–262 ms / 1.12–1.16 s |
+| Fujifilm X-T3 (26 MP) | 13–14 / 26 ms | 185–200 / 485–516 ms | 371–372 ms / 1.55–1.57 s |
+| Nikon Z 6 (24 MP) | 13–14 / 25–27 ms | 192 / 471–475 ms | 348–368 ms / 1.49–1.54 s |
+| Ricoh GR III (24 MP) | 13–14 / 25 ms | 181–235 / 472–485 ms | 306–309 ms / 1.34 s |
+| Sony A7 III (24 MP) | 13 / 24–25 ms | 190–191 / 510–520 ms | 312–314 ms / 1.37 s |
+| Sony A7R IV (61 MP) | 25 / 56 ms | 388–397 ms / 1.06–1.07 s | 806–842 ms / 3.83–3.85 s |
+
+The cost follows the hole's area and the context around it, not the photo's size: a
+small object is the same few milliseconds anywhere. The fill is cached with the
+retouched source, so it is paid once per change to the removals, not on every slider
+drag. While it runs (on the render's background lane) it can be cancelled.
+
+**Tuning:**
+- **A thin wire** is coarse enough at full size to need no pyramid. Its single level
+  got the coarse level's 10 rounds at first; 5 brought the wire preview from 233–294 ms
+  to 166–235 ms with the same result in the tests.
+- **Starting from the edge inward** (ADR 0066) cost the same as the smooth first guess
+  it replaced.

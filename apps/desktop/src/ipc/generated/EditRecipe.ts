@@ -9,6 +9,7 @@ import type { Geometry } from "./Geometry";
 import type { Look } from "./Look";
 import type { Mask } from "./Mask";
 import type { ParametricCurve } from "./ParametricCurve";
+import type { Removal } from "./Removal";
 import type { Spot } from "./Spot";
 
 /**
@@ -147,6 +148,12 @@ masks?: Array<Mask>,
  * JSON) without any.
  */
 spots?: Array<Spot>, 
+/**
+ * Removals (ADR 0066), in the order made: areas painted over to be filled in from
+ * the rest of the photo, before the spots. Empty (and omitted from the JSON)
+ * without any.
+ */
+removals?: Array<Removal>, 
 /**
  * The base look the adjustments start from.
  */
