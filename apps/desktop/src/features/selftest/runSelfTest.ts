@@ -567,10 +567,20 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       // with nothing. The pixels are identical, so only the EXIF changes the size.
       const withMetadata = async (keepMetadata: boolean, stripLocation: boolean) =>
         (await run([config.imagePath], 1350, false, "jpeg", "screen", "srgb", { keepMetadata, stripLocation })).done?.outputs[0]?.bytes ?? null;
+      // The photographer's marks (ADR 0067) go with the metadata as XMP: rated and
+      // labelled, the same export grows by the packet; with metadata off, it doesn't.
+      await ipc.setPhotoMarks([config.imagePath], { type: "rating", stars: 4 });
+      await ipc.setPhotoMarks([config.imagePath], { type: "label", label: "purple" });
+      const marked = await withMetadata(true, false);
+      const markedNone = await withMetadata(false, false);
+      await ipc.setPhotoMarks([config.imagePath], { type: "rating", stars: 0 });
+      await ipc.setPhotoMarks([config.imagePath], { type: "label", label: "none" });
       const metadata = {
         all: await withMetadata(true, false),
         withoutLocation: await withMetadata(true, true),
         none: await withMetadata(false, false),
+        marked,
+        markedNone,
       };
       return {
         formats,
@@ -612,6 +622,13 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       exportQueue.metadata.all !== null &&
       exportQueue.metadata.withoutLocation - exportQueue.metadata.none > 200 &&
       exportQueue.metadata.all >= exportQueue.metadata.withoutLocation;
+    // An XMP packet with a rating and a label is about 350 bytes.
+    const marksInExportOk =
+      exportQueue !== null &&
+      exportQueue.metadata.marked !== null &&
+      exportQueue.metadata.all !== null &&
+      exportQueue.metadata.marked - exportQueue.metadata.all > 250 &&
+      exportQueue.metadata.markedNone === exportQueue.metadata.none;
     const exportQueueOk =
       exportQueue !== null &&
       exportQueue.exported === 3 &&
@@ -1624,6 +1641,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       outputSharpening: sharpeningOk,
       exportColourSpace: colourSpacesOk,
       exportMetadata: metadataOk,
+      marksInExports: marksInExportOk,
       whiteBalanceLight: lightOk,
       colourGrading: gradingOk,
       calibration: calibrationOk,

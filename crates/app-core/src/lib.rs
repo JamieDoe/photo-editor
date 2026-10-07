@@ -26,7 +26,7 @@ pub use catalogue::{
 pub use catalogue::{SCHEMA_VERSION, schema_version_of};
 pub use config::EngineConfig;
 pub use edits::{SavedEdit, load_edit, paste_onto, save_edit};
-pub use engine::Engine;
+pub use engine::{Engine, judgements};
 pub use error::{EngineError, ErrorKind};
 pub use library::{IndexProgress, IndexStage, IndexSummary};
 pub use presets::{
@@ -46,7 +46,7 @@ pub use types::{
 pub use cache::DiskCacheStats;
 pub use export::ExportFormat;
 pub use export::colour::ExportColourSpace;
-pub use export::metadata::MetadataChoice;
+pub use export::metadata::{Judgements, MetadataChoice};
 pub use export::sharpen::OutputSharpening;
 pub use jobs::{CancelToken, JobError, JobHandle};
 pub use raw::SourceKind;

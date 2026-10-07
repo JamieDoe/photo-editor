@@ -89,7 +89,7 @@ Recorded in ADR 0016:
 
 - **Rating, keywords and title** would go in XMP, which Lightroom and most tools read
   for these. The app has ratings but no keywords or titles yet. XMP can follow as its
-  own step, using the same three containers (JPEG APP1, PNG `iTXt`, TIFF tag 700).
+  own step, using the same three containers (JPEG APP1, PNG `iTXt`, TIFF tag 700). Rating and label are written since ADR 0067.
 - **Time zone:** capture times are written as the camera recorded them. The offset
   (`OffsetTimeOriginal`) isn't read from sources yet.
 - **Copyright and artist** need a place to enter them (Settings) before they can be

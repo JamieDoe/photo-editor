@@ -28,6 +28,8 @@ pub struct QueuedExport {
     pub sharpening: app_core::OutputSharpening,
     pub colour_space: app_core::ExportColourSpace,
     pub metadata: app_core::MetadataChoice,
+    /// The photo's marks, written as XMP with the metadata (ADR 0067).
+    pub judgements: app_core::Judgements,
 }
 
 #[derive(Default)]
@@ -160,6 +162,7 @@ async fn run_queue(app: AppHandle) {
                 sharpening: item.sharpening,
                 colour_space: item.colour_space,
                 metadata: item.metadata,
+                judgements: item.judgements,
             },
             move |p| {
                 let _ = progress_app.emit(

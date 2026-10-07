@@ -164,9 +164,12 @@ pub fn encode_in(
             if space != colour::ExportColourSpace::Srgb {
                 jpeg = colour::jpeg_with_profile(&jpeg, &space.profile());
             }
-            // Inserted last so it comes first, as EXIF readers expect: SOI, JFIF, Exif,
-            // then the profile.
+            // Inserted last so they come first, as readers expect: SOI, JFIF, Exif,
+            // XMP (ADR 0067), then the profile.
             if let Some(entries) = metadata {
+                if let Some(packet) = &entries.xmp {
+                    jpeg = metadata::jpeg_with_xmp(&jpeg, packet);
+                }
                 jpeg = metadata::jpeg_with_exif(&jpeg, &metadata::exif_block(entries));
             }
             Ok(jpeg)
@@ -245,6 +248,13 @@ fn encode_png(
         info.icc_profile = Some(space.profile().into());
     }
     info.exif_metadata = metadata.map(|e| metadata::exif_block(e).into());
+    // XMP (ADR 0067) in the iTXt chunk its specification names.
+    if let Some(packet) = metadata.and_then(|e| e.xmp.clone()) {
+        info.utf8_text.push(png::text_metadata::ITXtChunk::new(
+            "XML:com.adobe.xmp",
+            packet,
+        ));
+    }
     let mut encoder = png::Encoder::with_info(&mut out, info).map_err(err)?;
     if space == colour::ExportColourSpace::Srgb {
         encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
@@ -540,7 +550,12 @@ mod tests {
     #[test]
     fn every_format_carries_metadata_and_only_what_was_chosen() {
         use exif::{In, Tag};
-        use metadata::{CaptureFacts, MetadataChoice};
+        use metadata::{CaptureFacts, Judgements, LabelName, MetadataChoice};
+        let marks = Judgements {
+            rating: 4,
+            rejected: false,
+            label: Some(LabelName::Purple),
+        };
         let facts = CaptureFacts {
             camera_make: Some("FUJIFILM".into()),
             camera_model: Some("X-T5".into()),
@@ -566,8 +581,16 @@ mod tests {
                 MetadataChoice::WithoutLocation,
                 MetadataChoice::None,
             ] {
-                let entries = metadata::entries(&facts, choice, w, h, space);
+                let entries = metadata::entries(&facts, &marks, choice, w, h, space);
                 let bytes = encode_in(&image, format, space, entries.as_ref()).unwrap();
+                // The marks as XMP (ADR 0067), wherever metadata is kept.
+                let has = |s: &str| bytes.windows(s.len()).any(|w| w == s.as_bytes());
+                let has_marks = has("xmp:Rating=\"4\"") && has("xmp:Label=\"Purple\"");
+                assert_eq!(
+                    has_marks,
+                    choice != MetadataChoice::None,
+                    "{format:?} {choice:?}"
+                );
                 let read =
                     exif::Reader::new().read_from_container(&mut std::io::Cursor::new(&bytes));
                 let model = read.as_ref().ok().and_then(|x| {
