@@ -1,7 +1,7 @@
-# ADR 0066: Remove: content-aware fill (part 1, the fill)
+# ADR 0066: Remove: content-aware fill
 
-- Status: Accepted (part 1 of 2: the fill and the recipe; part 2 is the Remove brush
-  in the Retouch panel)
+- Status: Accepted (part 1: the fill and the recipe; part 2: the Remove brush in the
+  Retouch panel)
 - Date: 2026-10-07
 
 ## Context
@@ -128,11 +128,89 @@ Requirements, from CLAUDE.md:
      else.
 10. **Performance:** see PERFORMANCE §48 (`bench --remove`).
 
+## Part 2: the Remove brush
+
+1. **Remove joins the Retouch panel** as the design has it: first of Remove, Heal and
+   Clone, and the tool chosen when the section opens. The design's own wording is used:
+   "Paint over anything to erase it", and "Paint over anything distracting — people,
+   litter, power lines — and it's filled in from its surroundings."
+2. **Painting:**
+   - **Dragging** over the photo paints, shown in the design's amber at half
+     strength. A still click paints a dab.
+   - **On release** the stroke becomes one removal in the recipe and is filled. The
+     fill never runs while dragging, only once per stroke, so painting stays smooth.
+     The first render with it takes 72 ms (Nikon Z 6, self-test), a person-sized area
+     about 0.3 s (PERFORMANCE §48).
+   - **Coordinates:** each point is recorded in the source photo's coordinates through
+     the same mapping as spots, so a removal painted on a cropped, straightened or
+     turned photo lands where it was painted.
+   - **Size:** the brush's size (5–200 px on screen, `[` and `]` as for spots) becomes
+     the stroke's size as a fraction of the photo's diagonal. The edge is softened
+     slightly (feather 10) to blend the fill in.
+3. **Removals on the photo:**
+   - **Pins:** a small pin marks where each removal was started, sized in screen
+     pixels like the rings.
+   - **Selecting:** a still click on a painted area selects it. Its area shows in
+     translucent white and its pin turns white.
+   - **Deleting:** Delete removes the selected removal, and Escape deselects it.
+   - **Spots:** spots can still be clicked and dragged while Remove is the tool.
+4. **In the panel:**
+   - **Count:** the section counts removals and spots together, and the line under the
+     slider names both ("2 removals · 1 spot").
+   - **Clear all** clears both in one edit, so one undo restores both.
+   - **Reset:** a photo with removals counts as edited.
+5. **Tests:**
+   - **Helpers (vitest):**
+     - removals are left out of the recipe when there are none;
+     - the stroke size follows the brush on screen, by the photo's diagonal, in
+       landscape and portrait;
+     - points are rounded as the renderer keeps them;
+     - the removal under a point is found along its whole stroke, the last made
+       winning.
+   - **The dev mock in the browser:**
+     - dragging makes "1 removal";
+     - a still click on it selects it (white area, white pin, the Delete hint);
+     - Delete removes it;
+     - Heal still places a spot with its source ring.
+
+## Matching the fill's tone to its edges
+
+After trying the brush, the photographer found the fills "a little jarring". The
+commonest cause is tone: patches copied from elsewhere bring their own brightness and
+colour, and the fill sits lighter, darker or tinted against its surroundings, which
+reads as a seam.
+
+1. **The correction:** after the last round at full size, the fill is matched to its
+   edges:
+   - in a 2 px ring of known pixels around the hole, the photo is compared with what
+     the matched patches predict there;
+   - the difference is spread smoothly over the hole by pull-push interpolation
+     (Gortler et al.) and added.
+   - The texture stays; only its tone follows the edge, as Heal does for spots (ADR
+     0054).
+2. **Bounded:** the interpolation covers only the hole and its ring, not the work
+   region. Over the whole region (about 10 MP for a person-sized hole at 24 MP) it
+   cost 0.5 s; cropped, the fill costs 5–10 % more than without it (PERFORMANCE §48).
+3. **Tests:**
+   - with every patch matched from a brighter half of the image, the fill comes out
+     at the darker half's level around the hole (within 0.01), and nothing outside the
+     hole changes;
+   - pull-push across a square hole whose ring runs from 0 on one side to 1 on the
+     other gives a smooth, monotonic rise, about 0.5 at the centre, for odd and even
+     sizes.
+   - Pull-push is an approximation: with known values only at two far ends (no
+     ring), it leans towards one side. The edge correction always has a ring.
+4. **Tried and left out:** a sharper final vote (weights relative to the 25th
+   percentile at full size) made no visible difference on the test photos.
+5. **Not addressed:** copied structure in large holes (the train over the table's
+   edge) is unchanged. That needs the hidden structure to exist elsewhere, or a learned
+   fill.
+
 ## Consequences
 
-- **Part 2:** the Remove brush in the Retouch panel, built from the masks' brush
-  painting. It covers painting, adding to, removing and listing removals, with the
-  fill shown as each removal is painted.
+- **Adding to a removal** (painting more onto a selected one) is not offered: each
+  stroke is its own removal. Strokes that overlap still fill as one area, since a
+  later removal sees the earlier fill.
 - **Previews:** the fill differs in detail between preview sizes and export, though not
   in structure (the same is true of noise reduction and sharpening).
 - **A learned fill** (a local ONNX model, PRODUCT's AI subsystem) could replace the

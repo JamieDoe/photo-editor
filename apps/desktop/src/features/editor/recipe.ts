@@ -83,6 +83,7 @@ export function isIdentity(r: EditRecipe): boolean {
     r.calibration === undefined &&
     (r.masks ?? []).length === 0 &&
     (r.spots ?? []).length === 0 &&
+    (r.removals ?? []).length === 0 &&
     r.look === "standard"
   );
 }

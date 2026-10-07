@@ -1,5 +1,7 @@
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { Geometry } from "../../ipc/generated/Geometry";
+import type { Removal } from "../../ipc/generated/Removal";
+import type { Stroke } from "../../ipc/generated/Stroke";
 import type { Spot } from "../../ipc/generated/Spot";
 import type { SpotKind } from "../../ipc/generated/SpotKind";
 import { orientedSize, viewToSource } from "./cropGeometry";
@@ -13,8 +15,17 @@ import type { Point } from "./masks";
  * the two.
  */
 
-/** The retouch tools, as in the design. Remove (paint to erase) is not built yet. */
-export const RETOUCH_TOOLS: ReadonlyArray<{ kind: SpotKind; label: string; hint: string; text: string }> = [
+/** A retouch tool: Remove paints areas to fill (ADR 0066); Heal and Clone place spots. */
+export type RetouchToolKind = "remove" | SpotKind;
+
+/** The retouch tools, as in the design. */
+export const RETOUCH_TOOLS: ReadonlyArray<{ kind: RetouchToolKind; label: string; hint: string; text: string }> = [
+  {
+    kind: "remove",
+    label: "Remove",
+    hint: "Paint over anything to erase it",
+    text: "Paint over anything distracting — people, litter, power lines — and it’s filled in from its surroundings.",
+  },
   { kind: "heal", label: "Heal", hint: "Blend texture from a nearby area", text: "Blends texture and tone from a nearby area. Good for blemishes and small marks." },
   {
     kind: "clone",
@@ -108,6 +119,70 @@ export function moveSpot(spot: Spot, delta: Point, which: "spot" | "source"): Sp
   return which === "spot"
     ? { ...spot, x: clamp(spot.x + delta[0]), y: clamp(spot.y + delta[1]) }
     : { ...spot, sourceX: clamp(spot.sourceX + delta[0]), sourceY: clamp(spot.sourceY + delta[1]) };
+}
+
+/** The Remove brush's soft edge (ADR 0066): enough to blend the fill in. */
+export const REMOVE_FEATHER = 10;
+
+export function removalsOf(r: EditRecipe): Removal[] {
+  return r.removals ?? [];
+}
+
+/** `r` with `removals`, left out when there are none (as the renderer writes it). */
+export function withRemovals(r: EditRecipe, removals: Removal[]): EditRecipe {
+  const { removals: _, ...rest } = r;
+  return removals.length > 0 ? { ...rest, removals } : rest;
+}
+
+/** A source photo's diagonal in units of its long edge (strokes are sized by the
+ *  diagonal, spots by the long edge). `aspect` is width / height. */
+function diagonalInLongEdges(aspect: number): number {
+  return aspect >= 1 ? Math.hypot(1, 1 / aspect) : Math.hypot(aspect, 1);
+}
+
+/** The Remove stroke size (a fraction of the photo's diagonal) for a brush `px` across
+ *  on screen, where `scale` is screen pixels per photo long edge. */
+export function strokeSizeFor(px: number, scale: number, aspect: number): number {
+  return Math.round(((px / 2 / scale) / diagonalInLongEdges(aspect)) * 1e6) / 1e6;
+}
+
+/** A Remove stroke's radius in fractions of the photo's long edge. */
+export function strokeRadius(stroke: Stroke, aspect: number): number {
+  return stroke.size * diagonalInLongEdges(aspect);
+}
+
+/** A new removal: one stroke along `points` (source fractions), `size` a fraction of
+ *  the photo's diagonal. */
+export function newRemoval(points: readonly Point[], size: number): Removal {
+  const round = (v: number) => Math.round(v * 10_000) / 10_000;
+  return {
+    strokes: [{ size, feather: REMOVE_FEATHER, flow: 100, points: points.map(([x, y]) => [round(x), round(y)]) }],
+  };
+}
+
+/** Index of the removal whose painted area covers source point `p` (the last made
+ *  wins), or null. `aspect` is width / height. */
+export function removalAt(removals: readonly Removal[], p: Point, aspect: number): number | null {
+  const [sx, sy] = aspect >= 1 ? [1, 1 / aspect] : [aspect, 1];
+  // In fractions of the long edge, so distances are round.
+  const q: Point = [p[0] * sx, p[1] * sy];
+  for (let i = removals.length - 1; i >= 0; i--) {
+    for (const s of removals[i]!.strokes) {
+      if (s.erase) continue;
+      const r = strokeRadius(s, aspect);
+      const pts = s.points.map(([x, y]): Point => [x * sx, y * sy]);
+      const segments = pts.length === 1 ? [[pts[0]!, pts[0]!]] : pts.slice(1).map((b, k) => [pts[k]!, b]);
+      if (segments.some(([a, b]) => distanceToSegment(q, a!, b!) <= r)) return i;
+    }
+  }
+  return null;
+}
+
+function distanceToSegment(p: Point, a: Point, b: Point): number {
+  const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+  const len2 = dx * dx + dy * dy;
+  const t = len2 > 0 ? Math.min(1, Math.max(0, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+  return Math.hypot(a[0] + t * dx - p[0], a[1] + t * dy - p[1]);
 }
 
 /** The dust spots found (ADR 0058) whose centres no spot in `spots` covers yet: the
