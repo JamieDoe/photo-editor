@@ -963,3 +963,8 @@ drag. While it runs (on the render's background lane) it can be cancelled.
   to 166–235 ms with the same result in the tests.
 - **Starting from the edge inward** (ADR 0066) cost the same as the smooth first guess
   it replaced.
+- **Matching the fill's tone to its edges** (ADR 0066) costs 5–10 % once it is
+  limited to the hole and its ring. For example, person-sized fills take 0.28–0.41 s
+  on the preview and 1.20–1.66 s at full size on the 20–26 MP files, and 0.88–0.91 s /
+  4.06–4.15 s on the 61 MP file. Over the whole work region it had cost about 0.5 s
+  more.

@@ -173,6 +173,39 @@ Requirements, from CLAUDE.md:
      - Delete removes it;
      - Heal still places a spot with its source ring.
 
+## Matching the fill's tone to its edges
+
+After trying the brush, the photographer found the fills "a little jarring". The
+commonest cause is tone: patches copied from elsewhere bring their own brightness and
+colour, and the fill sits lighter, darker or tinted against its surroundings, which
+reads as a seam.
+
+1. **The correction:** after the last round at full size, the fill is matched to its
+   edges:
+   - in a 2 px ring of known pixels around the hole, the photo is compared with what
+     the matched patches predict there;
+   - the difference is spread smoothly over the hole by pull-push interpolation
+     (Gortler et al.) and added.
+   - The texture stays; only its tone follows the edge, as Heal does for spots (ADR
+     0054).
+2. **Bounded:** the interpolation covers only the hole and its ring, not the work
+   region. Over the whole region (about 10 MP for a person-sized hole at 24 MP) it
+   cost 0.5 s; cropped, the fill costs 5–10 % more than without it (PERFORMANCE §48).
+3. **Tests:**
+   - with every patch matched from a brighter half of the image, the fill comes out
+     at the darker half's level around the hole (within 0.01), and nothing outside the
+     hole changes;
+   - pull-push across a square hole whose ring runs from 0 on one side to 1 on the
+     other gives a smooth, monotonic rise, about 0.5 at the centre, for odd and even
+     sizes.
+   - Pull-push is an approximation: with known values only at two far ends (no
+     ring), it leans towards one side. The edge correction always has a ring.
+4. **Tried and left out:** a sharper final vote (weights relative to the 25th
+   percentile at full size) made no visible difference on the test photos.
+5. **Not addressed:** copied structure in large holes (the train over the table's
+   edge) is unchanged. That needs the hidden structure to exist elsewhere, or a learned
+   fill.
+
 ## Consequences
 
 - **Adding to a removal** (painting more onto a selected one) is not offered: each

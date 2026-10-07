@@ -383,6 +383,9 @@ fn inpaint(
             );
             estimate = vote(level, &patches, &matches, &estimate);
         }
+        if depth == 0 {
+            estimate = match_edges(level, &patches, &matches, estimate);
+        }
     }
     Ok(estimate)
 }
@@ -767,63 +770,207 @@ fn vote(
     matches: &[Match],
     previous: &[[f32; 3]],
 ) -> Vec<[f32; 3]> {
-    let (w, h) = (level.w, level.h);
-    // Weights fall off with a patch's distance, relative to a typical one (the 75th
-    // percentile), as in Wexler et al.
-    let mut distances: Vec<f32> = matches
-        .iter()
-        .filter(|m| m.source != NONE && m.distance.is_finite())
-        .map(|m| m.distance)
-        .collect();
-    let typical = if distances.is_empty() {
-        1.0
-    } else {
-        let k = (distances.len() * 3 / 4).min(distances.len() - 1);
-        let (_, v, _) = distances.select_nth_unstable_by(k, f32::total_cmp);
-        v.max(1e-6)
-    };
-    (0..w * h)
+    let typical = typical_distance(matches);
+    (0..level.w * level.h)
         .into_par_iter()
         .map(|i| {
             if !level.hole[i] {
                 return level.image[i];
             }
-            let (x, y) = ((i % w) as isize, (i / w) as isize);
-            let (mut sum, mut total) = ([0.0f32; 3], 0.0f32);
-            for dy in -HALF as isize..=HALF as isize {
-                for dx in -HALF as isize..=HALF as isize {
-                    // The patch centred at (x - dx, y - dy) covers this pixel at (dx, dy).
-                    let (cx, cy) = (x - dx, y - dy);
-                    if cx < 0 || cy < 0 || cx >= w as isize || cy >= h as isize {
-                        continue;
-                    }
-                    let c = cy as usize * w + cx as usize;
-                    let m = matches[c];
-                    if !patches.target[c] || m.source == NONE {
-                        continue;
-                    }
-                    let (sx, sy) = (
-                        (m.source as usize % w) as isize + dx,
-                        (m.source as usize / w) as isize + dy,
-                    );
-                    let weight = if m.distance.is_finite() {
-                        (-m.distance / (2.0 * typical)).exp().max(1e-8)
-                    } else {
-                        1e-8
-                    };
-                    let v = level.image[(sy * w as isize + sx) as usize];
-                    for k in 0..3 {
-                        sum[k] += weight * v[k];
-                    }
-                    total += weight;
-                }
+            vote_at(level, patches, matches, typical, i).unwrap_or(previous[i])
+        })
+        .collect()
+}
+
+/// A typical match's distance (the 75th percentile), which vote weights fall off
+/// relative to, as in Wexler et al.
+fn typical_distance(matches: &[Match]) -> f32 {
+    let mut distances: Vec<f32> = matches
+        .iter()
+        .filter(|m| m.source != NONE && m.distance.is_finite())
+        .map(|m| m.distance)
+        .collect();
+    if distances.is_empty() {
+        return 1.0;
+    }
+    let k = (distances.len() * 3 / 4).min(distances.len() - 1);
+    let (_, v, _) = distances.select_nth_unstable_by(k, f32::total_cmp);
+    v.max(1e-6)
+}
+
+/// What the matched patches covering pixel `i` say it should be (any pixel within a
+/// patch of the hole), or `None` when none covers it.
+fn vote_at(
+    level: &Level,
+    patches: &Patches,
+    matches: &[Match],
+    typical: f32,
+    i: usize,
+) -> Option<[f32; 3]> {
+    let w = level.w;
+    let (x, y) = ((i % w) as isize, (i / w) as isize);
+    let (mut sum, mut total) = ([0.0f32; 3], 0.0f32);
+    for dy in -HALF as isize..=HALF as isize {
+        for dx in -HALF as isize..=HALF as isize {
+            // The patch centred at (x - dx, y - dy) covers this pixel at (dx, dy).
+            let (cx, cy) = (x - dx, y - dy);
+            if cx < 0 || cy < 0 || cx >= w as isize || cy >= level.h as isize {
+                continue;
             }
-            if total > 0.0 {
-                sum.map(|s| s / total)
+            let c = cy as usize * w + cx as usize;
+            let m = matches[c];
+            if !patches.target[c] || m.source == NONE {
+                continue;
+            }
+            let (sx, sy) = (
+                (m.source as usize % w) as isize + dx,
+                (m.source as usize / w) as isize + dy,
+            );
+            let weight = if m.distance.is_finite() {
+                (-m.distance / (2.0 * typical)).exp().max(1e-8)
             } else {
-                previous[i]
+                1e-8
+            };
+            let v = level.image[(sy * w as isize + sx) as usize];
+            for (s, v) in sum.iter_mut().zip(v) {
+                *s += weight * v;
+            }
+            total += weight;
+        }
+    }
+    (total > 0.0).then(|| sum.map(|s| s / total))
+}
+
+/// The ring of known pixels around the hole whose difference from the fill's
+/// prediction sets the edge correction.
+const EDGE_RING: usize = 2;
+
+/// The fill matched to its surroundings: patches copied from elsewhere bring their own
+/// brightness and colour, which shows as a seam. Just outside the hole, the photo is
+/// compared with what the matched patches predict there; that difference is spread
+/// smoothly over the hole (pull-push interpolation) and added, as Heal does for spots
+/// (ADR 0054). The texture stays; only its tone follows the edge.
+fn match_edges(
+    level: &Level,
+    patches: &Patches,
+    matches: &[Match],
+    estimate: Vec<[f32; 3]>,
+) -> Vec<[f32; 3]> {
+    let (w, h) = (level.w, level.h);
+    let near = dilate(&level.hole, w, h, EDGE_RING);
+    let typical = typical_distance(matches);
+    let differences: Vec<([f32; 3], f32)> = (0..w * h)
+        .into_par_iter()
+        .map(|i| {
+            if !near[i] || level.hole[i] {
+                return ([0.0; 3], 0.0);
+            }
+            match vote_at(level, patches, matches, typical, i) {
+                Some(p) => ([0, 1, 2].map(|c| level.image[i][c] - p[c]), 1.0),
+                None => ([0.0; 3], 0.0),
             }
         })
+        .collect();
+    if !differences.iter().any(|(_, wt)| *wt > 0.0) {
+        return estimate;
+    }
+    // Only the hole and its ring need the surface: their bounds, not the whole region
+    // (whose context band is several times larger).
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
+    for i in (0..w * h).filter(|&i| near[i]) {
+        let (x, y) = (i % w, i / w);
+        (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x + 1), y1.max(y + 1));
+    }
+    let (bw, bh) = (x1 - x0, y1 - y0);
+    let boxed: Vec<([f32; 3], f32)> = (0..bw * bh)
+        .map(|j| differences[(y0 + j / bw) * w + x0 + j % bw])
+        .collect();
+    let offset = pull_push(boxed, bw, bh);
+    let mut estimate = estimate;
+    for (j, add) in offset.iter().enumerate() {
+        let i = (y0 + j / bw) * w + x0 + j % bw;
+        if level.hole[i] {
+            for (v, a) in estimate[i].iter_mut().zip(add) {
+                *v += a;
+            }
+        }
+    }
+    estimate
+}
+
+/// A smooth surface through scattered values (`(value, weight)`, weight 0 where
+/// unknown): averaged down a pyramid until every pixel is covered, then blended back
+/// up, each level keeping its own values where it has them (Gortler et al.'s
+/// pull-push).
+fn pull_push(samples: Vec<([f32; 3], f32)>, w: usize, h: usize) -> Vec<[f32; 3]> {
+    // Pull: each coarser level averages the known values under it.
+    let mut levels = vec![(samples, w, h)];
+    loop {
+        let (last, lw, lh) = levels.last().expect("at least one level");
+        if *lw <= 1 && *lh <= 1 {
+            break;
+        }
+        let (cw, ch) = (lw.div_ceil(2), lh.div_ceil(2));
+        let (lw, lh) = (*lw, *lh);
+        let coarse: Vec<([f32; 3], f32)> = (0..cw * ch)
+            .map(|i| {
+                let (x, y) = (i % cw, i / cw);
+                let (mut sum, mut total) = ([0.0f32; 3], 0.0f32);
+                for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                    let (fx, fy) = (2 * x + dx, 2 * y + dy);
+                    if fx < lw && fy < lh {
+                        let (v, wt) = last[fy * lw + fx];
+                        for (s, v) in sum.iter_mut().zip(v) {
+                            *s += wt * v;
+                        }
+                        total += wt;
+                    }
+                }
+                if total > 0.0 {
+                    (sum.map(|s| s / total), total.min(1.0))
+                } else {
+                    ([0.0; 3], 0.0)
+                }
+            })
+            .collect();
+        levels.push((coarse, cw, ch));
+    }
+    // Push: each finer level fills what it lacks from the level above (bilinear).
+    for k in (0..levels.len() - 1).rev() {
+        let (upper, uw, uh) = {
+            let (u, uw, uh) = &levels[k + 1];
+            (u.clone(), *uw, *uh)
+        };
+        let (fine, fw, fh) = &mut levels[k];
+        let (fw, _fh) = (*fw, *fh);
+        let sample = |x: f32, y: f32| -> [f32; 3] {
+            let x = x.clamp(0.0, (uw - 1) as f32);
+            let y = y.clamp(0.0, (uh - 1) as f32);
+            let (x0, y0) = (x as usize, y as usize);
+            let (x1, y1) = ((x0 + 1).min(uw - 1), (y0 + 1).min(uh - 1));
+            let (tx, ty) = (x - x0 as f32, y - y0 as f32);
+            let at = |xx: usize, yy: usize| upper[yy * uw + xx].0;
+            [0, 1, 2].map(|c| {
+                let top = at(x0, y0)[c] + (at(x1, y0)[c] - at(x0, y0)[c]) * tx;
+                let bottom = at(x0, y1)[c] + (at(x1, y1)[c] - at(x0, y1)[c]) * tx;
+                top + (bottom - top) * ty
+            })
+        };
+        for (i, (v, wt)) in fine.iter_mut().enumerate() {
+            if *wt >= 1.0 {
+                continue;
+            }
+            let (x, y) = ((i % fw) as f32, (i / fw) as f32);
+            let up = sample((x + 0.5) / 2.0 - 0.5, (y + 0.5) / 2.0 - 0.5);
+            *v = [0, 1, 2].map(|c| *wt * v[c] + (1.0 - *wt) * up[c]);
+            *wt = 1.0;
+        }
+    }
+    levels
+        .swap_remove(0)
+        .0
+        .into_iter()
+        .map(|(v, _)| v)
         .collect()
 }
 
@@ -1058,6 +1205,93 @@ mod tests {
             remove(&img, &[dab(&img, 60.0, 45.0, 10.0)], &cancelled),
             Err(RenderError::Cancelled)
         ));
+    }
+
+    #[test]
+    fn the_fill_takes_its_tone_from_around_the_hole() {
+        // A darker half on the left with a hole in it, a brighter right half, and
+        // every patch matched from the right: the copied texture would be too
+        // bright. Matching the edges brings it to the left's level.
+        let (w, h) = (80usize, 40usize);
+        let image: Vec<[f32; 3]> = (0..w * h)
+            .map(|i| {
+                if i % w < 40 {
+                    [0.3, 0.4, 0.5]
+                } else {
+                    [0.6, 0.7, 0.8]
+                }
+            })
+            .collect();
+        let hole: Vec<bool> = (0..w * h)
+            .map(|i| (12..28).contains(&(i % w)) && (12..28).contains(&(i / w)))
+            .collect();
+        let level = Level { w, h, image, hole };
+        let patches = Patches::new(&level);
+        let matches: Vec<Match> = (0..w * h)
+            .map(|i| {
+                if patches.target[i] {
+                    // The same place in the right half.
+                    let s = i + 40;
+                    assert!(patches.valid[s]);
+                    Match {
+                        source: s as u32,
+                        distance: 1.0,
+                    }
+                } else {
+                    UNMATCHED
+                }
+            })
+            .collect();
+        let voted = vote(&level, &patches, &matches, &level.image);
+        let centre = 20 * w + 20;
+        assert!((voted[centre][0] - 0.6).abs() < 1e-4, "{:?}", voted[centre]);
+        let matched = match_edges(&level, &patches, &matches, voted);
+        for (c, want) in [0.3, 0.4, 0.5].into_iter().enumerate() {
+            assert!(
+                (matched[centre][c] - want).abs() < 0.01,
+                "{:?}",
+                matched[centre]
+            );
+        }
+        // Outside the hole nothing changes.
+        assert_eq!(matched[5 * w + 5], level.image[5 * w + 5]);
+    }
+
+    #[test]
+    fn pull_push_spreads_values_smoothly_across_a_hole() {
+        // As the edge correction uses it: values known on a ring around a square hole,
+        // 0 on its left side and 1 on its right, rising across the top and bottom.
+        // Inside, a smooth rise, never outside the known range, about halfway at the
+        // centre.
+        for (w, h) in [(41usize, 41usize), (40, 33)] {
+            let (x0, x1, y0, y1) = (10, w - 11, 10, h - 11);
+            let samples: Vec<([f32; 3], f32)> = (0..w * h)
+                .map(|i| {
+                    let (x, y) = (i % w, i / w);
+                    let on_ring = (x == x0 || x == x1) && (y0..=y1).contains(&y)
+                        || (y == y0 || y == y1) && (x0..=x1).contains(&x);
+                    let v = x.saturating_sub(x0) as f32 / (x1 - x0) as f32;
+                    if on_ring {
+                        ([v; 3], 1.0)
+                    } else {
+                        ([0.0; 3], 0.0)
+                    }
+                })
+                .collect();
+            let out = pull_push(samples, w, h);
+            let cy = (y0 + y1) / 2;
+            let row: Vec<f32> = (x0..=x1).map(|x| out[cy * w + x][0]).collect();
+            assert!(row.iter().all(|v| (0.0..=1.0).contains(v)), "{row:?}");
+            assert!(
+                row.windows(2).all(|p| p[1] >= p[0] - 1e-3),
+                "not rising: {row:?}"
+            );
+            let middle = row[row.len() / 2];
+            assert!(
+                (middle - 0.5).abs() < 0.1,
+                "{w}x{h}: middle {middle}, {row:?}"
+            );
+        }
     }
 
     #[test]
