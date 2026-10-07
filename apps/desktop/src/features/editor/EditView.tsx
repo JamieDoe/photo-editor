@@ -420,8 +420,8 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
             <PanelSection
               title="Retouch"
               icon={<RetouchIcon />}
-              count={retouch.spots.length > 0 ? String(retouch.spots.length) : undefined}
-              edited={retouch.spots.length > 0}
+              count={retouch.spots.length + retouch.removals.length > 0 ? String(retouch.spots.length + retouch.removals.length) : undefined}
+              edited={retouch.spots.length + retouch.removals.length > 0}
               open={retouchOpen}
               onToggle={toggleRetouch}
             >

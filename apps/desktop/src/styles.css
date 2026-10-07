@@ -815,7 +815,7 @@ button.batch-export:hover:not(:disabled) { background: var(--hover-strong); colo
 /* Retouch (ADR 0054): the tool switch, its hint, the brush size and the spots made;
    on the photo, the spots as the design's dashed amber rings. */
 .retouch { display: flex; flex-direction: column; gap: 14px; }
-.segmented.small.retouch-tools { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.segmented.small.retouch-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .retouch-hint { margin: -4px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-3); }
 /* The design's dust banner: found (amber card, Fix all), then fixed (Undo). */
 .dust-found { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-radius: 10px; background: var(--accent-soft); border: 1px solid rgb(240 180 94 / 18%); font-size: 12px; line-height: 1.4; color: var(--text); }
@@ -835,6 +835,15 @@ button.dust-fix:hover:not(:disabled) { background: var(--accent); filter: bright
 .dust-ring { fill: rgb(240 180 94 / 8%); stroke: #f0b45e; stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgb(0 0 0 / 70%)); }
 .spot-ring.selected { stroke: #ffffff; stroke-width: 2.5; stroke-dasharray: none; }
 .spot-ring.source { stroke: #ffffff; stroke-width: 1.5; stroke-dasharray: 5 4; }
+/* Remove (ADR 0066): the stroke being painted, the selected removal's area, and a pin
+   where each removal was started. Painted widths are in the picture's pixels. */
+path.removal-paint, path.removal-area { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+path.removal-paint { stroke: rgb(240 180 94 / 50%); }
+circle.removal-paint { fill: rgb(240 180 94 / 50%); }
+path.removal-area { stroke: rgb(255 255 255 / 28%); }
+circle.removal-area { fill: rgb(255 255 255 / 28%); }
+.removal-pin { fill: rgb(11 12 14 / 55%); stroke: rgb(255 255 255 / 75%); stroke-width: 1.5; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgb(0 0 0 / 70%)); }
+.removal-pin.selected { fill: #ffffff; stroke: #ffffff; }
 .spot-link { stroke: #ffffff; stroke-width: 1.5; opacity: 0.8; vector-effect: non-scaling-stroke; }
 
 /* Calibration (ADR 0053): a heading per group, then its sliders. */

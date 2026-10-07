@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { Spot } from "../../ipc/generated/Spot";
-import { frameToSource, moveSpot, sourceToFrame, spotAt, spotsOf, stillToFix, withSpots, withoutSpots } from "./spots";
+import {
+  frameToSource,
+  moveSpot,
+  newRemoval,
+  removalAt,
+  removalsOf,
+  sourceToFrame,
+  spotAt,
+  spotsOf,
+  stillToFix,
+  strokeRadius,
+  strokeSizeFor,
+  withRemovals,
+  withSpots,
+  withoutSpots,
+} from "./spots";
 
 const flat = { straighten: 0, vertical: 0, horizontal: 0, rotation: 0, flip: false };
 const spot = (x: number, y: number, radius = 0.05): Spot => ({ kind: "heal", x, y, sourceX: x + 0.2, sourceY: y, radius, feather: 30, opacity: 100 });
@@ -72,3 +87,47 @@ describe("spots", () => {
     expect(withoutSpots(after, found)).toEqual([byHand]);
   });
 });
+
+describe("removals", () => {
+  it("are left out of the recipe when there are none", () => {
+    const r = { version: 25 } as EditRecipe;
+    expect(removalsOf(r)).toEqual([]);
+    const set = withRemovals(r, [newRemoval([[0.2, 0.3]], 0.01)]);
+    expect(removalsOf(set)).toHaveLength(1);
+    expect(withRemovals(set, []).removals).toBeUndefined();
+  });
+
+  it("size the stroke by the photo's diagonal, from the brush on screen", () => {
+    // A 3:2 photo shown 1500 px across (its long edge): a 60 px brush is a 30 px
+    // radius, 0.02 of the long edge, and the diagonal is 1.2019 long edges.
+    const size = strokeSizeFor(60, 1500, 1.5);
+    expect(size).toBeCloseTo(0.02 / Math.hypot(1, 1 / 1.5), 5);
+    const stroke = newRemoval([[0.5, 0.5]], size).strokes[0]!;
+    expect(strokeRadius(stroke, 1.5)).toBeCloseTo(0.02, 5);
+    // The same on a portrait photo.
+    expect(strokeRadius(newRemoval([[0.5, 0.5]], strokeSizeFor(60, 1500, 2 / 3)).strokes[0]!, 2 / 3)).toBeCloseTo(0.02, 5);
+  });
+
+  it("are rounded and softly edged as the renderer keeps them", () => {
+    const s = newRemoval([[0.123456, 0.654321]], 0.01).strokes[0]!;
+    expect(s.points).toEqual([[0.1235, 0.6543]]);
+    expect(s.feather).toBeGreaterThan(0);
+    expect(s.flow).toBe(100);
+  });
+
+  it("find the removal painted under a point, along its whole stroke", () => {
+    // A horizontal stroke on a 2:1 photo, radius 0.01 of the long edge.
+    const aspect = 2;
+    const size = 0.01 / Math.hypot(1, 1 / aspect);
+    const removals = [newRemoval([[0.1, 0.5], [0.4, 0.5]], size), newRemoval([[0.8, 0.2]], size)];
+    expect(removalAt(removals, [0.25, 0.5], aspect)).toBe(0);
+    // 0.009 of the long edge above the line: a y of 0.018 (the height is half).
+    expect(removalAt(removals, [0.25, 0.5 + 0.018], aspect)).toBe(0);
+    expect(removalAt(removals, [0.25, 0.5 + 0.03], aspect)).toBeNull();
+    expect(removalAt(removals, [0.8, 0.2], aspect)).toBe(1);
+    expect(removalAt(removals, [0.45, 0.5], aspect)).toBeNull();
+    // The last made wins where they overlap.
+    expect(removalAt([...removals, newRemoval([[0.2, 0.5]], size)], [0.2, 0.5], aspect)).toBe(2);
+  });
+});
+

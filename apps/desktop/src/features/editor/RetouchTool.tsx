@@ -15,19 +15,27 @@ import {
   RETOUCH_TOOLS,
   frameToSource,
   moveSpot,
+  newRemoval,
   placementOf,
+  removalAt,
+  removalsOf,
   sourceToFrame,
   spotAt,
   spotsOf,
   stillToFix,
+  strokeRadius,
+  strokeSizeFor,
+  withRemovals,
   withSpots,
   withoutSpots,
+  type RetouchToolKind,
 } from "./spots";
 
 /**
- * Retouch mode (ADR 0054): the tool for new spots (Heal or Clone) and the brush size,
- * the selected spot (which the panel's controls change instead), and the edits the
- * overlay and panel make. The spots themselves live in the recipe.
+ * Retouch mode (ADRs 0054, 0066): the tool (Remove paints areas to fill; Heal and
+ * Clone place spots) and the brush size, the selected spot (which the panel's controls
+ * change instead) or removal, and the edits the overlay and panel make. The spots and
+ * removals themselves live in the recipe.
  */
 export function useRetouchTool(opts: {
   recipe: EditRecipe | null;
@@ -40,13 +48,16 @@ export function useRetouchTool(opts: {
   notify: (message: string) => void;
 }) {
   const { recipe, imageId, aspect, active, onChange, notify } = opts;
-  const [kind, setKindState] = useState<SpotKind>("heal");
+  // Remove first, as the design has it.
+  const [kind, setKindState] = useState<RetouchToolKind>("remove");
   const [size, setSizeState] = useState<number>(BRUSH_SIZE.initial);
   const [selected, setSelected] = useState<number | null>(null);
+  const [selectedRemoval, setSelectedRemoval] = useState<number | null>(null);
   // Screen pixels per unit of the photo's long edge, as the overlay last measured.
   const [scale, setScale] = useState(1000);
   const spots = recipe ? spotsOf(recipe) : [];
   const spot = selected !== null ? (spots[selected] ?? null) : null;
+  const removals = recipe ? removalsOf(recipe) : [];
   // The latest recipe, for edits that finish after an await.
   const latest = useRef(recipe);
   latest.current = recipe;
@@ -67,10 +78,16 @@ export function useRetouchTool(opts: {
   const found = dust?.imageId === imageId ? dust.found : null;
   const toFix = found ? stillToFix(found, spots, aspect) : [];
 
-  useEffect(() => setSelected(null), [imageId]);
+  useEffect(() => {
+    setSelected(null);
+    setSelectedRemoval(null);
+  }, [imageId]);
   useEffect(() => {
     if (selected !== null && selected >= spots.length) setSelected(null);
   }, [selected, spots.length]);
+  useEffect(() => {
+    if (selectedRemoval !== null && selectedRemoval >= removals.length) setSelectedRemoval(null);
+  }, [selectedRemoval, removals.length]);
 
   const commit = useCallback(
     (next: Spot[]) => {
@@ -85,15 +102,27 @@ export function useRetouchTool(opts: {
     spots,
     selected,
     spot,
+    removals,
+    selectedRemoval,
     kind: spot?.kind ?? kind,
     /** The brush size in screen pixels: the selected spot's, or the next one's. */
     size: spot ? Math.round(spot.radius * 2 * scale) : size,
     scale,
     setScale,
-    select: setSelected,
-    setKind: (k: SpotKind) => {
+    select: (i: number | null) => {
+      setSelected(i);
+      if (i !== null) setSelectedRemoval(null);
+    },
+    selectRemoval: (i: number | null) => {
+      setSelectedRemoval(i);
+      if (i !== null) setSelected(null);
+    },
+    setKind: (k: RetouchToolKind) => {
       setKindState(k);
-      if (spot && selected !== null) update(selected, { ...spot, kind: k });
+      if (spot && selected !== null) {
+        if (k === "remove") setSelected(null);
+        else update(selected, { ...spot, kind: k });
+      }
     },
     setSize: (px: number) => {
       setSizeState(px);
@@ -103,7 +132,8 @@ export function useRetouchTool(opts: {
     place: async (at: Point) => {
       if (imageId === null || !latest.current) return;
       const existing = spotsOf(latest.current);
-      const made = await newSpot(imageId, kind, at, radiusFor(size), existing).catch(() => null);
+      const spotKind: SpotKind = kind === "remove" ? "heal" : kind;
+      const made = await newSpot(imageId, spotKind, at, radiusFor(size), existing).catch(() => null);
       if (!made) {
         notify("No clean area nearby to take this spot from");
         return;
@@ -117,9 +147,23 @@ export function useRetouchTool(opts: {
       commit(spots.filter((_, j) => j !== i));
       setSelected(null);
     },
-    clear: () => {
-      commit([]);
+    /** A new removal painted along `points` (source fractions), at the brush's size. */
+    addRemoval: (points: readonly Point[]) => {
+      if (!latest.current || points.length === 0) return;
+      const removal = newRemoval(points, strokeSizeFor(size, scale, aspect));
+      onChange(withRemovals(latest.current, [...removalsOf(latest.current), removal]));
       setSelected(null);
+      setSelectedRemoval(null);
+    },
+    deleteRemoval: (i: number) => {
+      if (latest.current) onChange(withRemovals(latest.current, removalsOf(latest.current).filter((_, j) => j !== i)));
+      setSelectedRemoval(null);
+    },
+    /** Every spot and removal gone, in one edit. */
+    clear: () => {
+      if (latest.current) onChange(withRemovals(withSpots(latest.current, []), []));
+      setSelected(null);
+      setSelectedRemoval(null);
     },
     /** Sensor dust still to fix (ADR 0058); null while it is being looked for. */
     dust: found === null ? null : toFix,
@@ -147,10 +191,14 @@ export function useRetouchTool(opts: {
 export type RetouchTool = ReturnType<typeof useRetouchTool>;
 
 /**
- * The spots on the photo: each a dashed circle in the design's amber, the selected
- * one white with its source joined to it. Click to add a spot; drag a spot or its
- * source to move it; Option-click to take the selected spot from there; Delete
- * removes it.
+ * The spots and removals on the photo. Spots are dashed circles in the design's
+ * amber, the selected one white with its source joined to it; removals are a small
+ * pin where each was started, the selected one showing the area painted.
+ *
+ * With Remove, drag to paint over something (or click for a dab): on release it is
+ * filled in. Click a painted area to select it. With Heal or Clone, click to add a
+ * spot. Drag a spot or its source to move it; Option-click to take the selected spot
+ * from there. Delete removes the selected spot or removal.
  */
 export function RetouchOverlay({
   tool,
@@ -177,6 +225,10 @@ export function RetouchOverlay({
   const drag = useRef<{ start: Point; spot: Spot; index: number; which: "spot" | "source"; frame: number | null; next: Spot | null } | null>(
     null,
   );
+  // A Remove stroke being painted: its points in the source and as shown, and whether
+  // the pointer has moved (a still click on a painted area selects it instead).
+  const paint = useRef<{ source: Point[]; last: [number, number]; moved: boolean } | null>(null);
+  const [painted, setPainted] = useState<Point[] | null>(null);
 
   // Screen pixels per photo long edge: the shown picture is the crop of the frame.
   const { setScale } = tool;
@@ -199,8 +251,12 @@ export function RetouchOverlay({
       if ((e.key === "Delete" || e.key === "Backspace") && tool.selected !== null) {
         tool.remove(tool.selected);
         e.preventDefault();
-      } else if (e.key === "Escape" && tool.selected !== null) {
+      } else if ((e.key === "Delete" || e.key === "Backspace") && tool.selectedRemoval !== null) {
+        tool.deleteRemoval(tool.selectedRemoval);
+        e.preventDefault();
+      } else if (e.key === "Escape" && (tool.selected !== null || tool.selectedRemoval !== null)) {
         tool.select(null);
+        tool.selectRemoval(null);
         e.preventDefault();
       } else if (e.key === "[" || e.key === "]") {
         const next = e.key === "[" ? tool.size / 1.15 : tool.size * 1.15;
@@ -224,12 +280,16 @@ export function RetouchOverlay({
     const s = toShown(toFrame(p), crop);
     return [s[0] * W, s[1] * H];
   };
-  /** A spot's radius in the shown picture's pixels. */
-  const radius = (s: Spot) => {
-    const c = shown([s.x, s.y]);
-    const e = shown([s.x + (s.radius * long) / photo.width, s.y]);
+  /** A radius (a fraction of the photo's long edge) around source point `p`, in the
+   *  shown picture's pixels. */
+  const shownRadius = (p: Point, r: number) => {
+    const c = shown(p);
+    const e = shown([p[0] + (r * long) / photo.width, p[1]]);
     return Math.max(Math.hypot(e[0] - c[0], e[1] - c[1]), 2);
   };
+  /** A spot's radius in the shown picture's pixels. */
+  const radius = (s: Spot) => shownRadius([s.x, s.y], s.radius);
+  const removing = tool.kind === "remove";
 
   const onPointerDown = (ev: ReactPointerEvent<HTMLDivElement>) => {
     if (ev.button !== 0) return;
@@ -243,6 +303,12 @@ export function RetouchOverlay({
     }
     const sourceHit = tool.selected !== null && spotAt([tool.spot!], source, aspect, true) !== null ? tool.selected : null;
     const hit = sourceHit ?? spotAt(spots, source, aspect);
+    if (hit === null && removing) {
+      ev.currentTarget.setPointerCapture(ev.pointerId);
+      paint.current = { source: [source], last: [ev.clientX, ev.clientY], moved: false };
+      setPainted([source]);
+      return;
+    }
     if (hit === null) {
       // A click on found dust heals it, at the size found.
       const dust = tool.dust ?? [];
@@ -258,6 +324,17 @@ export function RetouchOverlay({
   const onPointerMove = (ev: ReactPointerEvent<HTMLDivElement>) => {
     const p = at(ev);
     setPointer(p.shown);
+    const stroke = paint.current;
+    if (stroke) {
+      // New points two screen pixels apart at least; shown as painted, filled on release.
+      if (Math.hypot(ev.clientX - stroke.last[0], ev.clientY - stroke.last[1]) >= 2) {
+        stroke.source.push(p.source);
+        stroke.last = [ev.clientX, ev.clientY];
+        stroke.moved = true;
+        setPainted([...stroke.source]);
+      }
+      return;
+    }
     const d = drag.current;
     if (!d) return;
     d.next = moveSpot(d.spot, [p.source[0] - d.start[0], p.source[1] - d.start[1]], d.which);
@@ -270,6 +347,16 @@ export function RetouchOverlay({
     });
   };
   const onPointerUp = () => {
+    const stroke = paint.current;
+    if (stroke) {
+      paint.current = null;
+      setPainted(null);
+      // A still click on a painted area selects it; anything else is a new removal.
+      const onRemoval = stroke.moved ? null : removalAt(tool.removals, stroke.source[0]!, aspect);
+      if (onRemoval !== null) tool.selectRemoval(onRemoval);
+      else tool.addRemoval(stroke.source);
+      return;
+    }
     const d = drag.current;
     if (!d) return;
     if (d.frame != null) cancelAnimationFrame(d.frame);
@@ -277,7 +364,9 @@ export function RetouchOverlay({
     drag.current = null;
   };
 
-  const brushRadius = (tool.size / 2) * (W / (boxRef.current?.getBoundingClientRect().width || W));
+  // The picture's pixels per screen pixel: rings and pins are sized on screen.
+  const perScreenPixel = W / (boxRef.current?.getBoundingClientRect().width || W);
+  const brushRadius = (tool.size / 2) * perScreenPixel;
   const overSpot = pointer !== null && tool.spots.some((s) => Math.hypot(...minus(shown([s.x, s.y]), pointer)) <= radius(s));
   return (
     <div
@@ -305,6 +394,22 @@ export function RetouchOverlay({
             </g>
           );
         })}
+        {tool.removals.map((m, i) => {
+          const first = m.strokes[0]?.points[0];
+          if (!first) return null;
+          return (
+            <g key={`removal-${i}`}>
+              {i === tool.selectedRemoval &&
+                m.strokes.map((s, k) => (
+                  <PaintedPath key={k} points={s.points.map((q) => shown(q as Point))} width={2 * shownRadius(s.points[0] as Point, strokeRadius(s, aspect))} className="removal-area" />
+                ))}
+              <circle className={i === tool.selectedRemoval ? "removal-pin selected" : "removal-pin"} cx={shown(first as Point)[0]} cy={shown(first as Point)[1]} r={5 * perScreenPixel} />
+            </g>
+          );
+        })}
+        {painted && painted.length > 0 && (
+          <PaintedPath points={painted.map(shown)} width={2 * brushRadius} className="removal-paint" />
+        )}
         {(tool.dust ?? []).map((d, i) => {
           const c = shown([d.x, d.y]);
           return <circle key={`dust-${i}`} className="dust-ring" cx={c[0]} cy={c[1]} r={Math.max(radius(d), 9)} />;
@@ -316,6 +421,13 @@ export function RetouchOverlay({
 }
 
 const minus = (a: Point, b: Point): [number, number] => [a[0] - b[0], a[1] - b[1]];
+
+/** A painted stroke: its path drawn as wide as the brush, round at the ends. */
+function PaintedPath({ points, width, className }: { points: Point[]; width: number; className: string }) {
+  if (points.length === 1) return <circle className={className} cx={points[0]![0]} cy={points[0]![1]} r={width / 2} />;
+  const d = points.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
+  return <path className={className} d={d} strokeWidth={width} />;
+}
 
 /** The design's dust icon: a dashed ring around a speck. */
 function DustIcon() {
@@ -344,7 +456,16 @@ const BRUSH_SPEC: AdjustmentSpec = {
  *  clear them. */
 export function RetouchControls({ tool, disabled }: { tool: RetouchTool; disabled: boolean }) {
   const current = RETOUCH_TOOLS.find((t) => t.kind === tool.kind) ?? RETOUCH_TOOLS[0]!;
-  const count = tool.spots.length;
+  const spotCount = tool.spots.length;
+  const removalCount = tool.removals.length;
+  const next =
+    tool.kind === "remove"
+      ? tool.selectedRemoval !== null
+        ? "Delete removes the selected area."
+        : "Drag over something to remove it."
+      : tool.spot
+        ? "Changes here apply to the selected spot."
+        : "Click the photo to add a spot.";
   return (
     <div className="retouch">
       <div className="segmented small retouch-tools" role="radiogroup" aria-label="Retouch tool">
@@ -355,7 +476,7 @@ export function RetouchControls({ tool, disabled }: { tool: RetouchTool; disable
         ))}
       </div>
       <p className="retouch-hint">
-        {current.text} {tool.spot ? "Changes here apply to the selected spot." : "Click the photo to add a spot."}
+        {current.text} {next}
       </p>
       <Slider
         id="retouch-size"
@@ -386,10 +507,15 @@ export function RetouchControls({ tool, disabled }: { tool: RetouchTool; disable
           </button>
         </div>
       )}
-      {count > 0 && (
+      {spotCount + removalCount > 0 && (
         <div className="retouch-count">
           <span>
-            {count} {count === 1 ? "spot" : "spots"}
+            {[
+              removalCount > 0 && `${removalCount} ${removalCount === 1 ? "removal" : "removals"}`,
+              spotCount > 0 && `${spotCount} ${spotCount === 1 ? "spot" : "spots"}`,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
           <button className="link-button" disabled={disabled} onClick={tool.clear}>
             Clear all
