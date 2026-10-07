@@ -256,12 +256,25 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       if (!indexing) return null;
       const target = config.imagePath;
       await ipc.setPhotoMarks([target], { type: "rating", stars: 4 });
+      await ipc.setPhotoMarks([target], { type: "label", label: "purple" });
       const counts = await ipc.setPhotoMarks([target], { type: "flag", flag: "pick" });
       const listed = (await ipc.listFolder(indexing.folder)).photos.find((p) => p.path === target)?.marks ?? null;
       const picks = await ipc.libraryCollection("picks");
       await ipc.setPhotoMarks([target], { type: "rating", stars: 0 });
       const cleared = await ipc.setPhotoMarks([target], { type: "flag", flag: "none" });
-      return { counts, listed, inPicks: picks.photos.some((p) => p.path === target), cleared };
+      // A label alone still lists (ADR 0064), then is cleared too.
+      const labelOnly = (await ipc.listFolder(indexing.folder)).photos.find((p) => p.path === target)?.marks ?? null;
+      await ipc.setPhotoMarks([target], { type: "label", label: "none" });
+      const unlabelled = (await ipc.listFolder(indexing.folder)).photos.find((p) => p.path === target)?.marks ?? null;
+      return {
+        counts,
+        listed,
+        inPicks: picks.photos.some((p) => p.path === target),
+        pickLabel: picks.photos.find((p) => p.path === target)?.marks.label ?? null,
+        cleared,
+        labelOnly,
+        unlabelled,
+      };
     })();
     const marksOk =
       marks !== null &&
@@ -270,6 +283,14 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       marks.inPicks &&
       marks.counts.picks >= 1 &&
       marks.cleared.picks === marks.counts.picks - 1;
+    const labelsOk =
+      marks !== null &&
+      marks.listed?.label === "purple" &&
+      marks.pickLabel === "purple" &&
+      marks.labelOnly?.label === "purple" &&
+      marks.labelOnly.rating === 0 &&
+      marks.labelOnly.flag === "none" &&
+      marks.unlabelled?.label === "none";
 
     // Albums (ADR 0055) through the real commands and catalogue: make one with two
     // photos, add a third (and one again), list it, take one out, rename and delete it.
@@ -1478,6 +1499,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       viewerSizeStableOnOpen: reopen.sizeStable,
       libraryThumbnails: thumbnailsOk,
       ratingsAndFlags: marksOk,
+      colourLabels: labelsOk,
       albums: albumsOk,
       search: searchOk,
       savedEdits: editsOk,

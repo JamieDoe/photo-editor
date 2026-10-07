@@ -1,6 +1,7 @@
 import type { MarkChangeDto } from "../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../ipc/generated/MarksDto";
 import { flagClick, starClick } from "../features/library/marks";
+import { LabelPicker } from "./ColourLabels";
 import { PickIcon, RatingStar, RejectIcon } from "./icons";
 
 interface Props {
@@ -8,7 +9,8 @@ interface Props {
   onChange: (change: MarkChangeDto) => void;
 }
 
-/** Five stars and pick/reject, as in the design's Edit toolbar. */
+/** Five stars and pick/reject, as in the design's Edit toolbar, and the colour labels
+ *  (ADR 0064). */
 export function MarkControls({ marks, onChange }: Props) {
   return (
     <div className="mark-controls">
@@ -45,6 +47,8 @@ export function MarkControls({ marks, onChange }: Props) {
       >
         <RejectIcon />
       </button>
+      <span className="toolbar-divider" />
+      <LabelPicker value={marks.label} onChange={onChange} />
     </div>
   );
 }

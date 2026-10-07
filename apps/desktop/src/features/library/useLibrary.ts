@@ -11,7 +11,16 @@ import type { SearchResultsDto } from "../../ipc/generated/SearchResultsDto";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { LibraryStatusDto } from "../../ipc/generated/LibraryStatusDto";
-import { applyChange, rangeToTick, stepFrom, visiblePhotos, type LibraryFilter } from "./marks";
+import {
+  applyChange,
+  rangeToTick,
+  sortPhotos,
+  stepFrom,
+  visiblePhotos,
+  type Label,
+  type LibraryFilter,
+  type LibrarySort,
+} from "./marks";
 
 export type IndexProgress = Extract<IndexEvent, { type: "progress" }>;
 export type IndexFinished = Extract<IndexEvent, { type: "finished" }>;
@@ -32,6 +41,9 @@ export function useLibrary() {
   // Kept here (not in the view) so they survive switching to Edit and back.
   const [layout, setLayout] = useState<LibraryLayout>("grid");
   const [filter, setFilter] = useState<LibraryFilter>("all");
+  /** The colour label shown alone, if one is chosen, and the order (ADR 0064). */
+  const [labelFilter, setLabelFilter] = useState<Label | null>(null);
+  const [sort, setSort] = useState<LibrarySort>("captured");
   const [selected, setSelected] = useState<string | null>(null);
   /** Photos ticked for batch editing (ADR 0049), by path, in the order ticked; and
    *  where a ⇧-click range starts. */
@@ -208,12 +220,16 @@ export function useLibrary() {
 
   /** The photos of the current view (search, album, collection or folder), before
    *  filtering. */
-  const photos: PhotoEntryDto[] = search?.photos ?? album?.photos ?? collection?.photos ?? listing?.photos ?? [];
+  const unsorted: PhotoEntryDto[] = search?.photos ?? album?.photos ?? collection?.photos ?? listing?.photos ?? [];
+  const photos = useMemo(() => sortPhotos(unsorted, sort), [unsorted, sort]);
   const shownCollection = search || album ? null : (collection?.kind ?? null);
   const photosRef = useRef(photos);
   photosRef.current = photos;
-  /** What the grid shows: the view's photos after the filter (and collection membership). */
-  const visible = useMemo(() => visiblePhotos(photos, filter, shownCollection), [photos, filter, shownCollection]);
+  /** What the grid shows: the view's photos in order, after the filters (and collection membership). */
+  const visible = useMemo(
+    () => visiblePhotos(photos, filter, shownCollection, labelFilter),
+    [photos, filter, shownCollection, labelFilter],
+  );
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
 
@@ -308,6 +324,10 @@ export function useLibrary() {
     setLayout,
     filter,
     setFilter,
+    labelFilter,
+    setLabelFilter,
+    sort,
+    setSort,
     selected,
     setSelected,
     collection,

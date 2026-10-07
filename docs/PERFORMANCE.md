@@ -904,3 +904,17 @@ one warm-up:
 Writing the EXIF block is a few hundred bytes of serialisation. Both are negligible
 next to an export (1–2 s at full size). The block adds about 270 bytes to a JPEG
 without a location.
+
+## 46. Library sorting (ADR 0064)
+
+The Library sorts in the UI (vitest, Node on the dev Mac), 20,000 photos with mixed
+capture times, names and ratings:
+
+| Order | Time |
+|---|---|
+| Capture time | 39 ms |
+| File name (natural, `Intl.Collator`) | 58 ms |
+| Rating, then capture time | 33 ms |
+
+A sort runs when the view, the order or a photo's marks change, not on scrolling.
+The work grows as n log n, so typical folders of a few hundred photos cost far less.

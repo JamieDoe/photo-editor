@@ -14,6 +14,8 @@
   --text: #ededef;
   --text-2: #a3a4aa;
   --text-3: #7d7f86;
+  /* Colour labels (ADR 0064): the same five hues in both themes. */
+  --label-red: #e5534b; --label-yellow: #e3b341; --label-green: #4fae63; --label-blue: #4a8fdc; --label-purple: #9b6bd6;
   --accent: #f0b45e;
   --accent-text: #f6cb8a;
   --accent-soft: rgb(240 180 94 / 12%);
@@ -254,7 +256,10 @@ button.card.ticked[aria-pressed="true"]:hover .card-frame {
   box-shadow: 0 0 0 2px var(--canvas), 0 0 0 4px var(--accent-ring-hover), 0 0 0 6px var(--text-ring-hover);
 }
 button.card:hover .card-image img { transform: scale(1.015); }
-.card-caption { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 2px; height: 18px; }
+.card-caption { display: flex; justify-content: flex-start; align-items: center; gap: 8px; padding: 0 2px; height: 18px; }
+/* Stars or the file type sit at the right; a label dot (ADR 0064) and the edited dot hug the name. */
+.card-caption > :last-child { margin-left: auto; }
+.card-caption > .label-dot { margin-right: -2px; }
 .card-name { font-size: 12.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .card-type { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); letter-spacing: 0.04em; flex-shrink: 0; }
 
@@ -888,3 +893,21 @@ button.nav-row.nav-add:hover:not(:disabled) { color: var(--text); }
 .search-field input::placeholder { color: var(--text-3); }
 .search-field input::-webkit-search-cancel-button { display: none; }
 button.search-clear { width: 20px; height: 20px; padding: 0; border-radius: 10px; background: var(--hover-strong); border: 0; color: var(--text-2); }
+
+/* Colour labels (ADR 0064): a dot on photos, a picker in Edit, a filter and sort in the Library. */
+.label-dot { flex-shrink: 0; width: 7px; height: 7px; border-radius: 4px; background: var(--label-color); }
+[data-label="red"] { --label-color: var(--label-red); }
+[data-label="yellow"] { --label-color: var(--label-yellow); }
+[data-label="green"] { --label-color: var(--label-green); }
+[data-label="blue"] { --label-color: var(--label-blue); }
+[data-label="purple"] { --label-color: var(--label-purple); }
+.label-swatch { display: block; width: 12px; height: 12px; border-radius: 6px; background: var(--label-color); }
+.label-picker, .label-filter { display: flex; align-items: center; gap: 1px; }
+.label-picker > button, .label-filter > button { width: 22px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; display: flex; align-items: center; justify-content: center; }
+.label-picker > button:hover:not(:disabled), .label-filter > button:hover:not(:disabled) { background: var(--hover); }
+.label-picker > button[aria-checked="false"] .label-swatch, .label-filter > button[aria-pressed="false"] .label-swatch { opacity: 0.5; }
+.label-picker > button:hover .label-swatch, .label-filter > button:hover .label-swatch { opacity: 1; }
+.label-picker > button[aria-checked="true"] .label-swatch, .label-filter > button[aria-pressed="true"] .label-swatch { opacity: 1; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--label-color); }
+.label-filter { margin-left: 6px; height: 34px; box-sizing: border-box; padding: 0 3px; border-radius: 8px; background: var(--surface); border: 1px solid var(--hairline); }
+.label-filter > button { height: 26px; }
+select.sort-select { height: 34px; margin-left: 6px; padding: 0 26px 0 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--hairline); color: var(--text-2); font-size: 12px; }

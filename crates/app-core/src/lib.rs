@@ -20,8 +20,8 @@ mod types;
 pub use albums::{MAX_ALBUM_NAME, album_not_found, clean_album_name};
 pub use catalogue::{
     Album, AlbumId, BackupInfo, BackupKind, BackupStore, Catalogue, CatalogueError, Collection,
-    CollectionCounts, CollectionEntry, FileStatus, Flag, MarkChange, Marks, PhotoDetails, PhotoId,
-    PresetId, Rating, SourceIdentity, StoredEdit, newest_valid,
+    CollectionCounts, CollectionEntry, ColourLabel, FileStatus, Flag, MarkChange, Marks,
+    PhotoDetails, PhotoId, PresetId, Rating, SourceIdentity, StoredEdit, newest_valid,
 };
 pub use catalogue::{SCHEMA_VERSION, schema_version_of};
 pub use config::EngineConfig;

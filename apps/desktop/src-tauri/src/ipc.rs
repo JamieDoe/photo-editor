@@ -685,6 +685,46 @@ impl From<FlagDto> for app_core::Flag {
     }
 }
 
+/// A colour label (ADR 0064).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum ColourLabelDto {
+    #[default]
+    None,
+    Red,
+    Yellow,
+    Green,
+    Blue,
+    Purple,
+}
+
+impl From<app_core::ColourLabel> for ColourLabelDto {
+    fn from(l: app_core::ColourLabel) -> Self {
+        match l {
+            app_core::ColourLabel::None => Self::None,
+            app_core::ColourLabel::Red => Self::Red,
+            app_core::ColourLabel::Yellow => Self::Yellow,
+            app_core::ColourLabel::Green => Self::Green,
+            app_core::ColourLabel::Blue => Self::Blue,
+            app_core::ColourLabel::Purple => Self::Purple,
+        }
+    }
+}
+
+impl From<ColourLabelDto> for app_core::ColourLabel {
+    fn from(l: ColourLabelDto) -> Self {
+        match l {
+            ColourLabelDto::None => Self::None,
+            ColourLabelDto::Red => Self::Red,
+            ColourLabelDto::Yellow => Self::Yellow,
+            ColourLabelDto::Green => Self::Green,
+            ColourLabelDto::Blue => Self::Blue,
+            ColourLabelDto::Purple => Self::Purple,
+        }
+    }
+}
+
 /// The photographer's marks on a photo (ADR 0018).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -693,6 +733,8 @@ pub struct MarksDto {
     /// 0 (unrated) to 5.
     pub rating: u8,
     pub flag: FlagDto,
+    /// The colour label (ADR 0064).
+    pub label: ColourLabelDto,
 }
 
 impl From<app_core::Marks> for MarksDto {
@@ -700,6 +742,7 @@ impl From<app_core::Marks> for MarksDto {
         Self {
             rating: m.rating.stars(),
             flag: m.flag.into(),
+            label: m.label.into(),
         }
     }
 }
@@ -711,6 +754,7 @@ impl From<app_core::Marks> for MarksDto {
 pub enum MarkChangeDto {
     Rating { stars: u8 },
     Flag { flag: FlagDto },
+    Label { label: ColourLabelDto },
 }
 
 /// Library-wide collections: built from marks, or the recently imported photos.

@@ -8,7 +8,8 @@ import type { SettingsApi } from "../settings/useSettings";
 import { AddToAlbum, AlbumSettings, AlbumsNav, photosText, setDraggedPaths } from "./Albums";
 import { indexStatusText } from "./indexStatus";
 import { NavGroup } from "./NavGroup";
-import { COLLECTION_NAMES, FILTERS, markChangeForKey, type LibraryFilter } from "./marks";
+import { LabelFilter } from "../../components/ColourLabels";
+import { COLLECTION_NAMES, FILTERS, LABELS, SORTS, markChangeForKey, type Label, type LibraryFilter, type LibrarySort } from "./marks";
 import { PhotoGrid } from "./PhotoGrid";
 import { PhotoList } from "./PhotoList";
 import type { LibraryApi, LibraryLayout } from "./useLibrary";
@@ -95,7 +96,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
         e.preventDefault();
         return;
       }
-      const change = markChangeForKey(e.key);
+      const change = markChangeForKey(e.key, visible[i]!.marks);
       if (change) {
         void setMarks([visible[i]!.path], change);
         e.preventDefault();
@@ -325,6 +326,20 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                   value={library.filter}
                   onChange={library.setFilter}
                 />
+                <LabelFilter value={library.labelFilter} onChange={library.setLabelFilter} />
+                <select
+                  className="sort-select"
+                  aria-label="Sort by"
+                  title="Sort by"
+                  value={library.sort}
+                  onChange={(e) => library.setSort(e.target.value as LibrarySort)}
+                >
+                  {SORTS.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.label}
+                    </option>
+                  ))}
+                </select>
                 <Segmented
                   name="library-layout"
                   label="Layout"
@@ -361,7 +376,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                     ? library.photos.length === 0
                       ? "Nothing here yet. Drag photos onto the album in the sidebar, or select some and use Add to album."
                       : "No photos match this filter."
-                    : emptyMessage(library.photos.length, library.filter, collection?.kind ?? null)}
+                    : emptyMessage(library.photos.length, library.filter, collection?.kind ?? null, library.labelFilter)}
                 </p>
               ) : library.layout === "grid" ? (
                 <PhotoGrid
@@ -410,7 +425,11 @@ const LAYOUTS: ReadonlyArray<{ id: LibraryLayout; label: string }> = [
   { id: "list", label: "List" },
 ];
 
-function emptyMessage(total: number, filter: LibraryFilter, collection: CollectionKindDto | null): string {
+function emptyMessage(total: number, filter: LibraryFilter, collection: CollectionKindDto | null, label: Label | null): string {
+  if (label !== null && total > 0) {
+    const l = LABELS.find((x) => x.id === label)!;
+    return `No photos labelled ${l.name.toLowerCase()} here.${l.key ? ` Select a photo and press ${l.key}.` : ""}`;
+  }
   if (collection) {
     const how = {
       picks: "Press P to pick the selected photo.",

@@ -1,4 +1,4 @@
-//! Ratings and flags (ADR 0018): setting them, and library-wide collections built
+//! Ratings, flags (ADR 0018) and colour labels (ADR 0064): setting them, and library-wide collections built
 //! from them. Only photos inside granted folders can be marked or listed.
 
 use std::path::{Path, PathBuf};
@@ -27,6 +27,7 @@ pub async fn set_photo_marks(
             Rating::new(stars).ok_or_else(|| IpcError::internal(format!("rating {stars} > 5")))?,
         ),
         MarkChangeDto::Flag { flag } => MarkChange::Flag(flag.into()),
+        MarkChangeDto::Label { label } => MarkChange::Label(label.into()),
     };
     let files = granted_files(&state, &paths)?;
     let catalogue = Arc::clone(&state.catalogue);

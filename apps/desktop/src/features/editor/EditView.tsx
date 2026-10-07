@@ -131,7 +131,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
         e.preventDefault();
         return;
       }
-      const change = marks ? markChangeForKey(e.key) : null;
+      const change = marks ? markChangeForKey(e.key, marks) : null;
       if (change) {
         onMark(change);
         e.preventDefault();

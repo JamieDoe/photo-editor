@@ -1,3 +1,4 @@
+import { LabelDot } from "../../components/ColourLabels";
 import { useRef, type DragEvent, type MouseEvent, type RefObject } from "react";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import { PickIcon, RejectIcon } from "../../components/icons";
@@ -72,6 +73,7 @@ export function PhotoList({ photos, scrollRef, selected, onPick, onOpen, ticked,
                 {p.details?.camera ?? <span className="muted">—</span>}
               </span>
               <span role="cell" className="marks-cell">
+                <LabelDot label={p.marks.label} />
                 <span className="card-stars">{starsText(p.marks.rating)}</span>
                 {p.marks.flag === "pick" && <PickIcon size={12} filled />}
                 {p.marks.flag === "reject" && <RejectIcon size={12} />}

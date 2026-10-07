@@ -1,4 +1,5 @@
 import { useEffect, useRef, type DragEvent, type MouseEvent, type RefObject } from "react";
+import { LabelDot } from "../../components/ColourLabels";
 import { PickIcon } from "../../components/icons";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import { formatCaptured } from "../../lib/format";
@@ -65,6 +66,7 @@ export function PhotoGrid({ photos, scrollRef, selected, onPick, onOpen, ticked,
               )}
             </span>
             <span className="card-caption">
+              <LabelDot label={p.marks.label} />
               <span className="card-name">{p.name}</span>
               {p.edited && <span className="card-edited" title="Edited" aria-label="Edited" />}
               {p.marks.rating > 0 ? (
