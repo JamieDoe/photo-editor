@@ -159,6 +159,28 @@ export function SettingsView({ api }: { api: SettingsApi }) {
                 </button>
               )}
             </div>
+            <div className="setting">
+              <div className="setting-text">
+                <span className="setting-name" id="sidecars-label">
+                  Sidecar files for other apps
+                </span>
+                <small>
+                  Writes star ratings and colour labels to an .xmp file beside each RAW, where Lightroom, Bridge and Capture One
+                  read them. Your RAW files are never changed; existing sidecars keep everything else in them.
+                </small>
+              </div>
+              <button
+                className="setting-switch"
+                role="switch"
+                aria-checked={s.library.writeSidecars}
+                aria-labelledby="sidecars-label"
+                onClick={() => update((x) => ({ ...x, library: { ...x.library, writeSidecars: !x.library.writeSidecars } }))}
+              >
+                <span className="switch" aria-hidden="true">
+                  <span className="switch-knob" />
+                </span>
+              </button>
+            </div>
           </div>
         </section>
       </div>

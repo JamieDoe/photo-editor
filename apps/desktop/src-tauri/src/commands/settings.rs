@@ -41,6 +41,9 @@ pub async fn update_settings(
             .engine
             .set_preview_cache_budget(saved.performance.preview_cache_mb as usize * 1024 * 1024);
     }
+    if saved.library.write_sidecars && !before.library.write_sidecars {
+        write_all_sidecars(&state);
+    }
     if saved != before {
         log::info!(
             "settings updated: {}",
@@ -48,6 +51,29 @@ pub async fn update_settings(
         );
     }
     Ok(view(&state))
+}
+
+/// Sidecars turned on (ADR 0067): every marked RAW in the granted folders gets its
+/// sidecar, in the background. Turning them off leaves the files written so far.
+fn write_all_sidecars(state: &AppState) {
+    let marked = match state.catalogue.marked() {
+        Ok(m) => m,
+        Err(e) => {
+            log::warn!("sidecars: marked photos could not be listed: {e}");
+            return;
+        }
+    };
+    let files: Vec<std::path::PathBuf> = marked
+        .into_iter()
+        .map(|e| e.path)
+        .filter(|p| state.folders.covers(p))
+        .collect();
+    let raw = super::library::raw_extensions(&state.engine.info().extensions);
+    let catalogue = std::sync::Arc::clone(&state.catalogue);
+    tauri::async_runtime::spawn_blocking(move || {
+        app_core::sidecars::sync_files(&catalogue, &files, &raw);
+        log::info!("sidecars: synced for {} marked photos", files.len());
+    });
 }
 
 /// Records where the Library is (ADR 0065), to reopen it at the next launch. A folder

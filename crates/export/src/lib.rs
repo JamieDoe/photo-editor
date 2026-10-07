@@ -13,6 +13,7 @@ mod icc;
 pub mod metadata;
 pub mod resize;
 pub mod sharpen;
+pub mod sidecar;
 mod tiff_metadata;
 #[cfg(feature = "turbojpeg")]
 mod turbo;

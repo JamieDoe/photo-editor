@@ -19,4 +19,9 @@ view: LibraryViewSettings,
  * Where the Library was left, reopened at the next launch (ADR 0065). Recorded by
  * Rust (a folder only once its access is checked), never by a settings update.
  */
-lastPlace: LibraryPlace | null, };
+lastPlace: LibraryPlace | null, 
+/**
+ * Whether ratings and labels are also written to `.xmp` sidecars beside RAW files,
+ * for other photo apps (ADR 0067). Off by default: it writes into photo folders.
+ */
+writeSidecars: boolean, };
