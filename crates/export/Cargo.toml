@@ -24,3 +24,5 @@ jpeg-turbo = { workspace = true, optional = true }
 [dev-dependencies]
 fixtures.workspace = true
 zune-jpeg.workspace = true
+# Reads exported EXIF back in tests (BSD-2-Clause; the raw crate already uses it).
+kamadak-exif = "0.6"

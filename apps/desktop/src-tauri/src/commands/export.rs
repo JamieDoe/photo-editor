@@ -59,6 +59,10 @@ pub async fn export_image(
             format: single_format(&state),
             sharpening: output_sharpening(state.settings.get().export.sharpen),
             colour_space: colour_space(state.settings.get().export.colour_space),
+            metadata: {
+                let s = state.settings.get().export;
+                app_core::MetadataChoice::from_switches(s.keep_metadata, s.strip_location)
+            },
         },
         move |p| {
             let event = ExportEvent::Progress {
@@ -219,6 +223,10 @@ pub async fn start_export(
     let format = export_format(batch.format.unwrap_or_default(), quality);
     let sharpening = output_sharpening(batch.sharpen.unwrap_or_default());
     let colour_space = colour_space(batch.colour_space.unwrap_or_default());
+    let metadata = app_core::MetadataChoice::from_switches(
+        batch.keep_metadata.unwrap_or(true),
+        batch.strip_location.unwrap_or(false),
+    );
     let long_edge = batch.long_edge.map(|e| {
         e.clamp(
             settings::ExportSettings::LONG_EDGE_MIN,
@@ -273,6 +281,7 @@ pub async fn start_export(
                 format,
                 sharpening,
                 colour_space,
+                metadata,
             }),
             Err(f) => refused.push(f),
         }

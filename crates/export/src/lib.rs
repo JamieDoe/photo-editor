@@ -10,8 +10,10 @@ use image_core::{OutputImage, PixelFormat};
 
 pub mod colour;
 mod icc;
+pub mod metadata;
 pub mod resize;
 pub mod sharpen;
+mod tiff_metadata;
 #[cfg(feature = "turbojpeg")]
 mod turbo;
 
@@ -148,24 +150,29 @@ pub fn encode(image: &OutputImage, format: ExportFormat) -> Result<Vec<u8>, Expo
 }
 
 /// Encodes `image`, already in `space` (see [`colour::convert`]), carrying that
-/// space's profile (ADR 0062). sRGB is marked as before: a JPEG untagged, a PNG with
-/// its sRGB chunk, a TIFF with the sRGB profile.
+/// space's profile (ADR 0062) and `metadata` when given (ADR 0063). sRGB is marked as
+/// before: a JPEG untagged, a PNG with its sRGB chunk, a TIFF with the sRGB profile.
 pub fn encode_in(
     image: &OutputImage,
     format: ExportFormat,
     space: colour::ExportColourSpace,
+    metadata: Option<&metadata::Entries>,
 ) -> Result<Vec<u8>, ExportError> {
     match format {
         ExportFormat::Jpeg { .. } => {
-            let jpeg = encode(image, format)?;
-            Ok(if space == colour::ExportColourSpace::Srgb {
-                jpeg
-            } else {
-                colour::jpeg_with_profile(&jpeg, &space.profile())
-            })
+            let mut jpeg = encode(image, format)?;
+            if space != colour::ExportColourSpace::Srgb {
+                jpeg = colour::jpeg_with_profile(&jpeg, &space.profile());
+            }
+            // Inserted last so it comes first, as EXIF readers expect: SOI, JFIF, Exif,
+            // then the profile.
+            if let Some(entries) = metadata {
+                jpeg = metadata::jpeg_with_exif(&jpeg, &metadata::exif_block(entries));
+            }
+            Ok(jpeg)
         }
-        ExportFormat::Png => encode_png(image, space),
-        ExportFormat::Tiff => encode_tiff(image, space),
+        ExportFormat::Png => encode_png(image, space, metadata),
+        ExportFormat::Tiff => encode_tiff(image, space, metadata),
     }
 }
 
@@ -177,8 +184,8 @@ pub fn encode_with(
 ) -> Result<Vec<u8>, ExportError> {
     let quality = match format {
         ExportFormat::Jpeg { quality } => quality.clamp(1, 100),
-        ExportFormat::Png => return encode_png(image, colour::ExportColourSpace::Srgb),
-        ExportFormat::Tiff => return encode_tiff(image, colour::ExportColourSpace::Srgb),
+        ExportFormat::Png => return encode_png(image, colour::ExportColourSpace::Srgb, None),
+        ExportFormat::Tiff => return encode_tiff(image, colour::ExportColourSpace::Srgb, None),
     };
     if image.format() == PixelFormat::Rgb16 {
         return Err(ExportError::Encode(
@@ -218,10 +225,11 @@ fn encode_pure_rust(image: &OutputImage, quality: u8) -> Result<Vec<u8>, ExportE
 }
 
 /// PNG: 8-bit RGB (or RGBA), marked as sRGB so browsers and viewers show it as
-/// rendered, or carrying another space's profile.
+/// rendered, or carrying another space's profile; EXIF in an `eXIf` chunk.
 fn encode_png(
     image: &OutputImage,
     space: colour::ExportColourSpace,
+    metadata: Option<&metadata::Entries>,
 ) -> Result<Vec<u8>, ExportError> {
     let err = |e: png::EncodingError| ExportError::Encode(e.to_string());
     let (color, depth) = match image.format() {
@@ -236,6 +244,7 @@ fn encode_png(
     if space != colour::ExportColourSpace::Srgb {
         info.icc_profile = Some(space.profile().into());
     }
+    info.exif_metadata = metadata.map(|e| metadata::exif_block(e).into());
     let mut encoder = png::Encoder::with_info(&mut out, info).map_err(err)?;
     if space == colour::ExportColourSpace::Srgb {
         encoder.set_source_srgb(png::SrgbRenderingIntent::Perceptual);
@@ -262,10 +271,11 @@ fn encode_png(
 
 /// TIFF: 16-bit RGB (or 8-bit, as given), Deflate with the horizontal predictor
 /// (lossless, about half the size of uncompressed), the space's profile embedded, at a
-/// nominal 300 ppi.
+/// nominal 300 ppi; metadata as TIFF's own Exif and GPS directories.
 fn encode_tiff(
     image: &OutputImage,
     space: colour::ExportColourSpace,
+    metadata: Option<&metadata::Entries>,
 ) -> Result<Vec<u8>, ExportError> {
     use tiff::encoder::{Compression, Rational, TiffEncoder, colortype, compression::DeflateLevel};
     use tiff::tags::{Predictor, ResolutionUnit, Tag};
@@ -277,6 +287,14 @@ fn encode_tiff(
         .with_predictor(Predictor::Horizontal);
     let profile = space.profile();
     let (w, h) = (image.width(), image.height());
+    // The Exif and GPS directories are written first, outside the image sequence; the
+    // image's directory points to them.
+    let pointers = match metadata {
+        Some(entries) => {
+            Some(tiff_metadata::write_directories(&mut encoder, entries).map_err(err)?)
+        }
+        None => None,
+    };
     macro_rules! write {
         ($color:ty, $data:expr) => {{
             let mut tiff = encoder.new_image::<$color>(w, h).map_err(err)?;
@@ -284,6 +302,9 @@ fn encode_tiff(
             tiff.encoder()
                 .write_tag(Tag::IccProfile, &profile[..])
                 .map_err(err)?;
+            if let (Some(entries), Some(pointers)) = (metadata, &pointers) {
+                tiff_metadata::write_main(tiff.encoder(), entries, pointers).map_err(err)?;
+            }
             tiff.write_data($data).map_err(err)?;
         }};
     }
@@ -517,16 +538,105 @@ mod tests {
     }
 
     #[test]
+    fn every_format_carries_metadata_and_only_what_was_chosen() {
+        use exif::{In, Tag};
+        use metadata::{CaptureFacts, MetadataChoice};
+        let facts = CaptureFacts {
+            camera_make: Some("FUJIFILM".into()),
+            camera_model: Some("X-T5".into()),
+            lens: Some("XF33mmF1.4 R LM WR".into()),
+            captured_at: Some("2026-08-02T19:05:44".into()),
+            iso: Some(160),
+            aperture: Some(2.0),
+            shutter_seconds: Some(1.0 / 500.0),
+            focal_length_mm: Some(33.0),
+            gps: Some((51.5072, -0.1276)),
+        };
+        let rgb8 = OutputImage::from_raw(4, 4, PixelFormat::Rgb8, vec![90; 48]).unwrap();
+        let space = colour::ExportColourSpace::DisplayP3;
+        for format in [JPEG, ExportFormat::Png, ExportFormat::Tiff] {
+            let image = if format == ExportFormat::Tiff {
+                ramp16(9, 7)
+            } else {
+                rgb8.clone()
+            };
+            let (w, h) = (image.width(), image.height());
+            for choice in [
+                MetadataChoice::All,
+                MetadataChoice::WithoutLocation,
+                MetadataChoice::None,
+            ] {
+                let entries = metadata::entries(&facts, choice, w, h, space);
+                let bytes = encode_in(&image, format, space, entries.as_ref()).unwrap();
+                let read =
+                    exif::Reader::new().read_from_container(&mut std::io::Cursor::new(&bytes));
+                let model = read.as_ref().ok().and_then(|x| {
+                    x.get_field(Tag::Model, In::PRIMARY)
+                        .map(|f| f.display_value().to_string())
+                });
+                let has_gps = read
+                    .as_ref()
+                    .is_ok_and(|x| x.get_field(Tag::GPSLatitude, In::PRIMARY).is_some());
+                let lens = read.as_ref().ok().and_then(|x| {
+                    x.get_field(Tag::LensModel, In::PRIMARY)
+                        .map(|f| f.display_value().to_string())
+                });
+                let label = format!("{format:?} {choice:?}");
+                match choice {
+                    MetadataChoice::All => {
+                        assert_eq!(model.as_deref(), Some("\"X-T5\""), "{label}");
+                        assert_eq!(lens.as_deref(), Some("\"XF33mmF1.4 R LM WR\""), "{label}");
+                        assert!(has_gps, "{label}");
+                    }
+                    MetadataChoice::WithoutLocation => {
+                        assert_eq!(model.as_deref(), Some("\"X-T5\""), "{label}");
+                        assert!(!has_gps, "{label}");
+                    }
+                    MetadataChoice::None => {
+                        assert_eq!(model, None, "{label}");
+                        assert!(!has_gps, "{label}");
+                    }
+                }
+                // The profile is still there, and the file still decodes.
+                match format {
+                    ExportFormat::Tiff => {
+                        let mut dec =
+                            tiff::decoder::Decoder::new(std::io::Cursor::new(&bytes)).unwrap();
+                        assert_eq!(
+                            dec.get_tag_u8_vec(tiff::tags::Tag::IccProfile).unwrap(),
+                            space.profile()
+                        );
+                        assert_eq!(dec.dimensions().unwrap(), (w, h), "{label}");
+                    }
+                    ExportFormat::Png => {
+                        let reader = png::Decoder::new(std::io::Cursor::new(&bytes))
+                            .read_info()
+                            .unwrap();
+                        assert_eq!(
+                            reader.info().icc_profile.as_deref(),
+                            Some(&space.profile()[..])
+                        );
+                    }
+                    ExportFormat::Jpeg { .. } => {
+                        assert!(bytes.windows(12).any(|w| w == b"ICC_PROFILE\0"));
+                        assert_eq!(u32::from(decode(bytes.clone()).0), w, "{label}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn wide_spaces_carry_their_profiles() {
         use colour::ExportColourSpace::{AdobeRgb, DisplayP3};
         // TIFF: the space's profile in its tag.
-        let bytes = encode_in(&ramp16(9, 7), ExportFormat::Tiff, DisplayP3).unwrap();
+        let bytes = encode_in(&ramp16(9, 7), ExportFormat::Tiff, DisplayP3, None).unwrap();
         let mut dec = tiff::decoder::Decoder::new(std::io::Cursor::new(bytes)).unwrap();
         let profile = dec.get_tag_u8_vec(tiff::tags::Tag::IccProfile).unwrap();
         assert_eq!(profile, DisplayP3.profile());
         // PNG: the profile instead of the sRGB chunk.
         let img = OutputImage::from_raw(4, 4, PixelFormat::Rgb8, vec![90; 48]).unwrap();
-        let bytes = encode_in(&img, ExportFormat::Png, AdobeRgb).unwrap();
+        let bytes = encode_in(&img, ExportFormat::Png, AdobeRgb, None).unwrap();
         let reader = png::Decoder::new(std::io::Cursor::new(bytes))
             .read_info()
             .unwrap();
@@ -536,9 +646,9 @@ mod tests {
             Some(&AdobeRgb.profile()[..])
         );
         // JPEG: an ICC_PROFILE segment; an sRGB JPEG has none.
-        let tagged = encode_in(&img, JPEG, DisplayP3).unwrap();
+        let tagged = encode_in(&img, JPEG, DisplayP3, None).unwrap();
         assert!(tagged.windows(12).any(|w| w == b"ICC_PROFILE\0"));
-        let plain = encode_in(&img, JPEG, colour::ExportColourSpace::Srgb).unwrap();
+        let plain = encode_in(&img, JPEG, colour::ExportColourSpace::Srgb, None).unwrap();
         assert!(!plain.windows(12).any(|w| w == b"ICC_PROFILE\0"));
         // The tagged JPEG still decodes.
         let (w, h, _) = decode(tagged);

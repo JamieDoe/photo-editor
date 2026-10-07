@@ -182,6 +182,7 @@ fn files_export_fitted_to_a_long_edge_without_being_open() {
                     format: ExportFormat::Jpeg { quality: 85 },
                     sharpening: app_core::OutputSharpening::None,
                     colour_space: app_core::ExportColourSpace::Srgb,
+                    metadata: app_core::MetadataChoice::All,
                     long_edge,
                 },
                 |_| {},
@@ -279,6 +280,7 @@ fn export_writes_full_resolution_and_never_touches_source() {
                 format: ExportFormat::Jpeg { quality: 90 },
                 sharpening: app_core::OutputSharpening::None,
                 colour_space: app_core::ExportColourSpace::Srgb,
+                metadata: app_core::MetadataChoice::All,
             },
             move |p| seen.lock().unwrap().push(p.stage),
         )
@@ -310,6 +312,7 @@ fn export_over_source_is_rejected() {
                 format: ExportFormat::Jpeg { quality: 90 },
                 sharpening: app_core::OutputSharpening::None,
                 colour_space: app_core::ExportColourSpace::Srgb,
+                metadata: app_core::MetadataChoice::All,
             },
             |_| {},
         )
@@ -337,6 +340,7 @@ fn interactive_preview_is_not_blocked_by_running_export() {
             format: ExportFormat::Jpeg { quality: 90 },
             sharpening: app_core::OutputSharpening::None,
             colour_space: app_core::ExportColourSpace::Srgb,
+            metadata: app_core::MetadataChoice::All,
         },
         |_| {},
     );
