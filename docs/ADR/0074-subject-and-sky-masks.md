@@ -153,6 +153,47 @@ regenerable result.
 4. **A native ONNX Runtime library,** if tract proves too slow. To be decided after
    the benchmark, with numbers.
 
+## Phase 1, part 1: the segmenter (2026-10-08)
+
+Built (#70):
+- **The `ai` crate:** `Segmenter` (`supports`, `generator`, `segment`) over an 8-bit
+  sRGB `Picture`, returning a `Coverage` (0–255 per pixel, sampled by fractions of
+  the picture).
+- **The macOS backend** (`objc2-vision` 0.3.2 and its sibling crates: Zlib, Apache 2.0
+  or MIT; only the headers used are enabled).
+  - **Subject:** `VNGenerateForegroundInstanceMaskRequest`, all instances, at the
+    picture's size.
+  - **People:** `VNGeneratePersonInstanceMaskRequest`, also macOS 14.
+  - **Generator string:** `apple-vision/<kind>/r<revision>/macos-<version>`, for
+    stored masks to know their model.
+- **`Engine::mask_kinds` and `Engine::segment`:** the photo as decoded (oriented, no
+  edit, no crop) rendered at the pyramid level of at least 1536 px, segmented on the
+  background lane.
+- **`bench --segment [DIR]`:** times and shares per camera fixture, and the photo with
+  each mask tinted over it.
+
+Two findings changed People:
+1. **The older person segmentation always answers with a mask** (it is made for
+   video of people). On the Canon's clay animals it marked their heads; it has no
+   "nobody" answer.
+2. **The person instance request also took the clay animals for people** (40 % of
+   the Canon frame), and gave a faint wash on the Z 6 still life. A People mask is now
+   kept only when Vision's human detector (`VNDetectHumanRectanglesRequest`) finds
+   someone with confidence of at least 0.5. Both are then None.
+
+On the camera fixtures (release build, the model already loaded; PERFORMANCE §53):
+
+| File | Subject | People |
+|---|---|---|
+| Canon EOS R6 (clay animals) | 77 ms, 38.5 %: all three figures, tight edges | none |
+| Fujifilm X-T3 (still life) | 46 ms, 49.8 % | none |
+| Nikon Z 6 (still life) | 79 ms, 24.0 %: star, monkey, globe and train | none |
+| Ricoh GR III, Sony A7 III, A7R IV (landscapes) | none | none |
+
+Not yet verified: People on a photo with people. None of the fixtures has any, and
+downloading photos is deferred like the models. The first mask after launch takes
+about 4 s more while macOS loads the model.
+
 ## Consequences (if accepted as proposed)
 
 - Subject and People arrive on macOS without adding a model, a runtime or a licence
