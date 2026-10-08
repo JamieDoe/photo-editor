@@ -1,6 +1,7 @@
 # ADR 0074: Subject, People and Sky masks (proposal)
 
-- Status: **Proposed**, awaiting decisions (see "Decisions needed")
+- Status: **Accepted for phase 1** (Subject and People on macOS through Apple
+  Vision). Phase 2 (Sky, and other platforms) waits for its benchmark.
 - Date: 2026-10-08
 
 ## Context
@@ -119,7 +120,20 @@ regenerable result.
    - **Golden images** use a fixed stored mask, so they don't depend on the OS model.
    - **Benchmarks:** time to mask on each camera fixture.
 
-## Decisions needed
+## Decisions (2026-10-08)
+
+1. **Licensing policy: strict.** Model weights are acceptable only if their training
+   data also allows commercial use. That rules out U²-Net, BiRefNet and every
+   ADE20K-trained model, and leaves Apple Vision and the SAM family (Apache 2.0
+   weights, distilled from SAM).
+2. **macOS first through Apple Vision:** yes. Subject and People ship on macOS
+   first; Windows and Linux follow in phase 2.
+3. **Benchmark downloads: deferred to phase 2.** Phase 1 needs none. Each download
+   will be asked for at the time, with its file, source and size.
+4. **A native ONNX Runtime library:** still open. To be decided after the phase 2
+   benchmark against tract.
+
+## The decisions as they were put
 
 1. **Licensing policy for model weights.** Should only weights whose **training
    data** also allows commercial use be acceptable (strict), or is a permissive
