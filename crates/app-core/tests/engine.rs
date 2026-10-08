@@ -873,3 +873,32 @@ fn auto_tone_finds_the_tone_sliders_afresh_from_a_small_sample() {
         assert!((-100.0..=100.0).contains(&v), "{normal:?}");
     }
 }
+
+#[test]
+fn auto_for_one_setting_follows_the_rest_of_the_edit() {
+    let dir = fixtures::TempDir::new("engine-auto-setting");
+    let path = write(
+        dir.path(),
+        "chart.jpg",
+        fixtures::chart_jpeg(1600, 1000, 90),
+    );
+    let engine = engine();
+    let id = engine.open(&path).wait().unwrap().id;
+    let whites = |exposure: f32| {
+        engine
+            .auto_setting(
+                id,
+                &EditRecipe {
+                    exposure,
+                    ..Default::default()
+                },
+                renderer::auto_tone::ToneSetting::Whites,
+            )
+            .wait()
+            .unwrap()
+    };
+    // The chart's whites are pure white: Whites pulls them in. Darkened two stops,
+    // they fall short of white: Whites raises them instead.
+    let (plain, darkened) = (whites(0.0), whites(-2.0));
+    assert!(plain < 0.0 && darkened > plain, "{plain} vs {darkened}");
+}
