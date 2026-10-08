@@ -425,6 +425,10 @@ button.geometry-crop { height: 34px; border-radius: 8px; justify-content: center
 
 /* Panel (right) */
 .panel-right { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--hairline); }
+/* Focus mode (ADR 0072): the panel is hidden but kept, with its scroll and open
+   sections; the design's button is accent-tinted while on. */
+.panel-right[hidden] { display: none; }
+button.focus-button[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
 /* The histogram above the exposure details, as in the design (ADR 0036). */
 .panel-top { flex-shrink: 0; padding: 16px 16px 14px; }
 .histogram { position: relative; height: 72px; border-radius: 8px; background: var(--canvas); border: 1px solid var(--hairline); overflow: hidden; touch-action: none; }

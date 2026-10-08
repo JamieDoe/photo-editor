@@ -5,7 +5,7 @@ import { Toast, useToast } from "../components/Toast";
 import { ExportDialog } from "../features/export/ExportDialog";
 import { useExportQueue } from "../features/export/useExportQueue";
 import type { ExportItemDto } from "../ipc/generated/ExportItemDto";
-import { BrandMark, CloseIcon, ExportIcon, SettingsIcon } from "../components/icons";
+import { BrandMark, CloseIcon, ExportIcon, FocusIcon, SettingsIcon } from "../components/icons";
 import { QuitDialog } from "../components/QuitDialog";
 import { EditView } from "../features/editor/EditView";
 import { useEditor } from "../features/editor/useEditor";
@@ -32,6 +32,15 @@ export function App() {
     save: (view) => settings.update((s) => ({ ...s, library: { ...s.library, view } })),
   });
   const [mode, setMode] = useState<Mode>("library");
+  // Focus mode (ADR 0072): the photo alone, the panels and filmstrip hidden. Only in
+  // Edit; turning it on goes there.
+  const [focusOn, setFocusOn] = useState(false);
+  const focus = focusOn && mode === "edit";
+  const toggleFocus = () => {
+    if (focus) return setFocusOn(false);
+    setFocusOn(true);
+    setMode("edit");
+  };
   const editorRef = useRef(editor);
   editorRef.current = editor;
   // Closing Settings returns to the workspace it was opened from.
@@ -150,6 +159,15 @@ export function App() {
         </nav>
         <div className="topbar-right">
           <button
+            className="icon-button focus-button"
+            aria-label="Focus mode — hide panels"
+            title="Focus mode (F)"
+            aria-pressed={focus}
+            onClick={toggleFocus}
+          >
+            <FocusIcon />
+          </button>
+          <button
             className="icon-button"
             aria-label="Settings"
             title="Settings"
@@ -215,6 +233,8 @@ export function App() {
             currentPath={editEntry ? editPath : null}
             onOpenPhoto={openFromLibrary}
             onExport={() => setExportOpen(true)}
+            focus={focus}
+            onFocus={(on) => (on ? toggleFocus() : setFocusOn(false))}
             onOpenFile={() => {
               setEditPath(null);
               void editor.openDialog();

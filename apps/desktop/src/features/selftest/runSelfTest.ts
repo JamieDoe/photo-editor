@@ -269,6 +269,24 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       };
     })();
 
+    // Focus mode (ADR 0072): the top bar's button hides the adjustments panel and the
+    // photo takes the room; F brings the panel back.
+    const focusMode = await (async () => {
+      const button = document.querySelector<HTMLButtonElement>("button.focus-button");
+      const panel = () => document.querySelector<HTMLElement>(".panel-right");
+      const width = () => document.querySelector(".viewer")?.getBoundingClientRect().width ?? 0;
+      if (!button || !panel()) return { ok: false };
+      const before = width();
+      button.click();
+      await sleep(300);
+      const hidden = panel()!.hidden && getComputedStyle(panel()!).display === "none";
+      const wider = width() > before + 100;
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "f", bubbles: true }));
+      await sleep(300);
+      const back = !panel()!.hidden && Math.abs(width() - before) < 2;
+      return { hidden, wider, back, ok: hidden && wider && back };
+    })();
+
     // Re-open the same file once the app has settled: separates app-startup effects
     // from steady-state open cost, and exercises opening while an image is open.
     const framesBefore = frames.length;
@@ -1780,6 +1798,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     const checks = {
       exportFinished: finished.type === "finished",
       zoom: zoom?.ok === true,
+      focusMode: focusMode.ok,
       exportSizeEstimate: sizeEstimate !== null && Math.abs(sizeEstimate.errorPct) <= 30 && sizeEstimate.ms < 2000,
       framesDuringDrag: idleDrag.framesShown > 0,
       framesDuringExport: dragDuringExport.framesShown > 0,
@@ -1840,6 +1859,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       firstFrame: { ms: firstFrameMs, size: `${first.frame.width}x${first.frame.height}`, quality: first.info.quality },
       firstVisibleMs: firstFrameMs,
       reopen,
+      focusMode,
       zoom,
       toneCurve,
       history,

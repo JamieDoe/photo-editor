@@ -313,3 +313,11 @@ export const BrandMark = () => (
     <circle cx="14.2" cy="7.8" r="5.4" fill="var(--surface)" />
   </svg>
 );
+
+/** Focus mode (ADR 0072): a frame with the panels' edges, as in the design. */
+export const FocusIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <rect x="2" y="3" width="12" height="10" rx="2" />
+    <path d="M5.5 3v10M10.5 3v10" />
+  </Icon>
+);
