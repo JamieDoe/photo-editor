@@ -65,7 +65,8 @@ recorded as a deviation in ADR 0016.
      - the label filter alone and combined with ★ 3+;
      - each sort order, with unindexed photos last and natural name order;
      - sorting leaves its input untouched;
-     - 20,000 photos sort in 33–58 ms.
+     - sorting does n log n work, checked by counting reads of the photos, not by
+       timing (PERFORMANCE.md §46); 20,000 photos sort in 33–58 ms.
    - **Release self-test:** purple is set through the real command, read back from the
      folder listing and the Picks collection, still listed once rating and flag are
      cleared, then removed.

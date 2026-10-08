@@ -129,16 +129,33 @@ describe("sortPhotos", () => {
     expect(names(photos)).toEqual(before);
   });
 
-  it("sorts a large folder quickly", () => {
-    const many = Array.from({ length: 20_000 }, (_, i) =>
-      photo(`DSC_${(i * 7919) % 20_000}.NEF`, i % 6, "none", "none", i % 10 === 0 ? null : `2026-09-${String(1 + (i % 28)).padStart(2, "0")}T${String(i % 24).padStart(2, "0")}:00:00`),
+  // A folder of n photos with mixed capture times, names and ratings.
+  const folder = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      photo(`DSC_${(i * 7919) % n}.NEF`, i % 6, "none", "none", i % 10 === 0 ? null : `2026-09-${String(1 + (i % 28)).padStart(2, "0")}T${String(i % 24).padStart(2, "0")}:00:00`),
     );
+
+  it("does n log n work, not quadratic", () => {
+    // Counts reads of the photos rather than timing them, so a busy machine can't fail it.
+    // Ten times the photos is ~15× the reads for n log n and ~100× for a quadratic sort.
+    const reads = (n: number, sort: "captured" | "name" | "rating") => {
+      let count = 0;
+      const counted = folder(n).map((p) => new Proxy(p, { get: (t, k) => (count++, Reflect.get(t, k)) }));
+      sortPhotos(counted, sort);
+      return count;
+    };
+    for (const sort of ["captured", "name", "rating"] as const) {
+      expect(reads(10_000, sort) / reads(1_000, sort)).toBeLessThan(25);
+    }
+  });
+
+  it("sorts a large folder", () => {
+    // The timings in PERFORMANCE.md §46. Logged, not asserted: wall-clock time is too noisy to gate on.
+    const many = folder(20_000);
     for (const sort of ["captured", "name", "rating"] as const) {
       const t = performance.now();
-      sortPhotos(many, sort);
-      const ms = performance.now() - t;
-      console.log(`sort ${sort} 20k: ${ms.toFixed(1)} ms`);
-      expect(ms).toBeLessThan(500);
+      expect(sortPhotos(many, sort)).toHaveLength(20_000);
+      console.log(`sort ${sort} 20k: ${(performance.now() - t).toFixed(1)} ms`);
     }
   });
 });

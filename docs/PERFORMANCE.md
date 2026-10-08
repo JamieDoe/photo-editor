@@ -919,6 +919,12 @@ capture times, names and ratings:
 A sort runs when the view, the order or a photo's marks change, not on scrolling.
 The work grows as n log n, so typical folders of a few hundred photos cost far less.
 
+The test logs these times but does not assert them, because wall-clock time on a
+loaded machine is too noisy to gate on. Instead it counts how often the sort reads a
+photo. Ten times the photos (1,000 → 10,000) gives 14–15× the reads in each order.
+That fits n log n (about 13×), and a quadratic sort gives about 100×. The test fails
+above 25×.
+
 ## 47. All photos listing (ADR 0065)
 
 Release bench (`bench --index-scale 20000`: 20,000 synthetic files, indexed into an
