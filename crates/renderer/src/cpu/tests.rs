@@ -27,6 +27,8 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
     // after the gains before them.
     let mut gains = [1.0f32; 3];
     let mut base = None;
+    // The photo's white for Whites (ADR 0073), as the tone kernel measures it.
+    let mut white: Option<f32> = None;
     let mut detail_gains = None;
     let mut dehaze: Option<ops::dehaze::DehazeModel> = None;
     let (w, h) = (img.width() as usize, img.height() as usize);
@@ -46,8 +48,10 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
             Stage::Dehaze { amount } => {
                 dehaze = Some(ops::dehaze::DehazeModel::build(&scene(), amount));
             }
-            Stage::Tone { .. } => {
+            Stage::Tone { params } => {
                 base = Some(ops::tone::ToneBase::from_scene(&scene(), dehaze.as_ref()));
+                white = (params.whites != 0.0 && params.whites_relative)
+                    .then(|| ops::tone::white_point_stops(img, gains));
             }
             Stage::Detail { params } => {
                 if params.needs_base() || masks.as_ref().is_some_and(|m| m.has_clarity()) {
@@ -123,6 +127,10 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
                     let d = base
                         .as_ref()
                         .map_or(0.0, |b| b.stops_at(k % w, k / w, w, h, log_y - s) - s);
+                    let params = ops::tone::ToneParams {
+                        white_stops: white.unwrap_or(0.0),
+                        ..params
+                    };
                     ops::tone::apply(rgb, d, &params)
                 }
                 Stage::WhiteBalance { gains } => {

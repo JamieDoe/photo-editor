@@ -49,4 +49,6 @@ pub use recipe::{EditRecipe, RECIPE_VERSION, RecipeError};
 ///   most saturated colours change.
 /// - 5: Brush masks are rasterised at the render's own size above 2048 px (ADR 0070),
 ///   not always at 2048: their edges are sharper at 100 % and in full-size exports.
-pub const RENDERER_VERSION: u32 = 5;
+/// - 6: Whites acts near the photo's own white, not the sensor's (ADR 0073), for
+///   recipes from version 26; older recipes with Whites keep the sensor's.
+pub const RENDERER_VERSION: u32 = 6;

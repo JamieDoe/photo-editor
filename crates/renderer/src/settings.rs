@@ -38,6 +38,8 @@ pub fn setting_groups() -> Vec<SettingGroup> {
                 "highlights",
                 "shadows",
                 "whites",
+                // Where Whites acts (ADR 0073) goes with it.
+                "whitesFromSensor",
                 "blacks",
                 "dehaze",
                 "pointCurve",
@@ -218,6 +220,7 @@ mod tests {
                 Default::default(),
             )],
             spots: vec![crate::retouch::Spot::default()],
+            whites_from_sensor: true,
             removals: vec![crate::remove::Removal {
                 strokes: vec![crate::masks::brush::Stroke {
                     erase: false,

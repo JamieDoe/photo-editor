@@ -86,20 +86,25 @@ struct StopsLut {
 
 impl StopsLut {
     const STEPS_PER_STOP: f32 = 64.0;
+    /// From this many stops above the sensor's white (where an edit can push tones
+    /// before they are rolled off, and Whites can act: ADR 0073) ...
+    const MIN_STOPS: f32 = -4.0;
+    /// ... to this many below it.
     const MAX_STOPS: f32 = 24.0;
 
     fn build(f: impl Fn(f32) -> f32) -> Self {
-        let n = (Self::MAX_STOPS * Self::STEPS_PER_STOP) as usize;
+        let n = ((Self::MAX_STOPS - Self::MIN_STOPS) * Self::STEPS_PER_STOP) as usize;
         Self {
             table: (0..=n)
-                .map(|i| f(i as f32 / Self::STEPS_PER_STOP).exp2())
+                .map(|i| f(Self::MIN_STOPS + i as f32 / Self::STEPS_PER_STOP).exp2())
                 .collect(),
         }
     }
 
     #[inline]
     fn eval(&self, d: f32) -> f32 {
-        let pos = d.clamp(0.0, Self::MAX_STOPS - 1e-3) * Self::STEPS_PER_STOP;
+        let pos = (d.clamp(Self::MIN_STOPS, Self::MAX_STOPS - 1e-3) - Self::MIN_STOPS)
+            * Self::STEPS_PER_STOP;
         let i = pos as usize;
         let t = pos - i as f32;
         self.table[i] + (self.table[i + 1] - self.table[i]) * t
@@ -194,6 +199,29 @@ pub(super) fn cached_retouch(
     }
     cache.push((key, Arc::clone(&image)));
     Ok(image)
+}
+
+/// The photo's white for the tone stage (ADR 0073), for the last few sources and
+/// gains: dragging Whites (or anything after it) doesn't measure it again.
+fn cached_white_point(source: &LinearImage, gains: [f32; 3]) -> f32 {
+    type Key = (SourceKey, GainBits);
+    static LAST: Mutex<Vec<(Key, f32)>> = Mutex::new(Vec::new());
+    let key: Key = (source_key(source), gains.map(f32::to_bits));
+    if let Some((_, v)) = LAST
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .find(|(k, _)| *k == key)
+    {
+        return *v;
+    }
+    let v = tone::white_point_stops(source, gains);
+    let mut cache = LAST.lock().unwrap_or_else(|e| e.into_inner());
+    if cache.len() >= 4 {
+        cache.remove(0);
+    }
+    cache.push((key, v));
+    v
 }
 
 /// The most recent framed (cropped, straightened, perspective- and CA-corrected)
@@ -661,6 +689,12 @@ impl ToneKernel {
         dehaze: Option<&DehazeBefore>,
         masks: Option<Arc<LocalField>>,
     ) -> Self {
+        // Whites acts near the photo's own white (ADR 0073), measured where this stage
+        // sees the photo.
+        let mut params = params;
+        if params.whites != 0.0 && params.whites_relative {
+            params.white_stops = cached_white_point(source, gains);
+        }
         let base = params.is_local().then(|| {
             let base = cached_base(source, gains, dehaze.map(|d| (d.amount, &*d.model)));
             let cols = base.columns(source.width() as usize);

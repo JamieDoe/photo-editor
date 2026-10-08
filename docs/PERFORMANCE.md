@@ -1046,7 +1046,7 @@ editor runs it. Median of three runs, release build:
 |---|---|---|---|---|---|---|---|---|
 | Canon EOS R6 | 27 ms | +0.20 | 0 | 0 | 0 | 0 | 0 | +15 |
 | Fujifilm X-T3 | 84 ms | −0.25 | 0 | −18 | 0 | 0 | +12 | +5 |
-| Nikon Z 6 | 19 ms | 0 | 0 | 0 | 0 | 0 (was +40, with no effect; ADR 0071 §5) | 0 | +10 |
+| Nikon Z 6 | 19 ms | 0 | 0 | 0 | 0 | +40 (near the photo's white since ADR 0073; before, it had no effect) | 0 | +10 |
 | Ricoh GR III | 13 ms | 0 | 0 | 0 | 0 | 0 | 0 | +15 |
 | Sony A7 III | 52 ms | −0.15 | 0 | 0 | 0 | −5 | −40 | +20 |
 | Sony A7R IV | 54 ms | +0.05 | 0 | −70 | +26 | 0 | 0 | +20 |
@@ -1054,3 +1054,20 @@ editor runs it. Median of three runs, release build:
 The time follows how many sliders leave their band: each one that does takes about
 nine renders of the sample. The release self-test's run on the Z 6, through IPC,
 took 19 ms.
+
+## 52. Whites near the photo's white (ADR 0073)
+
+The photo's white (99.5th percentile of luminance, in stops below the sensor's
+white), measured on the half-size preview and the full resolution:
+
+| File | Preview | Full |
+|---|---|---|
+| Canon EOS R6 | 1.377 | 1.374 |
+| Fujifilm X-T3 | 0.503 | 0.503 |
+| Nikon Z 6 | 1.738 | 1.735 |
+| Ricoh GR III | 1.049 | 1.049 |
+| Sony A7 III | 0.048 | 0.028 |
+| Sony A7R IV | 0.001 | 0.001 |
+
+It's measured on about 262,000 grid samples, and cached per source and gains, so
+dragging Whites or anything after it doesn't measure again.

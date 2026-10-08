@@ -49,7 +49,10 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 23: adds calibration (ADR 0053), written only when set.
 /// - 24: adds heal and clone spots (ADR 0054), written only when there are some.
 /// - 25: adds removals (ADR 0066), written only when there are some.
-pub const RECIPE_VERSION: u32 = 25;
+/// - 26: Whites acts near the photo's own white (ADR 0073). Older recipes with Whites
+///   set keep it near the sensor's white (`whitesFromSensor`), so they render as
+///   they did.
+pub const RECIPE_VERSION: u32 = 26;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -72,6 +75,12 @@ pub struct EditRecipe {
     pub shadows: f32,
     /// Whites, -100..100: moves the white end of the tonal range.
     pub whites: f32,
+    /// Whites acts near the sensor's white, as before recipe version 26, instead of
+    /// the photo's own (ADR 0073). Set on older recipes with Whites, so they render
+    /// as they did; written only when set.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
+    pub whites_from_sensor: bool,
     /// Blacks, -100..100: moves the black end of the tonal range.
     pub blacks: f32,
     /// Dehaze, -100 (adds haze) .. 100 (removes it).
@@ -174,6 +183,7 @@ impl Default for EditRecipe {
             highlights: 0.0,
             shadows: 0.0,
             whites: 0.0,
+            whites_from_sensor: false,
             blacks: 0.0,
             dehaze: 0.0,
             temperature: 0.0,
@@ -247,14 +257,19 @@ impl EditRecipe {
             2..=6 => Ok(Self {
                 version: RECIPE_VERSION,
                 sharpening: 0.0,
+                whites_from_sensor: recipe.whites != 0.0,
                 ..recipe
             }
             .sanitized()),
+            // Whites (from version 3) acted near the sensor's white until version 26:
+            // recipes that set it keep that (ADR 0073).
             7..=25 => Ok(Self {
                 version: RECIPE_VERSION,
+                whites_from_sensor: recipe.whites != 0.0,
                 ..recipe
             }
             .sanitized()),
+            26 => Ok(recipe.sanitized()),
             v => Err(RecipeError::UnsupportedVersion(v)),
         }
     }
@@ -273,6 +288,7 @@ impl EditRecipe {
             highlights: HIGHLIGHTS.clamp(self.highlights),
             shadows: SHADOWS.clamp(self.shadows),
             whites: WHITES.clamp(self.whites),
+            whites_from_sensor: self.whites_from_sensor,
             blacks: BLACKS.clamp(self.blacks),
             dehaze: DEHAZE.clamp(self.dehaze),
             temperature: TEMPERATURE.clamp(self.temperature),
@@ -333,6 +349,8 @@ impl EditRecipe {
             shadows: self.shadows,
             whites: self.whites,
             blacks: self.blacks,
+            whites_relative: !self.whites_from_sensor,
+            white_stops: 0.0,
         }
     }
 
@@ -450,8 +468,24 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":25,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":26,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
+    }
+
+    #[test]
+    fn older_recipes_with_whites_keep_the_sensors_white() {
+        // Before version 26 Whites acted near the sensor's white (ADR 0073): recipes
+        // that set it keep that; those that don't take the new Whites, and say nothing.
+        let old = EditRecipe::from_json(r#"{"version":25,"whites":30.0}"#).unwrap();
+        assert!(old.whites_from_sensor);
+        assert!(old.to_json().contains(r#""whitesFromSensor":true"#));
+        assert!(!old.tone().whites_relative);
+        let plain = EditRecipe::from_json(r#"{"version":25,"exposure":0.3}"#).unwrap();
+        assert!(!plain.whites_from_sensor);
+        assert!(!plain.to_json().contains("whitesFromSensor"));
+        // New recipes act near the photo's white.
+        let new = EditRecipe::from_json(r#"{"version":26,"whites":30.0}"#).unwrap();
+        assert!(!new.whites_from_sensor && new.tone().whites_relative);
     }
 
     #[test]

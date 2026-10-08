@@ -123,7 +123,7 @@ Lightroom's Auto is the reference most photographers know: one click, one undo s
 - **Not done:**
   - auto white balance (the design's Auto doesn't set it);
   - subject-aware weighting (faces, sky). The bands treat every pixel alike.
-- **Found along the way:** Whites only reaches tones near the sensor's white. On
-  photos with nothing that bright, the slider does nothing when dragged either. A
-  Whites that acts on the photo's own brightest tones (as Lightroom's does) is a
-  renderer question for its own ADR.
+- **Found along the way:** Whites only reached tones near the sensor's white. On
+  photos with nothing that bright, the slider did nothing when dragged either. ADR
+  0073 makes it act near the photo's own white, and Auto's Whites now takes effect
+  there.
