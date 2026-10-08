@@ -196,6 +196,7 @@ fn unreadable_folder_is_a_user_facing_error() {
 }
 
 #[test]
+#[cfg(feature = "libraw")] // needs the RAW decoder: only RAWs are indexed as such
 fn new_raws_take_marks_from_another_apps_sidecars_once() {
     use app_core::{ColourLabel, Flag, MarkChange, Rating};
     let s = setup("index-sidecars");
