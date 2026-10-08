@@ -1523,6 +1523,32 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         plainMs: brighter?.frame.renderMs ?? null,
       };
     })();
+    // One fill for every view (ADR 0070): until the removal is filled at full
+    // resolution, frames say they show a stand-in; after, the whole photo and a window
+    // at 100 % both show that fill.
+    const fullFill = await (async () => {
+      const image = driver.editor().image;
+      if (!image) return null;
+      const removal = { strokes: [{ size: 0.02, feather: 10, flow: 100, points: [[0.62, 0.35], [0.66, 0.38]] as [number, number][] }] };
+      const recipe = { ...beforeCrop, masks: undefined, geometry: undefined, spots: undefined, removals: [removal] };
+      const whole = () => ipc.renderPreview({ imageId: image.id, recipe, quality: "detail", targetLongEdge: 1600 });
+      const before = await whole();
+      const t = performance.now();
+      await ipc.prepareFill(image.id, [removal]);
+      const fillMs = Math.round(performance.now() - t);
+      const after = await whole();
+      const [x, y] = [Math.round(0.6 * image.fullWidth), Math.round(0.3 * image.fullHeight)];
+      const window = await ipc.renderPreview({ imageId: image.id, recipe, quality: "detail", targetLongEdge: 1600, window: [x, y, 800, 600] });
+      return {
+        standInFirst: before.fillPending,
+        fillMs,
+        wholePending: after.fillPending,
+        windowPending: window.fillPending,
+        wholeRenderMs: Math.round(after.renderMs),
+        windowRenderMs: Math.round(window.renderMs),
+        ok: before.fillPending && !after.fillPending && !window.fillPending && fillMs < 15_000,
+      };
+    })();
     driver.editor().setRecipe(beforeCrop);
     const removeOk =
       removeCheck.insideChange !== null &&
@@ -1761,6 +1787,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       calibration: calibrationOk,
       retouch: retouchOk,
       remove: removeOk,
+      removalFill: fullFill?.ok === true,
       dust: dustOk,
       copyPaste: copyPasteOk,
       crop: cropOk,
@@ -1799,6 +1826,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       calibration: calibrationCheck,
       retouch: retouchCheck,
       remove: removeCheck,
+      removalFill: fullFill,
       dust: dustCheck,
       copyPaste: copyPasteCheck,
       crop,

@@ -708,3 +708,93 @@ fn windows_show_their_part_of_the_photo_at_full_resolution() {
         (201, 151)
     );
 }
+
+#[test]
+fn removals_show_one_full_resolution_fill_at_every_size() {
+    let dir = fixtures::TempDir::new("engine-fill");
+    let path = write(
+        dir.path(),
+        "chart.jpg",
+        fixtures::chart_jpeg(1600, 1000, 90),
+    );
+    let engine = Engine::new(EngineConfig {
+        preview_source_min_edge: 800,
+        ..EngineConfig::default()
+    });
+    let id = engine.open(&path).wait().unwrap().id;
+    let removal = renderer::remove::Removal {
+        strokes: vec![renderer::masks::brush::Stroke {
+            erase: false,
+            size: 0.03,
+            feather: 10.0,
+            flow: 100.0,
+            points: vec![[0.4, 0.45], [0.5, 0.5]],
+        }],
+    };
+    let recipe = EditRecipe {
+        sharpening: 0.0,
+        removals: vec![removal.clone()],
+        ..Default::default()
+    };
+    let request = |window| PreviewRequest {
+        image: id,
+        recipe: recipe.clone(),
+        quality: PreviewQuality::Detail,
+        target_long_edge: 800,
+        window,
+    };
+
+    // Before the full-resolution fill: filled at the preview's size, and said so.
+    let early = engine.render_preview(request(None)).wait().unwrap();
+    assert!(early.fill_pending);
+    engine.prepare_fill(id, vec![removal]).wait().unwrap();
+    let fit = engine.render_preview(request(None)).wait().unwrap();
+    assert!(!fit.fill_pending);
+    assert!(
+        !fit.cache_hit,
+        "the stand-in is not taken for the real fill"
+    );
+    let full = engine
+        .render_preview(request(Some((0, 0, 1600, 1000))))
+        .wait()
+        .unwrap();
+    assert!(!full.fill_pending);
+    assert_eq!((full.image.width(), full.image.height()), (1600, 1000));
+
+    // The fit view is the 100 % view halved, removals and all: over the removal,
+    // they differ about as much as anywhere (8-bit renders at two sizes), and much
+    // less than the stand-in, a fill of the preview's own, does.
+    let b = full.image.data();
+    let difference = |frame: &app_core::PreviewFrame,
+                      (x0, y0, x1, y1): (usize, usize, usize, usize)| {
+        let a = frame.image.data();
+        let (mut sum, mut n) = (0.0f32, 0.0f32);
+        for y in y0..y1 {
+            for x in x0..x1 {
+                for c in 0..3 {
+                    let at = |xx: usize, yy: usize| f32::from(b[(yy * 1600 + xx) * 4 + c]);
+                    let halved = (at(2 * x, 2 * y)
+                        + at(2 * x + 1, 2 * y)
+                        + at(2 * x, 2 * y + 1)
+                        + at(2 * x + 1, 2 * y + 1))
+                        / 4.0;
+                    sum += (f32::from(a[(y * 800 + x) * 4 + c]) - halved).abs();
+                    n += 1.0;
+                }
+            }
+        }
+        sum / n
+    };
+    assert_eq!((fit.image.width(), fit.image.height()), (800, 500));
+    let hole = (330, 215, 390, 245);
+    let elsewhere = (100, 60, 160, 90);
+    let (inside, outside, stand_in) = (
+        difference(&fit, hole),
+        difference(&fit, elsewhere),
+        difference(&early, hole),
+    );
+    assert!(
+        inside < 2.0 * outside + 1.0 && inside < stand_in / 2.0,
+        "over the removal {inside}, elsewhere {outside}, the stand-in {stand_in}"
+    );
+}

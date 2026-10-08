@@ -9,8 +9,8 @@ use tauri_plugin_dialog::DialogExt;
 use super::{IpcResult, wait};
 use crate::AppState;
 use crate::ipc::{
-    FRAME_FLAG_CACHE_HIT, FRAME_FLAG_HISTOGRAM, FRAME_FLAG_WINDOW, FRAME_HEADER_BYTES,
-    FRAME_WINDOW_BYTES, ImageSummaryDto, IpcError, PreviewRequestDto,
+    FRAME_FLAG_CACHE_HIT, FRAME_FLAG_FILL_PENDING, FRAME_FLAG_HISTOGRAM, FRAME_FLAG_WINDOW,
+    FRAME_HEADER_BYTES, FRAME_WINDOW_BYTES, ImageSummaryDto, IpcError, PreviewRequestDto,
 };
 
 /// Encodes a frame in the binary layout documented on [`FRAME_HEADER_BYTES`].
@@ -185,11 +185,14 @@ pub async fn render_preview(
         request.slot.into(),
     );
     let frame = wait(handle).await?;
-    let flags = if frame.cache_hit {
+    let mut flags = if frame.cache_hit {
         FRAME_FLAG_CACHE_HIT
     } else {
         0
     };
+    if frame.fill_pending {
+        flags |= FRAME_FLAG_FILL_PENDING;
+    }
     Ok(Response::new(frame_bytes(
         &frame.image,
         frame.level as u32,
@@ -203,6 +206,17 @@ pub async fn render_preview(
 
 /// Decodes the open photo at full resolution (ADR 0070) for viewing it at 100 %;
 /// resolves when window renders can use it.
+/// Fills `removals` on the open photo at full resolution (ADR 0070), so every view
+/// shows the same fill; resolves when renders use it.
+#[tauri::command]
+pub async fn prepare_fill(
+    state: State<'_, AppState>,
+    image_id: u64,
+    removals: Vec<renderer::remove::Removal>,
+) -> IpcResult<()> {
+    wait(state.engine.prepare_fill(ImageId(image_id), removals)).await
+}
+
 #[tauri::command]
 pub async fn prepare_full(state: State<'_, AppState>, image_id: u64) -> IpcResult<()> {
     wait(state.engine.prepare_full(ImageId(image_id))).await

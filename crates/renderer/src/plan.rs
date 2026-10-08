@@ -106,6 +106,10 @@ pub enum OutputTransform {
 pub struct RenderPlan {
     /// Removals (ADR 0066), filled in on the source before anything else.
     pub removals: Vec<crate::remove::Removal>,
+    /// The removals' fill made once at full resolution, to apply at the rendered size
+    /// instead of filling there (ADR 0070): every view and export of the photo then
+    /// shows the same fill. `None` fills at the rendered size.
+    pub removal_fill: Option<std::sync::Arc<crate::remove::Fill>>,
     /// Heal and clone spots (ADR 0054), applied to the source after the removals.
     pub spots: Vec<crate::retouch::Spot>,
     /// Crop, straighten and perspective (ADRs 0032, 0034), applied first: the source is
@@ -139,6 +143,7 @@ impl RenderPlan {
     pub fn new(stages: Vec<Stage>) -> Self {
         Self {
             removals: Vec::new(),
+            removal_fill: None,
             spots: Vec::new(),
             geometry: None,
             chromatic_aberration: None,
@@ -282,6 +287,7 @@ impl RenderPlan {
                 .filter(|m| !m.is_noop())
                 .cloned()
                 .collect(),
+            removal_fill: None,
             spots: r.spots.iter().filter(|s| !s.is_noop()).copied().collect(),
             geometry: r.geometry.filter(|g| !g.is_identity()),
             chromatic_aberration: r.chromatic_aberration.filter(|c| !c.is_identity()),

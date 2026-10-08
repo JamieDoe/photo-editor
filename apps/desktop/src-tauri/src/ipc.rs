@@ -178,6 +178,9 @@ pub const FRAME_FLAG_HISTOGRAM: u32 = 2;
 /// The frame is a window of the photo (ADR 0070, zoom); where it lies follows the
 /// header.
 pub const FRAME_FLAG_WINDOW: u32 = 4;
+/// The removals were filled at the frame's own size, until their full-resolution fill
+/// is made (`prepare_fill`, ADR 0070).
+pub const FRAME_FLAG_FILL_PENDING: u32 = 8;
 /// The window's four `f32`s.
 pub const FRAME_WINDOW_BYTES: usize = 16;
 

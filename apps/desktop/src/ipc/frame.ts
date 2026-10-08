@@ -8,6 +8,7 @@ export const FRAME_HEADER_BYTES = 28;
 const FLAG_CACHE_HIT = 1;
 const FLAG_HISTOGRAM = 2;
 const FLAG_WINDOW = 4;
+const FLAG_FILL_PENDING = 8;
 const WINDOW_BYTES = 16;
 export const HISTOGRAM_BINS = 256;
 const HISTOGRAM_BYTES = 4 * HISTOGRAM_BINS * 4;
@@ -43,6 +44,9 @@ export interface PreviewFrame {
   /** For a window of the photo (ADR 0070, zoom): the part of the full-resolution
    *  output it shows, in its pixels; null for whole frames. */
   window: FrameWindow | null;
+  /** The removals were filled at this frame's size until their full-resolution fill
+   *  is made (ADR 0070): ask for it, then render again. */
+  fillPending: boolean;
   pixels: Uint8ClampedArray<ArrayBuffer>;
 }
 
@@ -79,6 +83,7 @@ export function decodeFrame(buffer: ArrayBuffer): PreviewFrame {
     fullHeight,
     histogram: hasHistogram ? readHistogram(view, histogramOffset) : null,
     window: hasWindow ? readWindow(view, FRAME_HEADER_BYTES) : null,
+    fillPending: (flags & FLAG_FILL_PENDING) !== 0,
     pixels: new Uint8ClampedArray(buffer, pixelOffset, width * height * 4),
   };
 }

@@ -76,6 +76,8 @@ export function useEditor() {
   const viewWindowRef = useRef<OutputWindow | null>(null);
   /** The photo whose full resolution has been asked for. */
   const fullRequestedRef = useRef<number | null>(null);
+  /** The photo and removals whose full-resolution fill has been asked for. */
+  const fillRequestedRef = useRef<string | null>(null);
   const listenersRef = useRef(new Set<FrameListener>());
   // Latest event per export job. Events can arrive before export_image resolves.
   const exportEventsRef = useRef(new Map<number, ExportEvent>());
@@ -97,6 +99,7 @@ export function useEditor() {
         // A different image was opened while this rendered, or zoom went back to Fit.
         if (imageRef.current?.id !== img.id) throw ipc.staleError();
         if (frame.window && viewWindowRef.current === null) throw ipc.staleError();
+        if (frame.fillPending) prepareFill(img.id, r);
         return { frame, imageId: img.id };
       },
       isCancellation: ipc.isCancellation,
@@ -322,6 +325,24 @@ export function useEditor() {
     },
     [recipe],
   );
+
+  /** The removals were filled at the frame's size, as a stand-in: has them filled once
+   *  at full resolution (ADR 0070), then renders again, so every view shows that one
+   *  fill. Asked once per photo and set of removals. */
+  function prepareFill(imageId: number, r: EditRecipe) {
+    const key = `${imageId}:${JSON.stringify(r.removals)}`;
+    if (fillRequestedRef.current === key) return;
+    fillRequestedRef.current = key;
+    ipc.prepareFill(imageId, r.removals ?? []).then(
+      () => {
+        if (imageRef.current?.id === imageId && recipeRef.current) schedulerRef.current?.request(toRender(recipeRef.current));
+      },
+      (e: unknown) => {
+        if (fillRequestedRef.current === key) fillRequestedRef.current = null;
+        if (!ipc.isCancellation(e)) fail(e);
+      },
+    );
+  }
 
   /** Shows only `window` of the photo, at full resolution (ADR 0070), or the whole
    *  photo again with null. The full resolution is decoded the first time; windows

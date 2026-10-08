@@ -122,6 +122,7 @@ type GainBits = [u32; 3];
 pub(super) fn cached_retouch(
     source: &LinearImage,
     removals: &[crate::remove::Removal],
+    fill: Option<&Arc<crate::remove::Fill>>,
     spots: &[crate::retouch::Spot],
     cancel: &dyn Cancellation,
 ) -> Result<Arc<LinearImage>, RenderError> {
@@ -149,6 +150,8 @@ pub(super) fn cached_retouch(
         source_key(source),
         std::iter::once(removals.len() as u32)
             .chain(removal_bits)
+            // A fill made at full resolution, by its identity (two words of it).
+            .chain(fill.map_or([0, 0], |f| [f.id() as u32, (f.id() >> 32) as u32]))
             .chain(spots.iter().flat_map(|s| {
                 [
                     s.kind as u32,
@@ -171,10 +174,13 @@ pub(super) fn cached_retouch(
     {
         return Ok(Arc::clone(image));
     }
-    let image = Arc::new(if removals.is_empty() {
+    let image = Arc::new(if removals.is_empty() && fill.is_none() {
         crate::retouch::retouch(source, spots)
     } else {
-        let filled = crate::remove::remove(source, removals, cancel)?;
+        let filled = match fill {
+            Some(fill) => fill.apply(source),
+            None => crate::remove::remove(source, removals, cancel)?,
+        };
         if spots.is_empty() {
             filled
         } else {

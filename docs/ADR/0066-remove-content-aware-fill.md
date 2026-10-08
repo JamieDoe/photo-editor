@@ -205,13 +205,37 @@ reads as a seam.
 5. **Not addressed:** copied structure in large holes (the train over the table's
    edge) is unchanged. That needs the hidden structure to exist elsewhere, or a learned
    fill.
+6. **Smooth areas (ADR 0070):** viewed at 100 %, fills in smooth areas (a defocused
+   background) still showed the hole's outline as a crisp ring.
+   - **Why the ring correction missed it:** the patches matched at the hole's edge
+     predicted the photo there well, so the difference came out near zero. A few
+     pixels in, patches from a darker place took over, leaving a step just inside the
+     edge.
+   - **The fix:** where the photo around the edge is smooth, the correction also
+     compares averages across the edge: the photo's within 6 px outside against the
+     fill's within 6 px inside, measured from the hole pixels near the edge. Smooth
+     means a local variance below 0.0004 (in square roots of linear light, with a
+     steep Gaussian fall-off). The fill side must be smooth too.
+   - **Detailed areas** keep the prediction-based comparison, weighted the other way.
+     In a detailed area, averages across an edge mean little: the fill may rightly
+     carry fur on one side and wall on the other. Measured there, they smeared dark
+     fur into a plain wall.
+   - **Where smoothness is measured:** on the ring outside, where every window is at
+     least half photo. A window inside may hold only a corner of photo, too little to
+     judge by: there, stripes passed for smooth.
+   - **Cost:** the fill takes 10–20 % longer (PERFORMANCE §48).
+   - **Tests:** the existing tests still pass (stripes still continue across the
+     hole, and the tone still follows its edge). On the Nikon Z 6, a removal over a
+     defocused map no longer shows its outline at either size, and one at the edge of
+     the fur is as clean as before.
 
 ## Consequences
 
 - **Adding to a removal** (painting more onto a selected one) is not offered: each
   stroke is its own removal. Strokes that overlap still fill as one area, since a
   later removal sees the earlier fill.
-- **Previews:** the fill differs in detail between preview sizes and export, though not
-  in structure (the same is true of noise reduction and sharpening).
+- **Previews:** fills made at different sizes differed, in structure as well as
+  detail, which zooming made plain. Since ADR 0070, an open photo's removals are filled
+  once at full resolution and that fill is shown, scaled, at every size.
 - **A learned fill** (a local ONNX model, PRODUCT's AI subsystem) could replace the
   algorithm for hard cases, behind the same `Removal`.

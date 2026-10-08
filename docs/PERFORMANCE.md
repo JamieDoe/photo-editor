@@ -969,6 +969,22 @@ drag. While it runs (on the render's background lane) it can be cancelled.
   4.06–4.15 s on the 61 MP file. Over the whole work region it had cost about 0.5 s
   more.
 
+**Smooth-area edge matching (ADR 0066 §6, 2026-10-08):** the same bench, one run. Per
+camera, small / wire / person, preview and then full size:
+
+| File | Small | Wire | Person |
+|---|---|---|---|
+| Canon EOS R6 | 13 / 25 ms | 188 / 503 ms | 297 ms / 1.30 s |
+| Fujifilm X-T3 | 14 / 28 ms | 214 / 620 ms | 409 ms / 1.79 s |
+| Nikon Z 6 | 14 / 29 ms | 228 / 568 ms | 427 ms / 1.74 s |
+| Ricoh GR III | 14 / 26 ms | 207 / 581 ms | 388 ms / 1.71 s |
+| Sony A7 III | 14 / 26 ms | 225 / 600 ms | 377 ms / 1.59 s |
+| Sony A7R IV | 25 / 60 ms | 445 ms / 1.27 s | 1.08 s / 4.61 s |
+
+That is about 10–20 % over the earlier runs (on a noisy machine). Applying a
+full-resolution fill to the preview-sized image (ADR 0070) takes 0.8–1.5 ms, and
+1.9–3.4 ms for the 61 MP file.
+
 ## 49. Export size estimate (ADR 0068)
 
 `bench --estimate`: each camera file exported for real and estimated from a ~1,024 px
@@ -1001,6 +1017,10 @@ Release self-test, Nikon Z 6 (6048×4024), through IPC, for a 2000×1200 window:
 | The same, panned by 160 px | 25 ms |
 | Clarity, texture and a straightened crop: first window (frames the whole full-resolution source) | 124 ms |
 | The same edit, panned | 35 ms |
+
+**Removals (ADR 0070):** the self-test's full-resolution fill of a stroke 2 % of the
+diagonal took 1.4 s (with the full resolution already decoded). After it, a whole
+detail frame using it rendered in 15 ms, and an 800×600 window in 23 ms.
 
 The full-resolution source takes 146 MB (16-bit RGB) while the photo is open, counted
 in the open-images budget. Rendering a window costs its rows at the output's full

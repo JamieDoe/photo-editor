@@ -40,6 +40,8 @@ describe("decodeFrame", () => {
     expect(f.pixels[0]).toBe(7);
     expect(decodeFrame(makeFrame(3, 2, 0, 1)).histogram).toBeNull();
     expect(f.window).toBeNull();
+    expect(f.fillPending).toBe(false);
+    expect(decodeFrame(makeFrame(1, 1, 8, 0)).fillPending).toBe(true);
   });
 
   it("rejects truncated or inconsistent frames", () => {

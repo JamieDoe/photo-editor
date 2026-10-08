@@ -273,9 +273,10 @@ impl Engine {
         let level_index = image.pyramid.select_index(min_edge);
         let level = Arc::clone(&image.pyramid.levels()[level_index]);
         let as_shot_white = image.as_shot_white;
+        let fill = FillState::of(&image, &recipe);
         let key = RenderKey::new(
             image.source_id,
-            &recipe.canonical_bytes(),
+            &fill.keyed(recipe.canonical_bytes()),
             level.width(),
             level.height(),
             RGBA_FORMAT_TAG,
@@ -314,6 +315,7 @@ impl Engine {
                 render_ms: 0.0,
                 full_size: full_output,
                 window: None,
+                fill_pending: fill.pending(),
             };
             return JobHandle::ready(self.jobs.next_id(), Ok(frame));
         }
@@ -323,7 +325,7 @@ impl Engine {
         let spec = JobSpec::new(Lane::Interactive, priority, "preview").superseding(supersede_key);
         self.jobs.submit(spec, move |token| {
             let t0 = Instant::now();
-            let plan = RenderPlan::from_recipe(&recipe, as_shot_white);
+            let plan = fill.plan(&recipe, as_shot_white);
             let out = shared
                 .renderer
                 .render(&plan, &level, PixelFormat::Rgba8, token)?;
@@ -343,6 +345,7 @@ impl Engine {
                 full_size: full_output,
                 histogram,
                 window: None,
+                fill_pending: fill.pending(),
             })
         })
     }
@@ -380,7 +383,8 @@ impl Engine {
                 .saturating_sub((f64::from(y) * s).floor() as u32)
                 .max(1),
         );
-        let mut key_bytes = recipe.canonical_bytes();
+        let fill = FillState::of(&image, &recipe);
+        let mut key_bytes = fill.keyed(recipe.canonical_bytes());
         for v in [scaled.0, scaled.1, scaled.2, scaled.3] {
             key_bytes.extend(v.to_le_bytes());
         }
@@ -423,6 +427,7 @@ impl Engine {
                     full_size: full_output,
                     histogram: None,
                     window,
+                    fill_pending: fill.pending(),
                 }),
             );
         }
@@ -432,7 +437,7 @@ impl Engine {
             .superseding(supersede_key);
         self.jobs.submit(spec, move |token| {
             let t0 = Instant::now();
-            let plan = RenderPlan::from_recipe(&recipe, as_shot_white);
+            let plan = fill.plan(&recipe, as_shot_white);
             let out =
                 shared
                     .renderer
@@ -453,6 +458,7 @@ impl Engine {
                 full_size: full_output,
                 histogram: None,
                 window,
+                fill_pending: fill.pending(),
             })
         })
     }
@@ -478,27 +484,43 @@ impl Engine {
         )
         .superseding(format!("full-resolution-{}", image.0));
         self.jobs.submit(spec, move |token| {
-            if open.full().is_some() {
-                return Ok(());
-            }
+            shared.full_source(&open, token).map(|_| ())
+        })
+    }
+
+    /// Fills `removals` on the open photo at full resolution (ADR 0070), decoding it
+    /// first if need be, so that every view shows the same fill; resolves when renders
+    /// use it. Until then, renders fill at their own size and say so
+    /// ([`PreviewFrame::fill_pending`]). A newer call for the photo replaces one still
+    /// running.
+    pub fn prepare_fill(
+        &self,
+        image: ImageId,
+        removals: Vec<renderer::remove::Removal>,
+    ) -> JobHandle<(), EngineError> {
+        let Some(open) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        let removals = painting(&removals);
+        if removals.is_empty() || open.fill_for(&removals).is_some() {
+            return JobHandle::ready(self.jobs.next_id(), Ok(()));
+        }
+        let shared = Arc::clone(&self.shared);
+        let spec = JobSpec::new(Lane::Background, Priority::VisiblePreview, "removal-fill")
+            .superseding(format!("removal-fill-{}", image.0));
+        self.jobs.submit(spec, move |token| {
+            let full = shared.full_source(&open, token)?;
             let t0 = Instant::now();
-            let decoded = shared.decoders.decode(
-                &open.path,
-                DecodeOptions::new(DecodeScale::Full)
-                    .with_max_threads(rayon::current_num_threads()),
-                token,
-            )?;
-            if token.is_cancelled() {
-                return Err(EngineError::cancelled());
-            }
+            let fill = renderer::remove::Fill::new(&full, &removals, token)?;
             log::info!(
-                "full resolution of {} ({}x{}) decoded in {:.0} ms",
+                "removals of {} filled at full resolution in {:.0} ms",
                 open.path.display(),
-                decoded.image.width(),
-                decoded.image.height(),
                 ms(t0)
             );
-            *open.full.lock().expect("full source lock") = Some(Arc::new(decoded.image));
+            *open.fill.lock().expect("fill lock") = Some((removals, Arc::new(fill)));
             Ok(())
         })
     }
@@ -532,6 +554,7 @@ impl Engine {
             (f64::from(export::estimate::SAMPLE_LONG_EDGE) / kept.max(1e-3)).ceil() as u32;
         let level = Arc::clone(&open.pyramid.levels()[open.pyramid.select_index(min_edge)]);
         let as_shot_white = open.as_shot_white;
+        let fill = FillState::of(&open, &recipe);
         let shared = Arc::clone(&self.shared);
         let spec = JobSpec::new(
             Lane::Interactive,
@@ -540,7 +563,7 @@ impl Engine {
         )
         .superseding("export-estimate");
         self.jobs.submit(spec, move |token| {
-            let plan = RenderPlan::from_recipe(&recipe, as_shot_white);
+            let plan = fill.plan(&recipe, as_shot_white);
             let render_format = if colour_space == export::colour::ExportColourSpace::Srgb {
                 format.pixel_format()
             } else {
@@ -666,6 +689,37 @@ impl Engine {
 }
 
 impl Shared {
+    /// The open photo at full resolution, decoded now (and kept) if it hasn't been.
+    fn full_source(
+        &self,
+        open: &OpenedImage,
+        token: &CancelToken,
+    ) -> Result<Arc<image_core::LinearImage>, EngineError> {
+        let _decoding = open.full_decode.lock().expect("full decode lock");
+        if let Some(full) = open.full() {
+            return Ok(full);
+        }
+        let t0 = Instant::now();
+        let decoded = self.decoders.decode(
+            &open.path,
+            DecodeOptions::new(DecodeScale::Full).with_max_threads(rayon::current_num_threads()),
+            token,
+        )?;
+        if token.is_cancelled() {
+            return Err(EngineError::cancelled());
+        }
+        log::info!(
+            "full resolution of {} ({}x{}) decoded in {:.0} ms",
+            open.path.display(),
+            decoded.image.width(),
+            decoded.image.height(),
+            ms(t0)
+        );
+        let full = Arc::new(decoded.image);
+        *open.full.lock().expect("full source lock") = Some(Arc::clone(&full));
+        Ok(full)
+    }
+
     fn open(
         &self,
         path: &Path,
@@ -762,6 +816,8 @@ impl Shared {
             as_shot_white: info.as_shot_white,
             full_size: (info.full_width, info.full_height),
             full: Mutex::new(None),
+            full_decode: Mutex::new(()),
+            fill: Mutex::new(None),
         });
         let evicted = self.images.lock().expect("images lock").insert(opened);
         if !evicted.is_empty() {
@@ -823,7 +879,17 @@ impl Shared {
             fraction: 0.6,
         });
         let t = Instant::now();
-        let plan = RenderPlan::from_recipe(&req.recipe, decoded.info.as_shot_white);
+        let mut plan = RenderPlan::from_recipe(&req.recipe, decoded.info.as_shot_white);
+        // The open photo's full-resolution fill, once made: a sized export shows the
+        // removals as the viewer does (ADR 0070), not filled again at its own size.
+        if !plan.removals.is_empty() {
+            let open = self
+                .images
+                .lock()
+                .expect("images lock")
+                .by_path(&req.source);
+            plan.removal_fill = open.and_then(|o| o.fill_for(&plan.removals));
+        }
         // Another colour space is converted from a 16-bit render, so the file is
         // rounded once, at its own depth (ADR 0062).
         let render_format = if req.colour_space == export::colour::ExportColourSpace::Srgb {
@@ -959,4 +1025,56 @@ fn capture_facts(m: &raw::PhotoMetadata) -> export::metadata::CaptureFacts {
 
 fn ms(since: Instant) -> f64 {
     since.elapsed().as_secs_f64() * 1000.0
+}
+
+/// The removals of `removals` that paint something, as render plans keep them.
+fn painting(removals: &[renderer::remove::Removal]) -> Vec<renderer::remove::Removal> {
+    removals
+        .iter()
+        .map(renderer::remove::Removal::sanitized)
+        .filter(|r| !r.is_noop())
+        .collect()
+}
+
+/// Where a render's removals come from (ADR 0070).
+enum FillState {
+    /// No removals.
+    None,
+    /// The full-resolution fill isn't made yet: filled at the rendered size.
+    Pending,
+    /// The full-resolution fill, scaled.
+    Ready(Arc<renderer::remove::Fill>),
+}
+
+impl FillState {
+    fn of(open: &OpenedImage, recipe: &EditRecipe) -> Self {
+        let removals = painting(&recipe.removals);
+        if removals.is_empty() {
+            return Self::None;
+        }
+        open.fill_for(&removals).map_or(Self::Pending, Self::Ready)
+    }
+
+    fn pending(&self) -> bool {
+        matches!(self, Self::Pending)
+    }
+
+    /// `bytes` (a render's cache key) marked with where its removals come from, so a
+    /// render with the full-resolution fill never answers for one without.
+    fn keyed(&self, mut bytes: Vec<u8>) -> Vec<u8> {
+        bytes.push(match self {
+            Self::None => 0,
+            Self::Pending => 1,
+            Self::Ready(_) => 2,
+        });
+        bytes
+    }
+
+    fn plan(&self, recipe: &EditRecipe, white: Option<image_core::Chromaticity>) -> RenderPlan {
+        let mut plan = RenderPlan::from_recipe(recipe, white);
+        if let Self::Ready(fill) = self {
+            plan.removal_fill = Some(Arc::clone(fill));
+        }
+        plan
+    }
 }

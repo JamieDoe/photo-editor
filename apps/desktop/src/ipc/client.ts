@@ -38,6 +38,7 @@ import type { PreviewRequestDto } from "./generated/PreviewRequestDto";
 import type { QuitRequestedDto } from "./generated/QuitRequestedDto";
 import type { SelfTestConfigDto } from "./generated/SelfTestConfigDto";
 import type { Settings } from "./generated/Settings";
+import type { Removal } from "./generated/Removal";
 import type { Spot } from "./generated/Spot";
 import type { SpotKind } from "./generated/SpotKind";
 import type { SettingsViewDto } from "./generated/SettingsViewDto";
@@ -69,6 +70,10 @@ export async function renderPreview(request: PreviewRequestDto): Promise<Preview
 /** Decodes the open photo at full resolution for zoom (ADR 0070); resolves when
  *  window renders can use it. */
 export const prepareFull = (imageId: number) => invoke<null>("prepare_full", { imageId });
+
+/** Fills the open photo's removals at full resolution (ADR 0070), so every view shows
+ *  the same fill; resolves when renders use it. */
+export const prepareFill = (imageId: number, removals: Removal[]) => invoke<null>("prepare_fill", { imageId, removals });
 
 /** A synthetic cancellation, for responses that became obsolete on the UI side. */
 export const staleError = (): IpcError => ({ kind: "cancelled", message: "stale", reference: null });

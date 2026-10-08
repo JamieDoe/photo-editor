@@ -16,9 +16,10 @@
 //!   split into fixed bands of rows. The fill is the same on any machine, with any
 //!   number of cores.
 //! - **Placement:** strokes are in the source photo's own coordinates, like spots, so a
-//!   removal stays on what it covers whatever the crop. The fill is computed at the
-//!   resolution rendered (a preview level or the full image): previews and exports
-//!   agree in structure, if not pixel for pixel.
+//!   removal stays on what it covers whatever the crop. A fill made at one size differs
+//!   from one made at another, so an open photo's removals are filled once at full
+//!   resolution ([`Fill`]) and shown scaled at every size (ADR 0070); until then, and
+//!   for photos that are not open, the fill is made at the size rendered.
 
 use image_core::{Cancellation, LinearImage};
 use rayon::prelude::*;
@@ -84,6 +85,147 @@ pub fn remove(
         }
     }
     Ok(LinearImage::new(image.width(), image.height(), data).expect("same size as the source"))
+}
+
+/// Removals filled once on the full-resolution photo, to show at any size (ADR 0070).
+/// Fills made at different sizes differ (each finds its own patches), so a view of the
+/// photo at one size and another of it at 100 % would not agree; this one fill, scaled,
+/// serves them all. It holds what the fill changed: per pixel of the area it touched,
+/// the change in linear light.
+pub struct Fill {
+    /// Identifies the fill for caches.
+    id: u64,
+    full_size: (u32, u32),
+    /// The area the fill changed, in full-resolution pixels: x, y, width, height.
+    area: (u32, u32, u32, u32),
+    /// The change per pixel of `area` and channel (in `u16` linear units).
+    change: Vec<f32>,
+}
+
+impl std::fmt::Debug for Fill {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Fill")
+            .field("id", &self.id)
+            .field("full_size", &self.full_size)
+            .field("area", &self.area)
+            .finish_non_exhaustive()
+    }
+}
+
+impl PartialEq for Fill {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
+}
+
+impl Fill {
+    /// `removals` filled on `full`, the photo at full resolution.
+    pub fn new(
+        full: &LinearImage,
+        removals: &[Removal],
+        cancel: &dyn Cancellation,
+    ) -> Result<Self, RenderError> {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let filled = remove(full, removals, cancel)?;
+        let (w, h) = (full.width(), full.height());
+        let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
+        for y in 0..h {
+            let (a, b) = (full.row(y), filled.row(y));
+            if a == b {
+                continue;
+            }
+            let first = a.iter().zip(b).position(|(p, q)| p != q).unwrap_or(0) as u32 / 3;
+            let last = a.iter().zip(b).rposition(|(p, q)| p != q).unwrap_or(0) as u32 / 3;
+            (x0, y0, x1, y1) = (x0.min(first), y0.min(y), x1.max(last + 1), y1.max(y + 1));
+        }
+        let area = if x1 > x0 {
+            (x0, y0, x1 - x0, y1 - y0)
+        } else {
+            (0, 0, 0, 0)
+        };
+        let (ax, ay, aw, ah) = area;
+        let mut change = Vec::with_capacity(aw as usize * ah as usize * 3);
+        for y in ay..ay + ah {
+            let span = (ax * 3) as usize..((ax + aw) * 3) as usize;
+            let (a, b) = (&full.row(y)[span.clone()], &filled.row(y)[span]);
+            change.extend(a.iter().zip(b).map(|(&p, &q)| f32::from(q) - f32::from(p)));
+        }
+        Ok(Self {
+            id: NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            full_size: (w, h),
+            area,
+            change,
+        })
+    }
+
+    /// Identifies the fill for caches: no two fills share it.
+    pub fn id(&self) -> u64 {
+        self.id
+    }
+
+    /// The memory the fill holds.
+    pub fn byte_size(&self) -> usize {
+        self.change.len() * std::mem::size_of::<f32>()
+    }
+
+    /// `image`, the same photo at any size, with the fill: each pixel changed by the
+    /// average change over the full-resolution pixels it covers. At full size, exactly
+    /// the filled photo.
+    pub fn apply(&self, image: &LinearImage) -> LinearImage {
+        let (iw, ih) = (image.width(), image.height());
+        let mut data = image.data().to_vec();
+        let (ax, ay, aw, ah) = self.area;
+        if aw == 0 || ah == 0 {
+            return LinearImage::new(iw, ih, data).expect("same size as the image");
+        }
+        let sx = f64::from(self.full_size.0) / f64::from(iw);
+        let sy = f64::from(self.full_size.1) / f64::from(ih);
+        // The image's pixels covering the area, and the full-resolution span of each.
+        let cover = |a: u32, len: u32, s: f64, n: u32| {
+            let first = (f64::from(a) / s).floor() as u32;
+            let end = ((f64::from(a + len) / s).ceil() as u32).min(n);
+            (first, end)
+        };
+        let (px0, px1) = cover(ax, aw, sx, iw);
+        let (py0, py1) = cover(ay, ah, sy, ih);
+        let span = |p: u32, s: f64, a: u32, len: u32| {
+            let from = ((f64::from(p) * s).round() as u32).max(a);
+            let to = ((f64::from(p + 1) * s).round() as u32).min(a + len);
+            (
+                from,
+                to,
+                ((f64::from(p + 1) * s).round() - (f64::from(p) * s).round()).max(1.0),
+            )
+        };
+        let width = iw as usize * 3;
+        data.par_chunks_mut(width)
+            .enumerate()
+            .skip(py0 as usize)
+            .take((py1 - py0) as usize)
+            .for_each(|(py, row)| {
+                let (fy0, fy1, ny) = span(py as u32, sy, ay, ah);
+                for px in px0..px1 {
+                    let (fx0, fx1, nx) = span(px, sx, ax, aw);
+                    let mut sum = [0.0f32; 3];
+                    for fy in fy0..fy1 {
+                        let base = ((fy - ay) * aw) as usize;
+                        for fx in fx0..fx1 {
+                            let at = (base + (fx - ax) as usize) * 3;
+                            for (s, c) in sum.iter_mut().zip(&self.change[at..at + 3]) {
+                                *s += c;
+                            }
+                        }
+                    }
+                    // Pixels of the span outside the area changed by nothing.
+                    let n = (nx * ny) as f32;
+                    for (c, s) in sum.iter().enumerate() {
+                        let v = &mut row[px as usize * 3 + c];
+                        *v = (f32::from(*v) + s / n).round().clamp(0.0, 65535.0) as u16;
+                    }
+                }
+            });
+        LinearImage::new(iw, ih, data).expect("same size as the image")
+    }
 }
 
 /// Fills the hole `strokes` paint in `data` (linear RGB, `w` × `h`).
@@ -841,15 +983,27 @@ fn vote_at(
     (total > 0.0).then(|| sum.map(|s| s / total))
 }
 
-/// The ring of known pixels around the hole whose difference from the fill's
-/// prediction sets the edge correction.
+/// The ring of known pixels around the hole where the photo is compared with what the
+/// fill predicts there.
 const EDGE_RING: usize = 2;
+/// How far across the hole's edge local averages are compared, in smooth areas.
+const EDGE_REACH: usize = 6;
+/// The photo's local variance (in square roots of linear light) below which an area
+/// counts as smooth: its tone is compared by averages across the edge.
+const SMOOTH_VARIANCE: f32 = 0.0004;
 
 /// The fill matched to its surroundings: patches copied from elsewhere bring their own
-/// brightness and colour, which shows as a seam. Just outside the hole, the photo is
-/// compared with what the matched patches predict there; that difference is spread
-/// smoothly over the hole (pull-push interpolation) and added, as Heal does for spots
-/// (ADR 0054). The texture stays; only its tone follows the edge.
+/// brightness and colour, which shows as a seam. The difference along the hole's edge
+/// is spread smoothly over the hole (pull-push interpolation) and added, as Heal does
+/// for spots (ADR 0054). The texture stays; only its tone follows the edge. The
+/// difference is measured two ways, weighted by how smooth the photo is there:
+///
+/// - **Detailed areas:** just outside the hole, the photo against what the matched
+///   patches predict there. Texture and edges line up, so only tone remains.
+/// - **Smooth areas** (sky, a defocused background), where a step shows most: the
+///   photo's average just outside against the fill's just inside. The prediction
+///   can match the photo at the edge while the fill steps a few pixels in, where
+///   patches from a darker or lighter place take over, leaving the hole's outline.
 fn match_edges(
     level: &Level,
     patches: &Patches,
@@ -857,18 +1011,96 @@ fn match_edges(
     estimate: Vec<[f32; 3]>,
 ) -> Vec<[f32; 3]> {
     let (w, h) = (level.w, level.h);
-    let near = dilate(&level.hole, w, h, EDGE_RING);
+    let ring = dilate(&level.hole, w, h, EDGE_RING);
+    let known: Vec<bool> = level.hole.iter().map(|&in_hole| !in_hole).collect();
+    let band = dilate(&known, w, h, EDGE_REACH);
     let typical = typical_distance(matches);
+    let r = EDGE_REACH as isize;
+    // Sums over the window around `i`: the photo's known pixels (sum, sum of squares,
+    // count) and the fill's (sum, count).
+    let window = |i: usize| {
+        let (x, y) = ((i % w) as isize, (i / w) as isize);
+        let (mut k, mut k2, mut nk) = ([0.0f32; 3], 0.0f32, 0.0f32);
+        let (mut f, mut f2, mut nf) = ([0.0f32; 3], 0.0f32, 0.0f32);
+        for ny in (y - r).max(0)..(y + r + 1).min(h as isize) {
+            for nx in (x - r).max(0)..(x + r + 1).min(w as isize) {
+                let j = ny as usize * w + nx as usize;
+                if level.hole[j] {
+                    let v = estimate[j];
+                    f.iter_mut().zip(v).for_each(|(s, v)| *s += v);
+                    f2 += v.iter().map(|v| v * v).sum::<f32>();
+                    nf += 1.0;
+                } else {
+                    let v = level.image[j];
+                    k.iter_mut().zip(v).for_each(|(s, v)| *s += v);
+                    k2 += v.iter().map(|v| v * v).sum::<f32>();
+                    nk += 1.0;
+                }
+            }
+        }
+        ((k, k2, nk), (f, f2, nf))
+    };
+    // How smooth pixels are, from their sums: 1 when flat, towards 0 with detail.
+    let smoothness = |(k, k2, nk): ([f32; 3], f32, f32)| {
+        if nk == 0.0 {
+            return 1.0;
+        }
+        let mean_square = k.iter().map(|s| (s / nk) * (s / nk)).sum::<f32>();
+        let variance = (k2 / nk - mean_square).max(0.0) / 3.0;
+        (-(variance / SMOOTH_VARIANCE).powi(2)).exp()
+    };
+    // Smoothness is measured on the ring outside, where every window is at least half
+    // photo; a pixel inside takes the least smooth of the ring near it (a window
+    // there may hold only a corner of photo, too little to judge by).
+    let ring_smoothness: Vec<f32> = (0..w * h)
+        .into_par_iter()
+        .map(|i| {
+            if !ring[i] || level.hole[i] {
+                return 1.0;
+            }
+            smoothness(window(i).0)
+        })
+        .collect();
+    let smoothness_near = |i: usize| {
+        let (x, y) = ((i % w) as isize, (i / w) as isize);
+        let mut least = 1.0f32;
+        for ny in (y - r).max(0)..(y + r + 1).min(h as isize) {
+            for nx in (x - r).max(0)..(x + r + 1).min(w as isize) {
+                least = least.min(ring_smoothness[ny as usize * w + nx as usize]);
+            }
+        }
+        least
+    };
     let differences: Vec<([f32; 3], f32)> = (0..w * h)
         .into_par_iter()
         .map(|i| {
-            if !near[i] || level.hole[i] {
+            let outside = ring[i] && !level.hole[i];
+            let inside = level.hole[i] && band[i];
+            if !outside && !inside {
                 return ([0.0; 3], 0.0);
             }
-            match vote_at(level, patches, matches, typical, i) {
-                Some(p) => ([0, 1, 2].map(|c| level.image[i][c] - p[c]), 1.0),
-                None => ([0.0; 3], 0.0),
+            let ((k, _, nk), fill) = window(i);
+            let (f, _, nf) = fill;
+            if nk == 0.0 {
+                return ([0.0; 3], 0.0);
             }
+            // Inside, both sides must be smooth for their averages to compare: a fill
+            // that rightly carries an edge on (fur against a plain wall) is left be.
+            let smooth = if outside {
+                ring_smoothness[i]
+            } else {
+                smoothness_near(i) * smoothness(fill)
+            };
+            if outside {
+                return match vote_at(level, patches, matches, typical, i) {
+                    Some(p) => ([0, 1, 2].map(|c| level.image[i][c] - p[c]), 1.0 - smooth),
+                    None => ([0.0; 3], 0.0),
+                };
+            }
+            if nf == 0.0 {
+                return ([0.0; 3], 0.0);
+            }
+            ([0, 1, 2].map(|c| k[c] / nk - f[c] / nf), smooth)
         })
         .collect();
     if !differences.iter().any(|(_, wt)| *wt > 0.0) {
@@ -877,7 +1109,7 @@ fn match_edges(
     // Only the hole and its ring need the surface: their bounds, not the whole region
     // (whose context band is several times larger).
     let (mut x0, mut y0, mut x1, mut y1) = (w, h, 0, 0);
-    for i in (0..w * h).filter(|&i| near[i]) {
+    for i in (0..w * h).filter(|&i| ring[i]) {
         let (x, y) = (i % w, i / w);
         (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x + 1), y1.max(y + 1));
     }
@@ -1195,6 +1427,58 @@ mod tests {
         assert_eq!(one.data(), four.data());
         assert_eq!(run(4).data(), four.data(), "and on a second run");
         assert_ne!(one.data(), img.data(), "it did fill something");
+    }
+
+    /// `img` halved: each pixel the (rounded) average of the four it covers.
+    fn halved(img: &LinearImage) -> LinearImage {
+        let (w, h) = (img.width() / 2, img.height() / 2);
+        let data = (0..h)
+            .flat_map(|y| (0..w).map(move |x| (x, y)))
+            .flat_map(|(x, y)| {
+                (0..3).map(move |c| {
+                    let at = |xx: u32, yy: u32| f32::from(img.row(yy)[(xx * 3 + c) as usize]);
+                    ((at(2 * x, 2 * y)
+                        + at(2 * x + 1, 2 * y)
+                        + at(2 * x, 2 * y + 1)
+                        + at(2 * x + 1, 2 * y + 1))
+                        / 4.0)
+                        .round() as u16
+                })
+            })
+            .collect();
+        LinearImage::new(w, h, data).unwrap()
+    }
+
+    #[test]
+    fn a_full_resolution_fill_shows_the_same_at_any_size() {
+        let img = image(240, 160, |x, y| {
+            let n = ((x * 7 + y * 13) % 11) as f32 / 11.0;
+            if (x as f32 - 120.0).hypot(y as f32 - 80.0) < 14.0 {
+                [0.9, 0.05, 0.05]
+            } else {
+                [0.2 + 0.2 * n, 0.3 + 0.1 * ((x / 8) % 2) as f32, 0.25]
+            }
+        });
+        let removals = [dab(&img, 120.0, 80.0, 18.0)];
+        let fill = Fill::new(&img, &removals, &NeverCancel).unwrap();
+        // At full size: exactly the filled photo.
+        let filled = remove(&img, &removals, &NeverCancel).unwrap();
+        assert_eq!(fill.apply(&img).data(), filled.data());
+        // At half size: the filled photo halved (to rounding), not a fill of its own,
+        // and nothing changes away from the hole.
+        let half = halved(&img);
+        let shown = fill.apply(&half);
+        let want = halved(&filled);
+        let worst = shown
+            .data()
+            .iter()
+            .zip(want.data())
+            .map(|(a, b)| a.abs_diff(*b))
+            .max()
+            .unwrap();
+        assert!(worst <= 1, "{worst}");
+        assert_eq!(shown.row(5), half.row(5));
+        assert_ne!(shown.data(), half.data(), "it did fill something");
     }
 
     #[test]

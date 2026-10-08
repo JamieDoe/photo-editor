@@ -93,6 +93,10 @@ pub struct PreviewFrame {
     /// shows, `x`, `y`, `width`, `height` in its pixels (fractional when rendered from
     /// a smaller level).
     pub window: Option<[f64; 4]>,
+    /// The removals were filled at this render's size, as a stand-in until their
+    /// full-resolution fill is made ([`Engine::prepare_fill`](crate::Engine::prepare_fill),
+    /// ADR 0070).
+    pub fill_pending: bool,
 }
 
 #[derive(Debug, Clone)]

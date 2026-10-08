@@ -20,6 +20,11 @@ pub(crate) struct OpenedImage {
     /// The photo at full resolution, decoded on demand for viewing at 100 % (ADR 0070)
     /// and dropped with the image.
     pub full: Mutex<Option<Arc<image_core::LinearImage>>>,
+    /// Held while the full resolution decodes, so two jobs never decode it twice.
+    pub full_decode: Mutex<()>,
+    /// The removals' fill made at full resolution (ADR 0070), for the removals it was
+    /// made for: every view of the photo shows it, scaled.
+    pub fill: Mutex<Option<(Vec<renderer::remove::Removal>, Arc<renderer::remove::Fill>)>>,
 }
 
 impl OpenedImage {
@@ -28,8 +33,22 @@ impl OpenedImage {
         self.full.lock().expect("full source lock").clone()
     }
 
+    /// The full-resolution fill of `removals`, if it has been made.
+    pub fn fill_for(
+        &self,
+        removals: &[renderer::remove::Removal],
+    ) -> Option<Arc<renderer::remove::Fill>> {
+        let fill = self.fill.lock().expect("fill lock");
+        fill.as_ref()
+            .filter(|(made_for, _)| made_for.as_slice() == removals)
+            .map(|(_, fill)| Arc::clone(fill))
+    }
+
     fn byte_size(&self) -> usize {
-        self.pyramid.byte_size() + self.full().map_or(0, |f| f.byte_size())
+        let fill = self.fill.lock().expect("fill lock");
+        self.pyramid.byte_size()
+            + self.full().map_or(0, |f| f.byte_size())
+            + fill.as_ref().map_or(0, |(_, f)| f.byte_size())
     }
 }
 
@@ -61,6 +80,11 @@ impl OpenImages {
         let image = self.images.remove(pos);
         self.images.push(Arc::clone(&image));
         Some(image)
+    }
+
+    /// The open image read from `path`, if any (without making it the most recent).
+    pub fn by_path(&self, path: &std::path::Path) -> Option<Arc<OpenedImage>> {
+        self.images.iter().find(|i| i.path == path).cloned()
     }
 
     pub fn remove(&mut self, id: ImageId) -> Option<Arc<OpenedImage>> {

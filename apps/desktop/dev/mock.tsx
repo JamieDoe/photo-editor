@@ -253,6 +253,8 @@ mockIPC((cmd, payload) => {
       if (!window) return placeholderFrame(600, 400);
       return new Promise((r) => setTimeout(() => r(windowFrame(window)), 60));
     }
+    case "prepare_fill":
+      return null;
     case "prepare_full":
       return new Promise((r) => setTimeout(() => r(null), 400));
     case "self_test_config":

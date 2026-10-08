@@ -8,7 +8,7 @@ use std::time::Instant;
 use image_core::{LinearImage, NeverCancel};
 use raw::{DecodeOptions, DecodeScale, DecoderRegistry};
 use renderer::masks::brush::Stroke;
-use renderer::remove::{Removal, remove};
+use renderer::remove::{Fill, Removal, remove};
 use serde_json::{Value, json};
 
 pub fn run(files: &[PathBuf]) -> Value {
@@ -70,10 +70,22 @@ fn one(path: &Path) -> Value {
     let cases: Vec<Value> = cases()
         .iter()
         .map(|(case, removal)| {
+            // The full-resolution fill shown at the preview's size (ADR 0070).
+            let fill =
+                Fill::new(&full, std::slice::from_ref(removal), &NeverCancel).expect("filled");
+            let mut applies: Vec<f64> = (0..3)
+                .map(|_| {
+                    let t = Instant::now();
+                    let _ = fill.apply(&preview);
+                    t.elapsed().as_secs_f64() * 1e3
+                })
+                .collect();
+            applies.sort_by(f64::total_cmp);
             json!({
                 "case": case,
                 "preview_ms": timed(&preview, removal),
                 "full_ms": timed(&full, removal),
+                "apply_to_preview_ms": (applies[1] * 10.0).round() / 10.0,
             })
         })
         .collect();
