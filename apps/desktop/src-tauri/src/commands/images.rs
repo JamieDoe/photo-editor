@@ -206,6 +206,17 @@ pub async fn render_preview(
 
 /// Decodes the open photo at full resolution (ADR 0070) for viewing it at 100 %;
 /// resolves when window renders can use it.
+/// Auto tone (ADR 0071): the open photo's tone sliders as a starting point, for the
+/// photo as `recipe` edits it.
+#[tauri::command]
+pub async fn auto_tone(
+    state: State<'_, AppState>,
+    image_id: u64,
+    recipe: renderer::EditRecipe,
+) -> IpcResult<renderer::auto_tone::AutoTone> {
+    wait(state.engine.auto_tone(ImageId(image_id), &recipe)).await
+}
+
 /// Fills `removals` on the open photo at full resolution (ADR 0070), so every view
 /// shows the same fill; resolves when renders use it.
 #[tauri::command]

@@ -8,6 +8,7 @@
 //!   [`CpuRenderer`] is the reference (and currently only production) backend.
 
 pub mod adjustments;
+pub mod auto_tone;
 mod backend;
 pub mod chromatic;
 pub mod cpu;
