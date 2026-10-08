@@ -842,3 +842,34 @@ fn windows_come_from_the_smallest_source_sharp_enough_for_the_zoom() {
     assert_eq!(size(&quarter), (150, 100));
     assert_eq!(quarter.window, Some([1000.0, 600.0, 600.0, 400.0]));
 }
+
+#[test]
+fn auto_tone_finds_the_tone_sliders_afresh_from_a_small_sample() {
+    let dir = fixtures::TempDir::new("engine-auto-tone");
+    let path = write(
+        dir.path(),
+        "chart.jpg",
+        fixtures::chart_jpeg(1600, 1000, 90),
+    );
+    let engine = engine();
+    let id = engine.open(&path).wait().unwrap().id;
+    let normal = engine.auto_tone(id, &EditRecipe::default()).wait().unwrap();
+    // The edit's own tone sliders don't matter: Auto replaces them.
+    let edited = EditRecipe {
+        exposure: -2.0,
+        highlights: 60.0,
+        ..Default::default()
+    };
+    let found = engine.auto_tone(id, &edited).wait().unwrap();
+    assert_eq!(found, normal, "the tone sliders are found afresh");
+    for v in [
+        normal.contrast,
+        normal.highlights,
+        normal.shadows,
+        normal.whites,
+        normal.blacks,
+        normal.vibrance,
+    ] {
+        assert!((-100.0..=100.0).contains(&v), "{normal:?}");
+    }
+}

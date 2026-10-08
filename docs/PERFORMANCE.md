@@ -1030,3 +1030,21 @@ The full-resolution source takes 146 MB (16-bit RGB) while the photo is open, co
 in the open-images budget. Rendering a window costs its rows at the output's full
 width, then a crop of the columns. For a viewer-sized window, that is a fraction of a
 whole full-resolution render.
+
+## 51. Auto tone (ADR 0071)
+
+`bench --auto`: Auto on each camera file from the open photo's 512 px sample, as the
+editor runs it. Median of three runs, release build:
+
+| File | Time | Exposure | Contrast | Highlights | Shadows | Whites | Blacks | Vibrance |
+|---|---|---|---|---|---|---|---|---|
+| Canon EOS R6 | 27 ms | +0.20 | 0 | 0 | 0 | 0 | 0 | +15 |
+| Fujifilm X-T3 | 84 ms | −0.25 | 0 | −18 | 0 | 0 | +12 | +5 |
+| Nikon Z 6 | 19 ms | 0 | 0 | 0 | 0 | +40 | 0 | +10 |
+| Ricoh GR III | 13 ms | 0 | 0 | 0 | 0 | 0 | 0 | +15 |
+| Sony A7 III | 52 ms | −0.15 | 0 | 0 | 0 | −5 | −40 | +20 |
+| Sony A7R IV | 54 ms | +0.05 | 0 | −70 | +26 | 0 | 0 | +20 |
+
+The time follows how many sliders leave their band: each one that does takes about
+nine renders of the sample. The release self-test's run on the Z 6, through IPC,
+took 19 ms.

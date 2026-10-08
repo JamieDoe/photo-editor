@@ -321,3 +321,11 @@ export const FocusIcon = (p: IconProps) => (
     <path d="M5.5 3v10M10.5 3v10" />
   </Icon>
 );
+
+/** Auto (ADR 0071): a wand with sparkles, as in the design. */
+export const WandIcon = (p: IconProps) => (
+  <Icon size={13} {...p}>
+    <path d="M2.5 13.5l8-8 1 1-8 8z" />
+    <path d="M11.5 1.5v2M10.5 2.5h2M14 5v1.5M13.25 5.75h1.5" />
+  </Icon>
+);

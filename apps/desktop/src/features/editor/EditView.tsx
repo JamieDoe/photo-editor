@@ -231,7 +231,31 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
     }
   };
 
-  // ⌘Z undoes, ⇧⌘Z (or ⌘Y) redoes (ADR 0044); ⇧⌘C and ⇧⌘V copy and paste edits, as in
+  // Auto (ADR 0071): the tone sliders as a starting point, measured on the photo as
+  // edited, applied as one step. The newest edit is the one it is applied to.
+  const [autoBusy, setAutoBusy] = useState(false);
+  const recipeRef = useRef(recipe);
+  recipeRef.current = recipe;
+  const runAuto = async () => {
+    if (!image || !recipe || autoBusy) return;
+    setAutoBusy(true);
+    try {
+      const tone = await ipc.autoTone(image.id, recipe);
+      const latest = recipeRef.current;
+      if (latest && editor.image?.id === image.id) {
+        editor.setRecipe({ ...latest, ...tone }, "Auto tone");
+        notify("Auto tone applied");
+      }
+    } catch (e) {
+      if (!ipc.isCancellation(e)) editor.reportError(e);
+    } finally {
+      setAutoBusy(false);
+    }
+  };
+  const autoRef = useRef(runAuto);
+  autoRef.current = runAuto;
+
+  // ⌘Z undoes, ⇧⌘Z (or ⌘Y) redoes (ADR 0044); ⇧⌘U is Auto, as in Lightroom; ⇧⌘C and ⇧⌘V copy and paste edits, as in
   // Lightroom (⌘C and ⌘V stay with text); ⌘+ and ⌘− zoom in and out a level, ⌘0 fits
   // (ADR 0070). Text fields keep their own keys.
   const { undo, redo } = editor;
@@ -247,6 +271,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
       else if (key === "y") redo();
       else if (key === "c" && e.shiftKey) copyRef.current();
       else if (key === "v" && e.shiftKey) void pasteRef.current();
+      else if (key === "u" && e.shiftKey) void autoRef.current();
       else if ((key === "=" || key === "+") && zoomable) zoomModel.step(1);
       else if (key === "-" && zoomable) zoomModel.step(-1);
       else if (key === "0" && zoomable) zoomModel.fit();
@@ -406,7 +431,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
           details={exif}
           emptyDetails={image ? "No exposure details" : ""}
         />
-        <PresetStrip editor={editor} recipe={recipe} disabled={!image} />
+        <PresetStrip editor={editor} recipe={recipe} disabled={!image} auto={{ run: () => void runAuto(), busy: autoBusy }} />
         <div className="panel-scroll scroll">
           {info && recipe && (
             <AdjustmentPanel

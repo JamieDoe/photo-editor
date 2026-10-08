@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { ExportIcon, ImportIcon, MoreIcon, PencilIcon, RefreshIcon, TrashIcon } from "../../components/icons";
+import { ExportIcon, ImportIcon, MoreIcon, PencilIcon, RefreshIcon, TrashIcon, WandIcon } from "../../components/icons";
 import { Popover, PopoverHeader as SharedHeader, PopoverIcon } from "../../components/Popover";
 import * as ipc from "../../ipc/client";
 import type { PreviewFrame } from "../../ipc/frame";
@@ -141,7 +141,18 @@ type Open =
  * keeps the current look as a preset; a saved preset's ⋯ opens its details: its
  * name, updating it to the current look, and deleting it.
  */
-export function PresetStrip({ editor, recipe, disabled }: { editor: Editor; recipe: EditRecipe | null; disabled: boolean }) {
+export function PresetStrip({
+  editor,
+  recipe,
+  disabled,
+  auto,
+}: {
+  editor: Editor;
+  recipe: EditRecipe | null;
+  disabled: boolean;
+  /** The design's Auto (ADR 0071): runs auto tone; `busy` while it works. */
+  auto: { run: () => void; busy: boolean };
+}) {
   const { presets, create, rename, update, remove, exportFile, importFiles } = usePresets(editor.reportError);
   const previewOf = usePresetPreviews(editor, recipe, presets);
   const [open, setOpen] = useState<Open>(null);
@@ -181,6 +192,15 @@ export function PresetStrip({ editor, recipe, disabled }: { editor: Editor; reci
           }}
         >
           Save…
+        </button>
+        <button
+          className="auto-tone"
+          disabled={disabled || !recipe || auto.busy}
+          title="Analyse the photo and set a starting point (⇧⌘U)"
+          onClick={auto.run}
+        >
+          <WandIcon />
+          Auto
         </button>
       </div>
       <div className="preset-strip" role="list">
