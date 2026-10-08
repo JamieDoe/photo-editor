@@ -38,6 +38,7 @@ const WATERMARK_POSITIONS: ReadonlyArray<{ id: WatermarkPosition; label: string 
   { id: "centre", label: "Centre" },
   { id: "bottomLeft", label: "Bottom left" },
   { id: "bottomRight", label: "Bottom right" },
+  { id: "repeat", label: "Repeat across the photo" },
 ];
 const WATERMARK_SIZES: ReadonlyArray<{ id: WatermarkSize; short: string; label: string }> = [
   { id: "small", short: "S", label: "Small" },
@@ -45,8 +46,16 @@ const WATERMARK_SIZES: ReadonlyArray<{ id: WatermarkSize; short: string; label: 
   { id: "large", short: "L", label: "Large" },
 ];
 
-/** A frame with a dot where the watermark sits. */
+/** A frame with a dot where the watermark sits, or slanted dashes across it. */
 function PositionIcon({ at }: { at: WatermarkPosition }) {
+  if (at === "repeat") {
+    return (
+      <svg className="icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
+        <path d="M4 7l3-2M9 12l3-2M4 12.2l2-1.3M10 5.2l2-1.3" />
+      </svg>
+    );
+  }
   const [x, y] = {
     topLeft: [4.5, 4.5],
     topRight: [11.5, 4.5],

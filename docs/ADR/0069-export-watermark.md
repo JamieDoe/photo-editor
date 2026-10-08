@@ -36,8 +36,15 @@ A font crate and a font file would add a dependency and a download.
    row under the switches when on:
    - **Text:** up to 120 characters. The placeholder suggests "© 2026 Your name"; with
      no text nothing is laid on.
-   - **Position:** five small frame icons for top left, top right, centre, bottom left
-     and bottom right (the default).
+   - **Position:** six small frame icons: top left, top right, centre, bottom left,
+     bottom right (the default), and **Repeat**. Repeat was added at the photographer's
+     request after trying the corners. It tiles the text across the whole photo, for
+     proofs:
+     - slanted 30° (rising to the right), turned about the photo's centre;
+     - in rows three text-heights apart, with every other row shifted half a repeat,
+       and a gap of 60 % of the text's width between repeats along a row;
+     - laid at 35 % rather than 70 %, so the photo still shows;
+     - S/M/L set the text's size as for the other positions.
    - **Size:** S, M (the default) or L.
    - **Defaults:** off, and remembered like the dialog's other choices. Read leniently,
      field by field; overlong text is cut.
@@ -52,7 +59,10 @@ A font crate and a font file would add a dependency and a download.
      - a half-transparent drawing lays half as much;
      - 16-bit stays 16-bit;
      - a long line is kept within the margins;
-     - a bad PNG is an error.
+     - a bad PNG is an error;
+     - **Repeat:** text covers every quarter of the photo with clear gaps between, at
+       the lighter strength and never the single watermark's; it is slanted (cover
+       comes and goes along a horizontal line); 16-bit is covered too.
    - **Settings:** off by default, a stored watermark loads, unknown values fall back,
      and long text is cut.
    - **The drawing (dev mock in the browser):** a PNG of the text is made; none when
@@ -62,7 +72,10 @@ A font crate and a font file would add a dependency and a download.
      - the UI draws "© 2026 Self-test" and the queue lays it on a 1,350 px JPEG of the
        Nikon Z 6 (180,572 bytes against 171,417 plain);
      - looked at, it sits in the bottom right at the large size, legible on the wooden
-       table.
+       table;
+     - the same with Repeat at medium makes a larger file (211,373 bytes). Looked at,
+       the text runs diagonally across the whole photo in staggered rows, light enough
+       that the photo reads clearly.
 
 ## Deviations from the design
 

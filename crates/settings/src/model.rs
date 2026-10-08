@@ -206,6 +206,8 @@ pub enum WatermarkPosition {
     #[default]
     BottomRight,
     Centre,
+    /// Repeated across the photo, on a slant.
+    Repeat,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

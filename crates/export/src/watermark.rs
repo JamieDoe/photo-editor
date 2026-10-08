@@ -1,5 +1,5 @@
 //! Watermarks (ADR 0069): a line of text, such as "© 2026 Jamie", in a corner of an
-//! export.
+//! export, or repeated across it.
 //!
 //! The text is drawn by the UI in its own typeface (white with a soft dark shadow, so it
 //! reads on any photo) and handed over once per export as an RGBA PNG. Here it is
@@ -21,6 +21,8 @@ pub enum Position {
     #[default]
     BottomRight,
     Centre,
+    /// Repeated across the whole photo, on a slant, in staggered rows: for proofs.
+    Repeat,
 }
 
 /// How large the text is.
@@ -48,6 +50,14 @@ impl Size {
 const MARGIN: f32 = 0.03;
 /// How strongly the drawing is laid over the photo.
 pub const OPACITY: f32 = 0.7;
+/// Repeated over the whole photo it is laid lighter, so the photo still shows.
+pub const REPEAT_OPACITY: f32 = 0.35;
+/// The repeated text's slant (radians; rising to the right, 30°).
+const REPEAT_ANGLE: f32 = -std::f32::consts::FRAC_PI_6;
+/// The space between repeats: along a row, a share of the text's width; between rows,
+/// a multiple of its height.
+const REPEAT_GAP: f32 = 0.6;
+const REPEAT_ROW_PITCH: f32 = 3.0;
 
 /// A watermark, ready to lay on exports.
 #[derive(Debug, Clone, PartialEq)]
@@ -97,6 +107,42 @@ impl Watermark {
         })
     }
 
+    /// Where photo pixels look in the drawing, and how strongly, on a `w` x `h` photo.
+    fn layout(&self, w: usize, h: usize) -> Layout {
+        if self.position == Position::Repeat {
+            let short = w.min(h) as f32;
+            let scale = (self.size.share() * short / self.height as f32).max(1e-3);
+            let (dw, dh) = (self.width as f32 * scale, self.height as f32 * scale);
+            return Layout {
+                rows: 0..h,
+                cols: 0..w,
+                opacity: REPEAT_OPACITY,
+                map: Mapping::Tiled {
+                    centre: (w as f32 / 2.0, h as f32 / 2.0),
+                    // Photo to tile space turns by minus the slant.
+                    cos: (-REPEAT_ANGLE).cos(),
+                    sin: (-REPEAT_ANGLE).sin(),
+                    scale,
+                    tile: (dw * (1.0 + REPEAT_GAP), dh * REPEAT_ROW_PITCH),
+                },
+            };
+        }
+        let (x0, y0, scale) = self.placement(w, h);
+        let (x1, y1) = (
+            x0 + self.width as f32 * scale,
+            y0 + self.height as f32 * scale,
+        );
+        Layout {
+            rows: (y0.floor().max(0.0) as usize)..(y1.ceil().min(h as f32) as usize),
+            cols: (x0.floor().max(0.0) as usize)..(x1.ceil().min(w as f32) as usize),
+            opacity: OPACITY,
+            map: Mapping::Once {
+                origin: (x0, y0),
+                scale,
+            },
+        }
+    }
+
     /// Where the drawing goes on a `w` x `h` photo: its top-left corner and its scale.
     fn placement(&self, w: usize, h: usize) -> (f32, f32, f32) {
         let short = w.min(h) as f32;
@@ -112,7 +158,7 @@ impl Watermark {
             Position::TopRight => (right, top),
             Position::BottomLeft => (left, bottom),
             Position::BottomRight => (right, bottom),
-            Position::Centre => ((w as f32 - dw) / 2.0, (h as f32 - dh) / 2.0),
+            Position::Centre | Position::Repeat => ((w as f32 - dw) / 2.0, (h as f32 - dh) / 2.0),
         };
         (x, y, scale)
     }
@@ -151,17 +197,67 @@ impl Watermark {
     }
 }
 
+/// Which photo pixels a watermark covers, how strongly, and how they map into it.
+struct Layout {
+    rows: std::ops::Range<usize>,
+    cols: std::ops::Range<usize>,
+    opacity: f32,
+    map: Mapping,
+}
+
+enum Mapping {
+    /// One drawing, its top-left corner at `origin`, scaled by `scale`.
+    Once { origin: (f32, f32), scale: f32 },
+    /// Repeated: turned about the photo's `centre`, then tiled `tile` apart (photo
+    /// pixels), every other row shifted half a tile.
+    Tiled {
+        centre: (f32, f32),
+        cos: f32,
+        sin: f32,
+        scale: f32,
+        tile: (f32, f32),
+    },
+}
+
+impl Mapping {
+    /// Photo point (`x`, `y`) in the drawing's pixels.
+    fn to_drawing(&self, x: f32, y: f32) -> (f32, f32) {
+        match *self {
+            Self::Once { origin, scale } => ((x - origin.0) / scale, (y - origin.1) / scale),
+            Self::Tiled {
+                centre,
+                cos,
+                sin,
+                scale,
+                tile,
+            } => {
+                let (dx, dy) = (x - centre.0, y - centre.1);
+                let (u, v) = (dx * cos - dy * sin, dx * sin + dy * cos);
+                let row = (v / tile.1).floor();
+                let shift = if row.rem_euclid(2.0) == 1.0 {
+                    tile.0 / 2.0
+                } else {
+                    0.0
+                };
+                (
+                    (u + shift).rem_euclid(tile.0) / scale,
+                    v.rem_euclid(tile.1) / scale,
+                )
+            }
+        }
+    }
+}
+
 /// `image` with `watermark` laid over it. The image's samples are blended as written
 /// (display-encoded), as the drawing's are.
 pub fn apply(image: &OutputImage, watermark: &Watermark) -> OutputImage {
     let (w, h) = (image.width() as usize, image.height() as usize);
-    let (x0, y0, scale) = watermark.placement(w, h);
-    let (x1, y1) = (
-        x0 + watermark.width as f32 * scale,
-        y0 + watermark.height as f32 * scale,
-    );
-    let rows = (y0.floor().max(0.0) as usize)..(y1.ceil().min(h as f32) as usize);
-    let cols = (x0.floor().max(0.0) as usize)..(x1.ceil().min(w as f32) as usize);
+    let Layout {
+        rows,
+        cols,
+        opacity,
+        map,
+    } = watermark.layout(w, h);
     let format = image.format();
     let channels = format.channels();
     // Each pixel's cover: the drawing averaged over the pixel (2x2 samples), so a
@@ -169,13 +265,14 @@ pub fn apply(image: &OutputImage, watermark: &Watermark) -> OutputImage {
     let blend = |x: usize, y: usize, under: [f32; 3]| -> [f32; 3] {
         let mut sum = [0.0f32; 4];
         for (dx, dy) in [(0.25, 0.25), (0.75, 0.25), (0.25, 0.75), (0.75, 0.75)] {
-            let s = watermark.sample((x as f32 + dx - x0) / scale, (y as f32 + dy - y0) / scale);
+            let (u, v) = map.to_drawing(x as f32 + dx, y as f32 + dy);
+            let s = watermark.sample(u, v);
             for c in 0..4 {
                 sum[c] += s[c] / 4.0;
             }
         }
-        let a = sum[3] * OPACITY;
-        [0, 1, 2].map(|c| sum[c] * OPACITY + under[c] * (1.0 - a))
+        let a = sum[3] * opacity;
+        [0, 1, 2].map(|c| sum[c] * opacity + under[c] * (1.0 - a))
     };
     let mut out = image.clone();
     match format {
@@ -330,6 +427,52 @@ mod tests {
         assert_eq!(level(&out, 3, 990), 40.0 / 255.0);
         assert_eq!(level(&out, 296, 990), 40.0 / 255.0);
         assert!(level(&out, 150, 1000 - 9 - 1) > 0.5 || level(&out, 150, 989) > 0.5);
+    }
+
+    #[test]
+    fn repeat_covers_the_whole_photo_lighter_on_a_slant() {
+        // 100 x 20 drawing, medium (5.5 % of 600 = 33 px tall, 165 px wide); repeats
+        // 264 px apart along a row and 99 px between rows.
+        let wm =
+            Watermark::from_png(&drawing(100, 20, 255), Position::Repeat, Size::Medium).unwrap();
+        let img = grey(1200, 600, PixelFormat::Rgb8);
+        let out = apply(&img, &wm);
+        let full = 1.0 * REPEAT_OPACITY + 40.0 / 255.0 * (1.0 - REPEAT_OPACITY);
+        let plain = 40.0 / 255.0;
+        // Covered and uncovered pixels in every part of the photo, at the lighter
+        // strength, never the single watermark's.
+        let mut covered_parts = 0;
+        for (x0, y0) in [(0, 0), (600, 0), (0, 300), (600, 300)] {
+            let mut covered = 0;
+            let mut clear = 0;
+            for y in (y0..y0 + 300).step_by(7) {
+                for x in (x0..x0 + 600).step_by(7) {
+                    let v = level(&out, x, y);
+                    assert!(v <= full + 0.01, "({x}, {y}): {v}");
+                    if (v - full).abs() < 0.01 {
+                        covered += 1;
+                    } else if v == plain {
+                        clear += 1;
+                    }
+                }
+            }
+            assert!(
+                covered > 20 && clear > 20,
+                "({x0}, {y0}): {covered} covered, {clear} clear"
+            );
+            covered_parts += 1;
+        }
+        assert_eq!(covered_parts, 4);
+        // On a slant: along a horizontal line, cover comes and goes more often than
+        // the row pitch alone would make it.
+        let changes = (0..1199)
+            .filter(|&x| (level(&out, x, 300) > plain) != (level(&out, x + 1, 300) > plain))
+            .count();
+        assert!(changes >= 6, "{changes}");
+        // 16-bit is covered the same way.
+        let out16 = apply(&grey(1200, 600, PixelFormat::Rgb16), &wm);
+        let any16 = (0..1200).any(|x| level(&out16, x, 300) > 10_000.0 / 65535.0 + 0.1);
+        assert!(any16);
     }
 
     #[test]

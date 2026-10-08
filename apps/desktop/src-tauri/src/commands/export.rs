@@ -150,6 +150,7 @@ fn watermark_position(p: settings::WatermarkPosition) -> app_core::WatermarkPosi
         settings::WatermarkPosition::BottomLeft => P::BottomLeft,
         settings::WatermarkPosition::BottomRight => P::BottomRight,
         settings::WatermarkPosition::Centre => P::Centre,
+        settings::WatermarkPosition::Repeat => P::Repeat,
     }
 }
 

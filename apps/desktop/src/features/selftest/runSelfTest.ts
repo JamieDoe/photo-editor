@@ -596,10 +596,17 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const watermarked = drawn
         ? (await run([config.imagePath], 1350, false, "jpeg", "screen", "srgb", { keepMetadata: false, watermark: drawn })).done?.outputs[0] ?? null
         : null;
+      // Repeated across the photo: far more text, so a far larger file.
+      const repeatedDrawn = drawn ? { ...drawn, position: "repeat" as const, size: "medium" as const } : null;
+      const repeated = repeatedDrawn
+        ? (await run([config.imagePath], 1350, false, "jpeg", "screen", "srgb", { keepMetadata: false, watermark: repeatedDrawn })).done?.outputs[0] ?? null
+        : null;
       const watermark = {
         drawnBytes: drawn?.png.length ?? null,
         file: watermarked?.path ?? null,
         bytes: watermarked?.bytes ?? null,
+        repeatedFile: repeated?.path ?? null,
+        repeatedBytes: repeated?.bytes ?? null,
       };
       const metadata = {
         all: await withMetadata(true, false),
@@ -657,7 +664,9 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       exportQueue.watermark.drawnBytes !== null &&
       exportQueue.watermark.bytes !== null &&
       exportQueue.metadata.none !== null &&
-      exportQueue.watermark.bytes > exportQueue.metadata.none + 500;
+      exportQueue.watermark.bytes > exportQueue.metadata.none + 500 &&
+      exportQueue.watermark.repeatedBytes !== null &&
+      exportQueue.watermark.repeatedBytes > exportQueue.watermark.bytes;
     const marksInExportOk =
       exportQueue !== null &&
       exportQueue.metadata.marked !== null &&
