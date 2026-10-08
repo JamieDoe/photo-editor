@@ -117,7 +117,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Presets (ADR 0046) | Strip under the histogram, 64×44 previews with names, accent ring on the applied one | Save… and Import… where the design has Auto (not built); Export… in a saved preset's menu, and a popover listing what an import brought in (ADR 0047); ⋯ on a saved preset opens a popover to rename, update or delete it; previews are real renders of the photo |
 | Undo and redo (ADR 0044) | Two icon buttons in the Edit header, between the save status and the photo counter; ⌘Z and ⇧⌘Z | The design has no undo control; placed with the edit's other status and actions |
 | Before / after (ADR 0045) | Compare button, white divider and round handle, Before and After pills, drag anywhere on the photo | The `\` shortcut; "Before…" while the before image renders; no focus-header button (that header is not built) |
-| Zoom (ADR 0070) | "Fit" / "100%" button first in the photo toolbar | Z toggles it; a click on the photo zooms in on that spot, a click at 100 % fits; drag or scroll to pan; only with no tool over the photo (crop, masks, compare and retouch fit it) |
+| Zoom (ADR 0070) | "Fit" / "100%" button first in the photo toolbar | Z toggles it; a click on the photo zooms in on that spot, a click at 100 % fits; drag or scroll to pan; crop, masks and compare fit it; in retouch mode clicks paint, so scroll or Space-drag pans |
 
 ### Not built yet (and so not shown)
 

@@ -1,6 +1,7 @@
 import { type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent, useEffect, useRef, useState } from "react";
 import type { DisplayedFrame } from "./useEditor";
 import { fitSize, nextBoxShape, type BoxShape } from "./viewerLayout";
+import { isTextEntry } from "../../lib/keyboard";
 import { centreKeeping, panned, zoomLayout, type OutputWindow, type ZoomCentre } from "./zoom";
 
 interface Props {
@@ -13,7 +14,8 @@ interface Props {
   /** Drawn over the photo, in its box (the crop tool). */
   overlay?: ReactNode;
   /** Zoom (ADR 0070): where the photo is centred at 100 %, or null at Fit. Without
-   *  `onZoom` the photo can't be zoomed (a tool is open). */
+   *  `onZoom` the photo can't be zoomed (a tool is open). With an overlay (retouch),
+   *  clicks are the overlay's: the photo pans by scrolling or Space-dragging. */
   zoom?: ZoomCentre | null;
   onZoom?: (centre: ZoomCentre | null) => void;
   /** At 100 %, the latest render of the visible part, drawn over the whole photo. */
@@ -37,6 +39,8 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
   const zoomRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ id: number; x: number; y: number; centre: ZoomCentre; moved: boolean } | null>(null);
   const [panning, setPanning] = useState(false);
+  // Space held: drags pan even over an overlay, as in other editors.
+  const [spaceHeld, setSpaceHeld] = useState(false);
   const [space, setSpace] = useState({ width: 0, height: 0 });
   // The box shape is fixed per opening (see nextBoxShape), so frames never resize it.
   const [shape, setShape] = useState<BoxShape | null>(null);
@@ -64,7 +68,25 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
   // At 100 %: the photo's box at full resolution, positioned by the zoom centre.
   const dpr = window.devicePixelRatio || 1;
   const full = displayed && displayed.frame.fullWidth > 0 ? { width: displayed.frame.fullWidth, height: displayed.frame.fullHeight } : null;
-  const zoomed = zoom !== null && onZoom !== undefined && full !== null && overlay === undefined;
+  const zoomed = zoom !== null && onZoom !== undefined && full !== null;
+  useEffect(() => {
+    if (!zoomed || overlay === undefined) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== " " || isTextEntry(e.target) || e.target instanceof HTMLInputElement) return;
+      e.preventDefault();
+      setSpaceHeld(e.type === "keydown");
+    };
+    const release = () => setSpaceHeld(false);
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("keyup", onKey);
+    window.addEventListener("blur", release);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKey);
+      window.removeEventListener("blur", release);
+      setSpaceHeld(false);
+    };
+  }, [zoomed, overlay === undefined]);
   const layout = zoomed && space.width > 0 ? zoomLayout(space, full, dpr, zoom) : null;
   const visible = layout?.window ?? null;
   const visibleKey = visible?.join(",") ?? "";
@@ -116,6 +138,9 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
   };
   const zoomDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (!zoom || e.button !== 0) return;
+    // Over an overlay, a drag is the overlay's unless Space is held.
+    if (overlay !== undefined && !spaceHeld) return;
+    e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, centre: zoom, moved: false };
   };
@@ -134,8 +159,8 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
     if (!drag || drag.id !== e.pointerId) return;
     dragRef.current = null;
     setPanning(false);
-    // A click (no drag) goes back to Fit.
-    if (!drag.moved && e.type === "pointerup") onZoom?.(null);
+    // A click (no drag) goes back to Fit, unless clicks are the overlay's.
+    if (!drag.moved && e.type === "pointerup" && overlay === undefined) onZoom?.(null);
   };
   /** Scrolling (two fingers on a trackpad) pans. */
   const zoomWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
@@ -150,8 +175,8 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
         layout && shape ? (
           <div
             ref={zoomRef}
-            className={panning ? "viewer-zoom panning" : "viewer-zoom"}
-            onPointerDown={zoomDown}
+            className={["viewer-zoom", panning && "panning", overlay !== undefined && !spaceHeld && "tool"].filter(Boolean).join(" ")}
+            onPointerDownCapture={zoomDown}
             onPointerMove={zoomMove}
             onPointerUp={zoomUp}
             onPointerCancel={zoomUp}
@@ -171,6 +196,7 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
                   }}
                 />
               )}
+              {overlay}
             </div>
           </div>
         ) : overlay ? (

@@ -184,8 +184,10 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       await sleep(300);
       const [fw, fh] = [image.fullWidth, image.fullHeight];
       const win: [number, number, number, number] = [Math.round(fw / 2 - 1000), Math.round(fh / 2 - 600), 2000, 1200];
+      // In the comparison's slot: the editor's own renders (such as one after a fill
+      // made in the background) must not cancel these, nor these the editor's.
       const request = (quality: "interactive" | "detail", window: [number, number, number, number]) =>
-        ipc.renderPreview({ imageId: image.id, recipe: a, quality, targetLongEdge: 1600, window });
+        ipc.renderPreview({ imageId: image.id, recipe: a, quality, targetLongEdge: 1600, window, slot: "compare" });
       const early = await request("detail", win);
       const t = performance.now();
       await ipc.prepareFull(image.id);
@@ -203,7 +205,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         geometry: { straighten: 2, crop: { x: 0.05, y: 0.05, w: 0.9, h: 0.9 }, aspect: "free" as const, vertical: 0, horizontal: 0, rotation: 0, flip: false },
       };
       const heavyRequest = (window: [number, number, number, number]) =>
-        ipc.renderPreview({ imageId: image.id, recipe: heavy, quality: "detail", targetLongEdge: 1600, window });
+        ipc.renderPreview({ imageId: image.id, recipe: heavy, quality: "detail", targetLongEdge: 1600, window, slot: "compare" });
       const heavyFirst = await heavyRequest([win[0], win[1] - 200, win[2], win[3]]);
       const heavyPanned = await heavyRequest([win[0] + 160, win[1] - 200, win[2], win[3]]);
       // The editor: Z zooms to 100 % and its window arrives at full resolution; Z again fits.
@@ -1531,14 +1533,14 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       if (!image) return null;
       const removal = { strokes: [{ size: 0.02, feather: 10, flow: 100, points: [[0.62, 0.35], [0.66, 0.38]] as [number, number][] }] };
       const recipe = { ...beforeCrop, masks: undefined, geometry: undefined, spots: undefined, removals: [removal] };
-      const whole = () => ipc.renderPreview({ imageId: image.id, recipe, quality: "detail", targetLongEdge: 1600 });
+      const whole = () => ipc.renderPreview({ imageId: image.id, recipe, quality: "detail", targetLongEdge: 1600, slot: "compare" });
       const before = await whole();
       const t = performance.now();
       await ipc.prepareFill(image.id, [removal]);
       const fillMs = Math.round(performance.now() - t);
       const after = await whole();
       const [x, y] = [Math.round(0.6 * image.fullWidth), Math.round(0.3 * image.fullHeight)];
-      const window = await ipc.renderPreview({ imageId: image.id, recipe, quality: "detail", targetLongEdge: 1600, window: [x, y, 800, 600] });
+      const window = await ipc.renderPreview({ imageId: image.id, recipe, quality: "detail", targetLongEdge: 1600, window: [x, y, 800, 600], slot: "compare" });
       return {
         standInFirst: before.fillPending,
         fillMs,
@@ -1858,7 +1860,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       devicePixelRatio: window.devicePixelRatio,
     };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e), scheduler: driver.editor().schedulerStats() };
+    const message = e instanceof Error ? e.message : typeof e === "object" && e !== null && "message" in e ? String(e.message) : String(e);
+    return { ok: false, error: message, scheduler: driver.editor().schedulerStats() };
   } finally {
     unsubscribe();
   }

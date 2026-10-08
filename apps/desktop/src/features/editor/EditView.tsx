@@ -115,10 +115,11 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
   const retouching = retouchOpen && !crop.open && !masks.open && !compare.open;
   const frame = editor.displayed?.frame;
 
-  // Zoom (ADR 0070): Fit or 100 %, with no tool open over the photo. It stays at 100 %
-  // from photo to photo, once each one's first render has arrived.
+  // Zoom (ADR 0070): Fit or 100 %, also while retouching (the spots and removals are
+  // drawn on the zoomed photo); cropping, masking and comparing fit it. It stays at
+  // 100 % from photo to photo, once each one's first render has arrived.
   const [zoomCentre, setZoomCentre] = useState<ZoomCentre | null>(null);
-  const zoomable = image !== null && !crop.open && !masks.open && !compare.open && !retouching;
+  const zoomable = image !== null && !crop.open && !masks.open && !compare.open;
   useEffect(() => {
     if (!zoomable) setZoomCentre(null);
   }, [zoomable]);

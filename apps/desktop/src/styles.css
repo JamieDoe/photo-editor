@@ -409,6 +409,8 @@ button.geometry-crop { height: 34px; border-radius: 8px; justify-content: center
 .zoom-label { min-width: 32px; text-align: left; }
 .viewer-zoom { position: absolute; inset: 8px 32px 0; overflow: hidden; cursor: grab; touch-action: none; }
 .viewer-zoom.panning { cursor: grabbing; }
+.viewer-zoom.tool { cursor: auto; }
+.viewer-zoom:not(.tool) .retouch-surface { cursor: inherit; }
 .viewer-zoom-box { position: absolute; background: #000; }
 .viewer-zoom-box .viewer-canvas { border-radius: 0; box-shadow: none; max-width: none; max-height: none; }
 .viewer-window { position: absolute; display: block; pointer-events: none; }
