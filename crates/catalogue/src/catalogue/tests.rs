@@ -544,6 +544,31 @@ fn colour_labels_are_a_third_independent_mark() {
     let marked = l.cat.marked().unwrap();
     assert_eq!(marked.len(), 1);
     assert_eq!(marked[0].photo, ids[0]);
+    // Marks read from sidecars only go to photos without marks of their own.
+    let imported = Marks {
+        rating: crate::Rating::new(5).unwrap(),
+        flag: Flag::Reject,
+        label: ColourLabel::Blue,
+    };
+    assert_eq!(
+        l.cat
+            .import_marks(&[(ids[0], imported), (ids[1], imported)])
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        l.cat.marks(ids[0]).unwrap().label,
+        ColourLabel::Purple,
+        "kept its own"
+    );
+    assert_eq!(l.cat.marks(ids[1]).unwrap(), imported);
+    l.cat.set_marks(&ids[1..2], rate(0)).unwrap();
+    l.cat
+        .set_marks(&ids[1..2], MarkChange::Flag(Flag::None))
+        .unwrap();
+    l.cat
+        .set_marks(&ids[1..2], MarkChange::Label(ColourLabel::None))
+        .unwrap();
     // Clearing it.
     l.cat
         .set_marks(&ids[..1], MarkChange::Label(ColourLabel::None))

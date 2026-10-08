@@ -5,4 +5,8 @@ import type { IpcError } from "./IpcError";
 /**
  * Background indexing of a library folder.
  */
-export type IndexEvent = { "type": "progress", root: string, stage: IndexStageDto, total: number, processed: number, } | { "type": "finished", root: string, found: number, new: number, changed: number, moved: number, missing: number, skipped: number, detailsRead: number, totalMs: number, } | { "type": "failed", root: string, error: IpcError, };
+export type IndexEvent = { "type": "progress", root: string, stage: IndexStageDto, total: number, processed: number, } | { "type": "finished", root: string, found: number, new: number, changed: number, moved: number, missing: number, skipped: number, detailsRead: number, 
+/**
+ * New photos that took their marks from another app's sidecars (ADR 0067).
+ */
+marksFromSidecars: number, totalMs: number, } | { "type": "failed", root: string, error: IpcError, };

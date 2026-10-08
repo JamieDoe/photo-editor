@@ -78,6 +78,14 @@ pub enum LabelName {
 }
 
 impl LabelName {
+    pub const ALL: [Self; 5] = [
+        Self::Red,
+        Self::Yellow,
+        Self::Green,
+        Self::Blue,
+        Self::Purple,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Red => "Red",

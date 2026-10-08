@@ -260,6 +260,28 @@ impl Catalogue {
         self.entries(&collection.condition(), [])
     }
 
+    /// Sets the marks of photos that have none yet (ADR 0067, part 3: marks read from
+    /// another app's sidecars). A photo already rated, flagged or labelled here is left
+    /// as it is. Returns how many were set.
+    pub fn import_marks(&self, marks: &[(PhotoId, Marks)]) -> Result<usize> {
+        self.with_tx(|tx| {
+            let mut stmt = tx.prepare_cached(
+                "UPDATE photos SET rating = ?2, flag = ?3, label = ?4
+                 WHERE id = ?1 AND rating = 0 AND flag = 0 AND label = 0",
+            )?;
+            let mut set = 0;
+            for (photo, m) in marks {
+                set += stmt.execute(params![
+                    photo.0,
+                    i64::from(m.rating.stars()),
+                    m.flag.to_db(),
+                    m.label.to_db()
+                ])?;
+            }
+            Ok(set)
+        })
+    }
+
     /// Present photos with any mark (a rating, a flag or a colour label): the ones whose
     /// sidecars to write when sidecars are turned on (ADR 0067).
     pub fn marked(&self) -> Result<Vec<CollectionEntry>> {

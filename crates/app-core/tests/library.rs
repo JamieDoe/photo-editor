@@ -194,3 +194,67 @@ fn unreadable_folder_is_a_user_facing_error() {
         "{err:?}"
     );
 }
+
+#[test]
+#[cfg(feature = "libraw")] // needs the RAW decoder: only RAWs are indexed as such
+fn new_raws_take_marks_from_another_apps_sidecars_once() {
+    use app_core::{ColourLabel, Flag, MarkChange, Rating};
+    let s = setup("index-sidecars");
+    // RAW names (the bytes are a JPEG's; indexing records files, details may fail).
+    for (i, name) in ["DSC_1.NEF", "DSC_2.NEF", "DSC_3.NEF", "DSC_3.JPG"]
+        .iter()
+        .enumerate()
+    {
+        photo(&s.root.join(name), i as u16);
+    }
+    let sidecar = |rating: &str, label: &str| {
+        format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" xmp:Rating="{rating}" xmp:Label="{label}" crs:Exposure2012="+0.50"/></rdf:RDF></x:xmpmeta>"#
+        )
+    };
+    std::fs::write(s.root.join("DSC_1.xmp"), sidecar("3", "Red")).unwrap();
+    std::fs::write(s.root.join("DSC_3.xmp"), sidecar("-1", "")).unwrap();
+
+    let first = s.index();
+    assert_eq!(first.marks_from_sidecars, 2);
+    let marks = |name: &str| {
+        let photo = s.catalogue.photo_at(&s.root.join(name)).unwrap().unwrap();
+        s.catalogue.marks(photo).unwrap()
+    };
+    assert_eq!(marks("DSC_1.NEF").rating.stars(), 3);
+    assert_eq!(marks("DSC_1.NEF").label, ColourLabel::Red);
+    assert_eq!(
+        marks("DSC_2.NEF"),
+        Default::default(),
+        "no sidecar, no marks"
+    );
+    assert_eq!(marks("DSC_3.NEF").flag, Flag::Reject);
+    assert_eq!(
+        marks("DSC_3.JPG"),
+        Default::default(),
+        "the JPEG of the pair has its own"
+    );
+    // The sidecars are read, never written.
+    assert!(
+        std::fs::read_to_string(s.root.join("DSC_1.xmp"))
+            .unwrap()
+            .contains("crs:Exposure2012")
+    );
+
+    // Cleared here, then changed in the other app: a rescan doesn't bring marks back.
+    let dsc1 = s
+        .catalogue
+        .photo_at(&s.root.join("DSC_1.NEF"))
+        .unwrap()
+        .unwrap();
+    s.catalogue
+        .set_marks(&[dsc1], MarkChange::Rating(Rating::new(0).unwrap()))
+        .unwrap();
+    s.catalogue
+        .set_marks(&[dsc1], MarkChange::Label(ColourLabel::None))
+        .unwrap();
+    std::fs::write(s.root.join("DSC_1.xmp"), sidecar("5", "Green")).unwrap();
+    let again = s.index();
+    assert_eq!(again.marks_from_sidecars, 0);
+    assert_eq!(marks("DSC_1.NEF"), Default::default());
+}
