@@ -1,3 +1,4 @@
+import { watermarkFor } from "../features/export/watermark";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorBanner } from "../components/ErrorBanner";
 import { Toast, useToast } from "../components/Toast";
@@ -104,7 +105,18 @@ export function App() {
     ];
     if (items.length === 0) return;
     setExportOpen(false);
-    await exports.start({ items, longEdge: s?.longEdge ?? undefined, quality: s?.jpegQuality ?? 85, format: s?.format ?? "jpeg", sharpen: s?.sharpen ?? "screen", colourSpace: s?.colourSpace ?? "srgb", keepMetadata: s?.keepMetadata ?? true, stripLocation: s?.stripLocation ?? false });
+    const watermark = s ? await watermarkFor(s.watermark).catch(() => null) : null;
+    await exports.start({
+      items,
+      longEdge: s?.longEdge ?? undefined,
+      quality: s?.jpegQuality ?? 85,
+      format: s?.format ?? "jpeg",
+      sharpen: s?.sharpen ?? "screen",
+      colourSpace: s?.colourSpace ?? "srgb",
+      keepMetadata: s?.keepMetadata ?? true,
+      stripLocation: s?.stripLocation ?? false,
+      watermark: watermark ?? undefined,
+    });
   };
 
   // One banner; the most relevant source first.

@@ -12,6 +12,18 @@ pub const EXPORT_EVENT: &str = "export://event";
 /// Name of the Tauri event carrying [`ExportQueueEvent`]s (ADR 0050).
 pub const EXPORT_QUEUE_EVENT: &str = "export://queue";
 
+/// A watermark for an export (ADR 0069): the text as the UI drew it, and where and how
+/// large to lay it.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct WatermarkDto {
+    /// The drawing: an RGBA PNG of the text.
+    pub png: Vec<u8>,
+    pub position: settings::WatermarkPosition,
+    pub size: settings::WatermarkSize,
+}
+
 /// What to estimate an export's size for (ADR 0068): the open photo with its edit as
 /// it is now, and the dialog's choices.
 #[derive(Debug, Clone, Deserialize, TS)]
@@ -74,6 +86,10 @@ pub struct ExportBatchDto {
     #[serde(default)]
     #[ts(optional)]
     pub strip_location: Option<bool>,
+    /// A watermark to lay on every photo (ADR 0069); none when left out.
+    #[serde(default)]
+    #[ts(optional)]
+    pub watermark: Option<WatermarkDto>,
     /// The folder to export to, for the self-test only; otherwise the one chosen in
     /// the folder dialog (settings).
     #[ts(optional)]

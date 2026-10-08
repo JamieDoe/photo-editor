@@ -69,6 +69,9 @@ pub async fn export_image(
                 app_core::MetadataChoice::from_switches(s.keep_metadata, s.strip_location)
             },
             judgements,
+            // The dialog exports through the queue; this single export (the
+            // self-test's) takes no watermark.
+            watermark: None,
         },
         move |p| {
             let event = ExportEvent::Progress {
@@ -137,6 +140,25 @@ fn marks_at(catalogue: &app_core::Catalogue, path: &std::path::Path) -> app_core
             None
         });
     marks.map(|m| app_core::judgements(&m)).unwrap_or_default()
+}
+
+fn watermark_position(p: settings::WatermarkPosition) -> app_core::WatermarkPosition {
+    use app_core::WatermarkPosition as P;
+    match p {
+        settings::WatermarkPosition::TopLeft => P::TopLeft,
+        settings::WatermarkPosition::TopRight => P::TopRight,
+        settings::WatermarkPosition::BottomLeft => P::BottomLeft,
+        settings::WatermarkPosition::BottomRight => P::BottomRight,
+        settings::WatermarkPosition::Centre => P::Centre,
+    }
+}
+
+fn watermark_size(s: settings::WatermarkSize) -> app_core::WatermarkSize {
+    match s {
+        settings::WatermarkSize::Small => app_core::WatermarkSize::Small,
+        settings::WatermarkSize::Medium => app_core::WatermarkSize::Medium,
+        settings::WatermarkSize::Large => app_core::WatermarkSize::Large,
+    }
 }
 
 pub(crate) fn colour_space(s: settings::ExportColourSpace) -> app_core::ExportColourSpace {
@@ -280,6 +302,18 @@ pub async fn start_export(
         batch.keep_metadata.unwrap_or(true),
         batch.strip_location.unwrap_or(false),
     );
+    // The watermark (ADR 0069), decoded once for the whole batch.
+    let watermark = match batch.watermark {
+        Some(w) => Some(std::sync::Arc::new(
+            app_core::Watermark::from_png(
+                &w.png,
+                watermark_position(w.position),
+                watermark_size(w.size),
+            )
+            .map_err(|e| IpcError::internal(e.to_string()))?,
+        )),
+        None => None,
+    };
     let long_edge = batch.long_edge.map(|e| {
         e.clamp(
             settings::ExportSettings::LONG_EDGE_MIN,
@@ -337,6 +371,7 @@ pub async fn start_export(
                 sharpening,
                 colour_space,
                 metadata,
+                watermark: watermark.clone(),
             }),
             Err(f) => refused.push(f),
         }

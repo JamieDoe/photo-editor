@@ -165,6 +165,59 @@ pub enum LibraryCollection {
     Rejected,
 }
 
+/// The export watermark (ADR 0069): off by default; the text is the photographer's own.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub struct WatermarkSettings {
+    pub enabled: bool,
+    /// What it says, such as "© 2026 Jamie". Nothing is laid on while it is empty.
+    pub text: String,
+    pub position: WatermarkPosition,
+    pub size: WatermarkSize,
+}
+
+impl WatermarkSettings {
+    /// Longer text is cut to this many characters.
+    pub const TEXT_MAX: usize = 120;
+}
+
+impl<'de> Deserialize<'de> for WatermarkSettings {
+    /// Field by field, like the Library's view: an unknown value is that field's default.
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let value = serde_json::Value::deserialize(d)?;
+        let text: String = lenient(&value, "text");
+        Ok(Self {
+            enabled: lenient(&value, "enabled"),
+            text: text.chars().take(Self::TEXT_MAX).collect(),
+            position: lenient(&value, "position"),
+            size: lenient(&value, "size"),
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum WatermarkPosition {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    #[default]
+    BottomRight,
+    Centre,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum WatermarkSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
 /// The Library's view choices (ADR 0065). Each reads leniently: a value this version
 /// does not know (written by a newer one) falls back to its default rather than
 /// failing the settings file.
@@ -271,6 +324,8 @@ pub struct ExportSettings {
     /// Whether the location is left out of them. The design's "Strip location", off by
     /// default.
     pub strip_location: bool,
+    /// A line of text in a corner of each export (ADR 0069): the design's "Watermark".
+    pub watermark: WatermarkSettings,
     /// JPEG quality, 1-100.
     pub jpeg_quality: u8,
     /// The folder exports are saved to (ADR 0050). Set only through the native folder
@@ -370,6 +425,7 @@ impl Default for ExportSettings {
             colour_space: ExportColourSpace::Srgb,
             keep_metadata: true,
             strip_location: false,
+            watermark: WatermarkSettings::default(),
             jpeg_quality: 85,
             folder: None,
             long_edge: Some(2048),
@@ -582,6 +638,40 @@ mod tests {
             serde_json::to_string(&place).unwrap(),
             r#"{"kind":"collection","collection":"picks"}"#
         );
+    }
+
+    #[test]
+    fn the_watermark_is_off_by_default_and_read_leniently() {
+        let s: Settings = serde_json::from_str(r#"{"version":7}"#).unwrap();
+        assert_eq!(s.export.watermark, WatermarkSettings::default());
+        assert!(!s.export.watermark.enabled);
+        let s: Settings = serde_json::from_str(
+            r#"{"version":7,"export":{"watermark":{"enabled":true,"text":"© 2026 Jamie","position":"topLeft","size":"large"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            s.export.watermark,
+            WatermarkSettings {
+                enabled: true,
+                text: "© 2026 Jamie".into(),
+                position: WatermarkPosition::TopLeft,
+                size: WatermarkSize::Large,
+            }
+        );
+        // Unknown values fall back one by one; very long text is cut.
+        let long = "x".repeat(500);
+        let s: Settings = serde_json::from_str(&format!(
+            r#"{{"version":7,"export":{{"jpegQuality":90,"watermark":{{"enabled":true,"text":"{long}","position":"middle","size":"huge"}}}}}}"#
+        ))
+        .unwrap();
+        assert_eq!(s.export.jpeg_quality, 90);
+        assert!(s.export.watermark.enabled);
+        assert_eq!(
+            s.export.watermark.text.chars().count(),
+            WatermarkSettings::TEXT_MAX
+        );
+        assert_eq!(s.export.watermark.position, WatermarkPosition::BottomRight);
+        assert_eq!(s.export.watermark.size, WatermarkSize::Medium);
     }
 
     #[test]

@@ -18,6 +18,7 @@ pub mod sidecar;
 mod tiff_metadata;
 #[cfg(feature = "turbojpeg")]
 mod turbo;
+pub mod watermark;
 
 /// What an export is written as (ADR 0057).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

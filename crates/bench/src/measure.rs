@@ -182,6 +182,7 @@ pub fn file(path: &Path, iterations: usize) -> Value {
         colour_space: app_core::ExportColourSpace::Srgb,
         metadata: app_core::MetadataChoice::All,
         judgements: Default::default(),
+        watermark: None,
     };
     let mut exports = Vec::new();
     for i in 0..full_iters {
@@ -369,6 +370,7 @@ pub fn memory(path: &Path) -> Value {
         colour_space: app_core::ExportColourSpace::Srgb,
         metadata: app_core::MetadataChoice::All,
         judgements: Default::default(),
+        watermark: None,
     };
     engine.export(export, |_| {}).wait().expect("export");
     let _ = std::fs::remove_file(out);

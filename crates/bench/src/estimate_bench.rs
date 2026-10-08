@@ -60,6 +60,7 @@ fn one(path: &Path) -> Value {
                         colour_space: ExportColourSpace::Srgb,
                         metadata: MetadataChoice::None,
                         judgements: Judgements::default(),
+                        watermark: None,
                     },
                     |_| {},
                 )

@@ -2,6 +2,7 @@
 import type { ExportColourSpace } from "./ExportColourSpace";
 import type { ExportFileFormat } from "./ExportFileFormat";
 import type { OutputSharpening } from "./OutputSharpening";
+import type { WatermarkSettings } from "./WatermarkSettings";
 
 export type ExportSettings = { 
 /**
@@ -26,6 +27,10 @@ keepMetadata: boolean,
  * default.
  */
 stripLocation: boolean, 
+/**
+ * A line of text in a corner of each export (ADR 0069): the design's "Watermark".
+ */
+watermark: WatermarkSettings, 
 /**
  * JPEG quality, 1-100.
  */

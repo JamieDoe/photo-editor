@@ -184,6 +184,7 @@ fn files_export_fitted_to_a_long_edge_without_being_open() {
                     colour_space: app_core::ExportColourSpace::Srgb,
                     metadata: app_core::MetadataChoice::All,
                     judgements: Default::default(),
+                    watermark: None,
                     long_edge,
                 },
                 |_| {},
@@ -283,6 +284,7 @@ fn export_writes_full_resolution_and_never_touches_source() {
                 colour_space: app_core::ExportColourSpace::Srgb,
                 metadata: app_core::MetadataChoice::All,
                 judgements: Default::default(),
+                watermark: None,
             },
             move |p| seen.lock().unwrap().push(p.stage),
         )
@@ -316,6 +318,7 @@ fn export_over_source_is_rejected() {
                 colour_space: app_core::ExportColourSpace::Srgb,
                 metadata: app_core::MetadataChoice::All,
                 judgements: Default::default(),
+                watermark: None,
             },
             |_| {},
         )
@@ -345,6 +348,7 @@ fn interactive_preview_is_not_blocked_by_running_export() {
             colour_space: app_core::ExportColourSpace::Srgb,
             metadata: app_core::MetadataChoice::All,
             judgements: Default::default(),
+            watermark: None,
         },
         |_| {},
     );
