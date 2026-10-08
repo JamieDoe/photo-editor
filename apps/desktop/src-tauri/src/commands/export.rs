@@ -179,6 +179,40 @@ fn with_extension_for(path: PathBuf, format: ExportFormat) -> PathBuf {
     }
 }
 
+/// The estimated size of an export of the open photo (ADR 0068), for the dialog's
+/// "≈ 4.2 MB". A newer request cancels one still running (it then fails as cancelled,
+/// which the dialog ignores).
+#[tauri::command]
+pub async fn estimate_export(
+    state: State<'_, AppState>,
+    request: crate::ipc::ExportEstimateRequestDto,
+) -> IpcResult<crate::ipc::ExportEstimateDto> {
+    let quality = request.quality.clamp(
+        settings::ExportSettings::JPEG_QUALITY_MIN,
+        settings::ExportSettings::JPEG_QUALITY_MAX,
+    );
+    let long_edge = request.long_edge.map(|e| {
+        e.clamp(
+            settings::ExportSettings::LONG_EDGE_MIN,
+            settings::ExportSettings::LONG_EDGE_MAX,
+        )
+    });
+    let estimate = wait(state.engine.estimate_export(
+        ImageId(request.image_id),
+        &request.recipe,
+        export_format(request.format, quality),
+        long_edge,
+        output_sharpening(request.sharpen),
+        colour_space(request.colour_space),
+    ))
+    .await?;
+    Ok(crate::ipc::ExportEstimateDto {
+        bytes: estimate.bytes,
+        width: estimate.width,
+        height: estimate.height,
+    })
+}
+
 /// Chooses the folder exports are saved to, in the system's folder dialog, and
 /// remembers it (ADR 0050). Resolves to the folder, or `None` if cancelled.
 #[tauri::command]

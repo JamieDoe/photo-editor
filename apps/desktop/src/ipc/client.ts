@@ -4,6 +4,8 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { ExportEstimateDto } from "./generated/ExportEstimateDto";
+import type { ExportEstimateRequestDto } from "./generated/ExportEstimateRequestDto";
 import type { LibraryPlace } from "./generated/LibraryPlace";
 import type { ChromaticAberration } from "./generated/ChromaticAberration";
 import type { EngineInfoDto } from "./generated/EngineInfoDto";
@@ -87,6 +89,8 @@ export async function onExportEvent(handler: (e: ExportEvent) => void): Promise<
 export const getSettings = () => invoke<SettingsViewDto>("get_settings");
 
 /** Saves settings; the result holds the values actually stored (clamped). */
+/** An export's estimated size (ADR 0068), for the dialog. */
+export const estimateExport = (request: ExportEstimateRequestDto) => invoke<ExportEstimateDto>("estimate_export", { request });
 export const updateSettings = (settings: Settings) => invoke<SettingsViewDto>("update_settings", { settings });
 /** Records where the Library is, to reopen it next launch (ADR 0065); folders are checked in Rust. */
 export const rememberPlace = (place: LibraryPlace) => invoke<void>("remember_place", { place });

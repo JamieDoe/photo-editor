@@ -136,6 +136,19 @@ pub struct ExportProgress {
     pub fraction: f32,
 }
 
+/// An export's estimated size (ADR 0068), before it is made.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ExportEstimate {
+    /// The file's estimated size in bytes.
+    pub bytes: u64,
+    /// The size it will be written at (after crop and any long-edge limit).
+    pub width: u32,
+    pub height: u32,
+    /// The sample it was estimated from: its pixels and encoded bytes.
+    pub sample_pixels: u64,
+    pub sample_bytes: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct ExportSummary {
     pub path: PathBuf,

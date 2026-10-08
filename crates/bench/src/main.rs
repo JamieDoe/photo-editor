@@ -9,6 +9,7 @@
 //! are printed as a markdown table and written as JSON for comparison over time.
 
 mod dust_bench;
+mod estimate_bench;
 mod index_bench;
 mod look;
 mod measure;
@@ -50,6 +51,14 @@ fn main() {
             "--look" => look = true,
             "--dust" => {
                 let result = dust_bench::run(&camera_files());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&result).expect("serialisable result")
+                );
+                return;
+            }
+            "--estimate" => {
+                let result = estimate_bench::run(&camera_files());
                 println!(
                     "{}",
                     serde_json::to_string_pretty(&result).expect("serialisable result")

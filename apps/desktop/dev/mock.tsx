@@ -232,6 +232,14 @@ mockIPC((cmd, payload) => {
       return { appVersion: "0.0.1", os: "mock", arch: "mock", cpuThreads: 10, rendererVersion: 1, librawVersion: "mock", jpegEncoder: "libjpeg-turbo", embeddedJpegDecoder: "libjpeg-turbo (DCT-scaled)", logDir: "/mock/logs" };
     case "report_client_error":
       return "E-MOCK-1";
+    case "estimate_export": {
+      // Dev-only stand-in: roughly what a JPEG of a 24 MP photo comes to.
+      const { request } = payload as { request: { longEdge?: number; format: string } };
+      const edge = request.longEdge ?? 6048;
+      const px = edge * Math.round(edge / 1.5);
+      const perPx = request.format === "jpeg" ? 0.55 : request.format === "png" ? 3.1 : 6;
+      return { bytes: Math.round(px * perPx), width: edge, height: Math.round(edge / 1.5) };
+    }
     case "remember_place":
       (mockSettings.library as { lastPlace: unknown }).lastPlace = (payload as { place: unknown }).place;
       return null;

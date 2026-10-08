@@ -126,6 +126,7 @@ fn main() {
             commands::images::find_dust,
             commands::images::measure_chromatic_aberration,
             commands::export::export_image,
+            commands::export::estimate_export,
             commands::export::choose_export_folder,
             commands::export::start_export,
             commands::export::cancel_exports,
