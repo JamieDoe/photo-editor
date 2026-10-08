@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalibrationIcon, ColourIcon, CompareIcon, RetouchIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, UndoIcon } from "../../components/icons";
+import { CalibrationIcon, ColourIcon, CompareIcon, RetouchIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, SearchIcon, UndoIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../../ipc/generated/MarksDto";
@@ -31,6 +31,7 @@ import { PresetStrip } from "./PresetStrip";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
 import { Viewer } from "./Viewer";
+import type { ZoomCentre } from "./zoom";
 
 interface Props {
   editor: Editor;
@@ -114,6 +115,16 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
   const retouching = retouchOpen && !crop.open && !masks.open && !compare.open;
   const frame = editor.displayed?.frame;
 
+  // Zoom (ADR 0070): Fit or 100 %, with no tool open over the photo. It stays at 100 %
+  // from photo to photo, once each one's first render has arrived.
+  const [zoomCentre, setZoomCentre] = useState<ZoomCentre | null>(null);
+  const zoomable = image !== null && !crop.open && !masks.open && !compare.open && !retouching;
+  useEffect(() => {
+    if (!zoomable) setZoomCentre(null);
+  }, [zoomable]);
+  const zoom = zoomable && editor.displayed?.imageId === image?.id ? zoomCentre : null;
+  const toggleZoom = () => setZoomCentre((c) => (c || !zoomable ? null : { x: 0.5, y: 0.5 }));
+
   // Keyboard: 0–5 / P / X / U mark the photo, ← → move through the Library's photos.
   // Ignored while a control (such as a slider) has focus, so its own keys still work.
   useEffect(() => {
@@ -123,6 +134,12 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
       // \ shows the photo before and after editing, as in other editors.
       if (e.key === "\\" && image) {
         toggleCompare();
+        e.preventDefault();
+        return;
+      }
+      // Z toggles Fit and 100 %, as in Lightroom.
+      if (e.key.toLowerCase() === "z" && !e.altKey && zoomable) {
+        toggleZoom();
         e.preventDefault();
         return;
       }
@@ -139,7 +156,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [marks, onMark, onStep, image, toggleCompare]);
+  }, [marks, onMark, onStep, image, toggleCompare, zoomable]);
 
   // Copy and paste (ADR 0048), confirmed as the design does. With photos ticked in the
   // filmstrip, Paste also applies to them, and Sync edits gives them this photo's edit
@@ -289,6 +306,10 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
           displayed={editor.displayed}
           loading={busy}
           onResize={editor.setTargetLongEdge}
+          zoom={zoom}
+          onZoom={zoomable ? setZoomCentre : undefined}
+          windowed={editor.windowed}
+          onWindow={editor.setViewWindow}
           placeholder="Open a photo from the Library, or use “Open photo…”."
           overlay={
             crop.open ? (
@@ -307,8 +328,8 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
             ) : undefined
           }
         />
-        {/* The design's floating toolbar under the photo (zoom joins it when built);
-            while cropping or masking, that tool's toolbar takes its place. */}
+        {/* The design's floating toolbar under the photo; while cropping or masking,
+            that tool's toolbar takes its place. */}
         <div className="photo-toolbar-strip">
           {crop.open && info ? (
             <CropToolbar tool={crop} straighten={info.straighten} />
@@ -317,6 +338,17 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
           ) : (
             image && (
               <div className="photo-toolbar" role="toolbar" aria-label="Photo tools">
+                <button
+                  className="tool-button zoom-button"
+                  title={zoom ? "Fit the photo (Z)" : "Zoom to 100 % (Z)"}
+                  aria-label={zoom ? "Zoom: 100 %, fit the photo" : "Zoom: fit, zoom to 100 %"}
+                  onClick={toggleZoom}
+                  disabled={!zoomable}
+                >
+                  <SearchIcon size={15} />
+                  <span className="mono zoom-label">{zoom ? "100%" : "Fit"}</span>
+                </button>
+                <span className="toolbar-divider" />
                 <button className="tool-button" title="Crop & straighten" onClick={enterCrop}>
                   <CropIcon size={15} />
                   Crop

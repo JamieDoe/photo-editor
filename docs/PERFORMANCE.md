@@ -988,3 +988,21 @@ JPEGs by up to 83 %.
 **Speed:** an estimate takes 57 ms for the Nikon Z 6 (release self-test, through IPC).
 It renders a ~1,024 px level and encodes it once, and runs only when the dialog's
 choices settle.
+
+## 50. Zoom to 100 % (ADR 0070)
+
+Release self-test, Nikon Z 6 (6048×4024), through IPC, for a 2000×1200 window:
+
+| Step | Time |
+|---|---|
+| Full-resolution decode (`prepare_full`, once per open photo) | 864–888 ms |
+| Window before the full decode / while dragging, from the half-size preview (1000×600) | 7 ms |
+| Window at full resolution, light edit (contrast) | 24 ms |
+| The same, panned by 160 px | 25 ms |
+| Clarity, texture and a straightened crop: first window (frames the whole full-resolution source) | 124 ms |
+| The same edit, panned | 35 ms |
+
+The full-resolution source takes 146 MB (16-bit RGB) while the photo is open, counted
+in the open-images budget. Rendering a window costs its rows at the output's full
+width, then a crop of the columns. For a viewer-sized window, that is a fraction of a
+whole full-resolution render.

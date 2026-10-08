@@ -66,6 +66,10 @@ export async function renderPreview(request: PreviewRequestDto): Promise<Preview
   return decodeFrame(toArrayBuffer(await invoke<ArrayBuffer | number[]>("render_preview", { request })));
 }
 
+/** Decodes the open photo at full resolution for zoom (ADR 0070); resolves when
+ *  window renders can use it. */
+export const prepareFull = (imageId: number) => invoke<null>("prepare_full", { imageId });
+
 /** A synthetic cancellation, for responses that became obsolete on the UI side. */
 export const staleError = (): IpcError => ({ kind: "cancelled", message: "stale", reference: null });
 

@@ -29,6 +29,8 @@ const COMPARE_PREVIEW_KEY: &str = "compare-preview";
 const PRESET_PREVIEW_KEY: &str = "preset-previews";
 const OPEN_KEY: &str = "open";
 const RGBA_FORMAT_TAG: u8 = 0;
+/// Window renders (ADR 0070) are keyed apart from whole previews.
+const RGBA_WINDOW_FORMAT_TAG: u8 = 7;
 const INTERACTIVE_UNDERSAMPLE_PERCENT: u32 = 85;
 
 /// The application engine. Cheap to share behind an `Arc`; all methods take `&self`.
@@ -250,6 +252,9 @@ impl Engine {
                 Err(jobs::JobError::Failed(EngineError::image_not_open())),
             );
         };
+        if let Some(window) = req.window {
+            return self.render_window(image, req.recipe, req.quality, window, slot);
+        }
         let target = req
             .quality
             .target_long_edge(req.target_long_edge, self.shared.config.limits);
@@ -308,6 +313,7 @@ impl Engine {
                 cache_hit: true,
                 render_ms: 0.0,
                 full_size: full_output,
+                window: None,
             };
             return JobHandle::ready(self.jobs.next_id(), Ok(frame));
         }
@@ -336,7 +342,164 @@ impl Engine {
                 render_ms,
                 full_size: full_output,
                 histogram,
+                window: None,
             })
+        })
+    }
+
+    /// A window of the open photo's output at full resolution (ADR 0070, zoom), for
+    /// the viewer. Detail renders come from the full-resolution source once it is
+    /// decoded ([`Engine::prepare_full`]); interactive ones (while dragging) and those
+    /// before it is ready come from the largest preview level, the window scaled to it.
+    /// The pixels a whole render gives there (`CpuRenderer::render_window`).
+    fn render_window(
+        &self,
+        image: Arc<OpenedImage>,
+        recipe: EditRecipe,
+        quality: PreviewQuality,
+        window: (u32, u32, u32, u32),
+        slot: PreviewSlot,
+    ) -> JobHandle<PreviewFrame, EngineError> {
+        let recipe = recipe.sanitized();
+        let (fw, fh) = image.full_size;
+        let full_output = recipe.geometry.map_or((fw, fh), |g| g.output_size(fw, fh));
+        let full = (quality != PreviewQuality::Interactive)
+            .then(|| image.full())
+            .flatten();
+        let source = full.unwrap_or_else(|| Arc::clone(image.pyramid.base()));
+        // The source's output is the full output scaled by the source's size.
+        let s = f64::from(source.width()) / f64::from(fw.max(1));
+        let (x, y, w, h) = window;
+        let scaled = (
+            (f64::from(x) * s).floor() as u32,
+            (f64::from(y) * s).floor() as u32,
+            ((f64::from(x + w) * s).ceil() as u32)
+                .saturating_sub((f64::from(x) * s).floor() as u32)
+                .max(1),
+            ((f64::from(y + h) * s).ceil() as u32)
+                .saturating_sub((f64::from(y) * s).floor() as u32)
+                .max(1),
+        );
+        let mut key_bytes = recipe.canonical_bytes();
+        for v in [scaled.0, scaled.1, scaled.2, scaled.3] {
+            key_bytes.extend(v.to_le_bytes());
+        }
+        let key = RenderKey::new(
+            image.source_id,
+            &key_bytes,
+            source.width(),
+            source.height(),
+            RGBA_WINDOW_FORMAT_TAG,
+            RENDERER_VERSION,
+        );
+        let covers = move |out: &OutputImage| {
+            [
+                f64::from(scaled.0) / s,
+                f64::from(scaled.1) / s,
+                f64::from(out.width()) / s,
+                f64::from(out.height()) / s,
+            ]
+        };
+        let supersede_key = match slot {
+            PreviewSlot::Compare => COMPARE_PREVIEW_KEY.to_owned(),
+            _ => VIEWER_PREVIEW_KEY.to_owned(),
+        };
+        if let Some(hit) = self
+            .shared
+            .previews
+            .lock()
+            .expect("preview cache lock")
+            .get(&key)
+        {
+            self.jobs.cancel_key(&supersede_key);
+            let window = Some(covers(&hit));
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Ok(PreviewFrame {
+                    image: hit,
+                    level: 0,
+                    cache_hit: true,
+                    render_ms: 0.0,
+                    full_size: full_output,
+                    histogram: None,
+                    window,
+                }),
+            );
+        }
+        let shared = Arc::clone(&self.shared);
+        let as_shot_white = image.as_shot_white;
+        let spec = JobSpec::new(Lane::Interactive, Priority::Interactive, "preview-window")
+            .superseding(supersede_key);
+        self.jobs.submit(spec, move |token| {
+            let t0 = Instant::now();
+            let plan = RenderPlan::from_recipe(&recipe, as_shot_white);
+            let out =
+                shared
+                    .renderer
+                    .render_window(&plan, &source, PixelFormat::Rgba8, scaled, token)?;
+            let render_ms = ms(t0);
+            let out = Arc::new(out);
+            shared.previews.lock().expect("preview cache lock").insert(
+                key,
+                Arc::clone(&out),
+                quality,
+            );
+            let window = Some(covers(&out));
+            Ok(PreviewFrame {
+                image: out,
+                level: 0,
+                cache_hit: false,
+                render_ms,
+                full_size: full_output,
+                histogram: None,
+                window,
+            })
+        })
+    }
+
+    /// Decodes the open photo at full resolution (ADR 0070), for viewing at 100 %:
+    /// once per photo, kept while it is open. On the background lane; resolves when
+    /// window renders can use it.
+    pub fn prepare_full(&self, image: ImageId) -> JobHandle<(), EngineError> {
+        let Some(open) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        if open.full().is_some() {
+            return JobHandle::ready(self.jobs.next_id(), Ok(()));
+        }
+        let shared = Arc::clone(&self.shared);
+        let spec = JobSpec::new(
+            Lane::Background,
+            Priority::VisiblePreview,
+            "full-resolution",
+        )
+        .superseding(format!("full-resolution-{}", image.0));
+        self.jobs.submit(spec, move |token| {
+            if open.full().is_some() {
+                return Ok(());
+            }
+            let t0 = Instant::now();
+            let decoded = shared.decoders.decode(
+                &open.path,
+                DecodeOptions::new(DecodeScale::Full)
+                    .with_max_threads(rayon::current_num_threads()),
+                token,
+            )?;
+            if token.is_cancelled() {
+                return Err(EngineError::cancelled());
+            }
+            log::info!(
+                "full resolution of {} ({}x{}) decoded in {:.0} ms",
+                open.path.display(),
+                decoded.image.width(),
+                decoded.image.height(),
+                ms(t0)
+            );
+            *open.full.lock().expect("full source lock") = Some(Arc::new(decoded.image));
+            Ok(())
         })
     }
 
@@ -598,6 +761,7 @@ impl Shared {
             pyramid,
             as_shot_white: info.as_shot_white,
             full_size: (info.full_width, info.full_height),
+            full: Mutex::new(None),
         });
         let evicted = self.images.lock().expect("images lock").insert(opened);
         if !evicted.is_empty() {

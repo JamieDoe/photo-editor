@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use cache::SourceId;
 use image_core::Pyramid;
@@ -17,6 +17,20 @@ pub(crate) struct OpenedImage {
     pub as_shot_white: Option<image_core::Chromaticity>,
     /// The photo's full size (after orientation), which crops are measured against.
     pub full_size: (u32, u32),
+    /// The photo at full resolution, decoded on demand for viewing at 100 % (ADR 0070)
+    /// and dropped with the image.
+    pub full: Mutex<Option<Arc<image_core::LinearImage>>>,
+}
+
+impl OpenedImage {
+    /// The full-resolution source, if it has been decoded.
+    pub fn full(&self) -> Option<Arc<image_core::LinearImage>> {
+        self.full.lock().expect("full source lock").clone()
+    }
+
+    fn byte_size(&self) -> usize {
+        self.pyramid.byte_size() + self.full().map_or(0, |f| f.byte_size())
+    }
 }
 
 /// Bounded most-recently-used set of open images.
@@ -55,6 +69,6 @@ impl OpenImages {
     }
 
     pub fn bytes(&self) -> usize {
-        self.images.iter().map(|i| i.pyramid.byte_size()).sum()
+        self.images.iter().map(|i| i.byte_size()).sum()
     }
 }

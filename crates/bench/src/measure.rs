@@ -122,6 +122,7 @@ pub fn file(path: &Path, iterations: usize) -> Value {
                 recipe: bench_recipe(i),
                 quality,
                 target_long_edge: target,
+                window: None,
             })
             .wait()
             .expect("preview");
@@ -313,6 +314,7 @@ fn interactive_under_export(engine: &Engine, id: ImageId, export: ExportRequest)
                 recipe: bench_recipe(seed),
                 quality: PreviewQuality::Interactive,
                 target_long_edge: 1600,
+                window: None,
             })
             .wait()
             .expect("preview");
@@ -356,6 +358,7 @@ pub fn memory(path: &Path) -> Value {
             recipe: bench_recipe(i),
             quality,
             target_long_edge: 3200,
+            window: None,
         };
         engine.render_preview(request).wait().expect("preview");
     }

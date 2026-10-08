@@ -185,119 +185,7 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
 #[test]
 fn matches_scalar_reference_for_all_stages() {
     let img = chart();
-    let recipe = EditRecipe {
-        exposure: 0.6,
-        contrast: 45.0,
-        highlights: -40.0,
-        shadows: 50.0,
-        whites: 20.0,
-        blacks: -30.0,
-        temperature: -35.0,
-        saturation: 30.0,
-        texture: 60.0,
-        clarity: 45.0,
-        dehaze: 50.0,
-        noise_reduction: 70.0,
-        vignette: -40.0,
-        grain: 30.0,
-        calibration: Some(crate::ops::calibration::Calibration {
-            shadow_tint: 20.0,
-            red_hue: 15.0,
-            blue_hue: -40.0,
-            blue_saturation: 30.0,
-            ..Default::default()
-        }),
-        colour_grading: Some(crate::ops::colour_grading::ColourGrading {
-            shadows: crate::ops::colour_grading::GradeWheel {
-                hue: 200.0,
-                saturation: 40.0,
-                luminance: -10.0,
-            },
-            highlights: crate::ops::colour_grading::GradeWheel {
-                hue: 35.0,
-                saturation: 30.0,
-                luminance: 5.0,
-            },
-            ..Default::default()
-        }),
-        parametric_curve: Some(crate::ops::parametric_curve::ParametricCurve {
-            shadows: 30.0,
-            highlights: -40.0,
-            ..Default::default()
-        }),
-        point_curve: Some(crate::ops::point_curve::PointCurve::new(&[
-            [0.05, 0.0],
-            [0.3, 0.24],
-            [0.7, 0.8],
-            [1.0, 0.95],
-        ])),
-        channel_curves: Some(crate::ops::point_curve::ChannelCurves {
-            blue: Some(crate::ops::point_curve::PointCurve::new(&[
-                [0.0, 0.08],
-                [1.0, 0.9],
-            ])),
-            ..Default::default()
-        }),
-        masks: vec![
-            linear_mask(1, [0.5, 0.0], [0.5, 0.6], -0.8, 30.0, 40.0),
-            linear_mask(2, [0.0, 0.5], [0.7, 0.5], 0.5, -20.0, -30.0),
-            crate::masks::Mask {
-                id: 3,
-                hidden: false,
-                parts: vec![crate::masks::MaskPart {
-                    mode: crate::masks::Combine::Subtract,
-                    shape: crate::masks::MaskShape::Linear {
-                        start: [0.0, 0.2],
-                        end: [0.3, 0.4],
-                    },
-                }],
-                density: 70.0,
-                shape: crate::masks::MaskShape::Radial {
-                    centre: [0.4, 0.6],
-                    radius: [0.3, 0.15],
-                    angle: 30.0,
-                    feather: 60.0,
-                },
-                invert: true,
-                adjustments: crate::masks::LocalAdjustments {
-                    exposure: -0.6,
-                    warmth: 15.0,
-                    clarity: 25.0,
-                },
-            },
-            crate::masks::Mask {
-                id: 4,
-                hidden: false,
-                parts: Vec::new(),
-                density: 100.0,
-                shape: crate::masks::MaskShape::Brush {
-                    strokes: vec![
-                        crate::masks::Stroke {
-                            erase: false,
-                            size: 0.06,
-                            feather: 60.0,
-                            flow: 80.0,
-                            points: vec![[0.1, 0.8], [0.5, 0.7], [0.9, 0.85]],
-                        },
-                        crate::masks::Stroke {
-                            erase: true,
-                            size: 0.03,
-                            feather: 30.0,
-                            flow: 100.0,
-                            points: vec![[0.5, 0.6], [0.5, 0.9]],
-                        },
-                    ],
-                },
-                invert: false,
-                adjustments: crate::masks::LocalAdjustments {
-                    exposure: 0.7,
-                    warmth: -25.0,
-                    clarity: 30.0,
-                },
-            },
-        ],
-        ..Default::default()
-    };
+    let recipe = every_stage_recipe();
     let plan = RenderPlan::from_recipe(&recipe, None);
     let fast = CpuRenderer
         .render(&plan, &img, PixelFormat::Rgb8, &NeverCancel)
@@ -1083,4 +971,183 @@ fn removals_fill_first_follow_the_photo_and_are_cached() {
         CpuRenderer.render(&plan, &img, PixelFormat::Rgb8, &cancelled),
         Err(RenderError::Cancelled)
     ));
+}
+
+/// A recipe using every stage, global and local: the one renders are checked with.
+fn every_stage_recipe() -> EditRecipe {
+    EditRecipe {
+        exposure: 0.6,
+        contrast: 45.0,
+        highlights: -40.0,
+        shadows: 50.0,
+        whites: 20.0,
+        blacks: -30.0,
+        temperature: -35.0,
+        saturation: 30.0,
+        texture: 60.0,
+        clarity: 45.0,
+        dehaze: 50.0,
+        noise_reduction: 70.0,
+        vignette: -40.0,
+        grain: 30.0,
+        calibration: Some(crate::ops::calibration::Calibration {
+            shadow_tint: 20.0,
+            red_hue: 15.0,
+            blue_hue: -40.0,
+            blue_saturation: 30.0,
+            ..Default::default()
+        }),
+        colour_grading: Some(crate::ops::colour_grading::ColourGrading {
+            shadows: crate::ops::colour_grading::GradeWheel {
+                hue: 200.0,
+                saturation: 40.0,
+                luminance: -10.0,
+            },
+            highlights: crate::ops::colour_grading::GradeWheel {
+                hue: 35.0,
+                saturation: 30.0,
+                luminance: 5.0,
+            },
+            ..Default::default()
+        }),
+        parametric_curve: Some(crate::ops::parametric_curve::ParametricCurve {
+            shadows: 30.0,
+            highlights: -40.0,
+            ..Default::default()
+        }),
+        point_curve: Some(crate::ops::point_curve::PointCurve::new(&[
+            [0.05, 0.0],
+            [0.3, 0.24],
+            [0.7, 0.8],
+            [1.0, 0.95],
+        ])),
+        channel_curves: Some(crate::ops::point_curve::ChannelCurves {
+            blue: Some(crate::ops::point_curve::PointCurve::new(&[
+                [0.0, 0.08],
+                [1.0, 0.9],
+            ])),
+            ..Default::default()
+        }),
+        masks: vec![
+            linear_mask(1, [0.5, 0.0], [0.5, 0.6], -0.8, 30.0, 40.0),
+            linear_mask(2, [0.0, 0.5], [0.7, 0.5], 0.5, -20.0, -30.0),
+            crate::masks::Mask {
+                id: 3,
+                hidden: false,
+                parts: vec![crate::masks::MaskPart {
+                    mode: crate::masks::Combine::Subtract,
+                    shape: crate::masks::MaskShape::Linear {
+                        start: [0.0, 0.2],
+                        end: [0.3, 0.4],
+                    },
+                }],
+                density: 70.0,
+                shape: crate::masks::MaskShape::Radial {
+                    centre: [0.4, 0.6],
+                    radius: [0.3, 0.15],
+                    angle: 30.0,
+                    feather: 60.0,
+                },
+                invert: true,
+                adjustments: crate::masks::LocalAdjustments {
+                    exposure: -0.6,
+                    warmth: 15.0,
+                    clarity: 25.0,
+                },
+            },
+            crate::masks::Mask {
+                id: 4,
+                hidden: false,
+                parts: Vec::new(),
+                density: 100.0,
+                shape: crate::masks::MaskShape::Brush {
+                    strokes: vec![
+                        crate::masks::Stroke {
+                            erase: false,
+                            size: 0.06,
+                            feather: 60.0,
+                            flow: 80.0,
+                            points: vec![[0.1, 0.8], [0.5, 0.7], [0.9, 0.85]],
+                        },
+                        crate::masks::Stroke {
+                            erase: true,
+                            size: 0.03,
+                            feather: 30.0,
+                            flow: 100.0,
+                            points: vec![[0.5, 0.6], [0.5, 0.9]],
+                        },
+                    ],
+                },
+                invert: false,
+                adjustments: crate::masks::LocalAdjustments {
+                    exposure: 0.7,
+                    warmth: -25.0,
+                    clarity: 30.0,
+                },
+            },
+        ],
+        ..Default::default()
+    }
+}
+
+#[test]
+fn a_window_is_exactly_that_part_of_the_whole_render() {
+    // Every stage, cropped, straightened and turned, with a spot: windows anywhere
+    // (corners, edges, odd sizes, the whole) match the whole render byte for byte.
+    let img = chart();
+    let recipe = EditRecipe {
+        geometry: Some(crate::Geometry {
+            straighten: 3.0,
+            crop: crate::geometry::CropRect {
+                x: 0.08,
+                y: 0.1,
+                w: 0.85,
+                h: 0.8,
+            },
+            ..Default::default()
+        }),
+        spots: vec![crate::retouch::Spot {
+            x: 0.3,
+            y: 0.4,
+            source_x: 0.6,
+            source_y: 0.4,
+            radius: 0.05,
+            ..Default::default()
+        }],
+        ..every_stage_recipe()
+    };
+    for format in [PixelFormat::Rgb8, PixelFormat::Rgba8] {
+        let plan = RenderPlan::from_recipe(&recipe, None);
+        let whole = CpuRenderer
+            .render(&plan, &img, format, &NeverCancel)
+            .unwrap();
+        let (ow, oh) = (whole.width(), whole.height());
+        let bytes = format.bytes_per_pixel();
+        for (x, y, w, h) in [
+            (0, 0, 17, 9),
+            (ow / 3, oh / 4, 41, 23),
+            (ow - 13, oh - 7, 13, 7),
+            (5, oh / 2, ow - 10, 1),
+            (0, 0, ow, oh),
+            // Larger than the output: clamped to it.
+            (ow - 4, oh - 4, 100, 100),
+        ] {
+            let window = CpuRenderer
+                .render_window(&plan, &img, format, (x, y, w, h), &NeverCancel)
+                .unwrap();
+            let (ww, wh) = (window.width() as usize, window.height() as usize);
+            assert_eq!(
+                (ww, wh),
+                ((w.min(ow - x)) as usize, (h.min(oh - y)) as usize)
+            );
+            for r in 0..wh {
+                let from = ((y as usize + r) * ow as usize + x as usize) * bytes;
+                assert_eq!(
+                    &window.data()[r * ww * bytes..(r + 1) * ww * bytes],
+                    &whole.data()[from..from + ww * bytes],
+                    "{format:?} window ({x}, {y}, {w}, {h}), row {r}"
+                );
+            }
+        }
+    }
 }

@@ -35,6 +35,7 @@ fn preview(
             recipe,
             quality,
             target_long_edge: 1000,
+            window: None,
         })
         .wait()
         .unwrap()
@@ -78,6 +79,7 @@ fn preview_qualities_pick_different_levels() {
         recipe: EditRecipe::default(),
         quality,
         target_long_edge: 4000,
+        window: None,
     };
     let thumb = engine
         .render_preview(request(PreviewQuality::Thumbnail))
@@ -149,6 +151,7 @@ fn newer_preview_supersedes_older_ones() {
                 },
                 quality: PreviewQuality::Detail,
                 target_long_edge: 4000,
+                window: None,
             })
         })
         .collect();
@@ -233,6 +236,7 @@ fn compare_renders_have_their_own_slot() {
         },
         quality: PreviewQuality::Detail,
         target_long_edge: 4000,
+        window: None,
     };
     // The before image, then the live edit changing while it renders: the edit's
     // requests supersede each other, not the before image.
@@ -393,6 +397,7 @@ fn closed_or_unknown_images_report_not_open() {
             recipe: EditRecipe::default(),
             quality: PreviewQuality::Interactive,
             target_long_edge: 500,
+            window: None,
         })
         .wait()
         .unwrap_err();
@@ -453,6 +458,7 @@ fn open_images_are_bounded() {
             recipe: EditRecipe::default(),
             quality: PreviewQuality::Interactive,
             target_long_edge: 500,
+            window: None,
         })
         .wait();
     assert!(err.is_err(), "oldest image should have been evicted");
@@ -489,6 +495,7 @@ fn long_drag_does_not_evict_settled_renders() {
         recipe: r,
         quality: PreviewQuality::Detail,
         target_long_edge: 1600,
+        window: None,
     };
     assert!(
         !engine
@@ -508,6 +515,7 @@ fn long_drag_does_not_evict_settled_renders() {
             recipe: r,
             quality: PreviewQuality::Interactive,
             target_long_edge: 1600,
+            window: None,
         };
         engine.render_preview(req).wait().unwrap();
     }
@@ -616,4 +624,87 @@ fn viewer_frames_carry_their_histogram() {
         PreviewQuality::Thumbnail,
     );
     assert!(thumb.histogram.is_none());
+}
+
+#[test]
+fn windows_show_their_part_of_the_photo_at_full_resolution() {
+    let dir = fixtures::TempDir::new("engine-window");
+    let path = write(
+        dir.path(),
+        "chart.jpg",
+        fixtures::chart_jpeg(3200, 2000, 90),
+    );
+    let engine = Engine::new(EngineConfig {
+        preview_source_min_edge: 1600,
+        ..EngineConfig::default()
+    });
+    let id = engine.open(&path).wait().unwrap().id;
+    let recipe = EditRecipe {
+        exposure: 0.4,
+        clarity: 30.0,
+        geometry: Some(renderer::geometry::Geometry {
+            straighten: 2.0,
+            crop: renderer::geometry::CropRect {
+                x: 0.1,
+                y: 0.1,
+                w: 0.8,
+                h: 0.8,
+            },
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let window = |quality, window| {
+        engine
+            .render_preview(PreviewRequest {
+                image: id,
+                recipe: recipe.clone(),
+                quality,
+                target_long_edge: 1000,
+                window: Some(window),
+            })
+            .wait()
+            .unwrap()
+    };
+
+    // Before the full resolution is decoded: from the preview source (half size),
+    // covering at least the window asked for.
+    let early = window(PreviewQuality::Detail, (301, 201, 400, 300));
+    let [x, y, w, h] = early.window.unwrap();
+    assert!(x <= 301.0 && y <= 201.0 && x + w >= 701.0 && y + h >= 501.0);
+    assert_eq!((early.image.width(), early.image.height()), (201, 151));
+    assert!(early.histogram.is_none());
+    let (ow, oh) = early.full_size;
+
+    engine.prepare_full(id).wait().unwrap();
+    let detail = window(PreviewQuality::Detail, (301, 201, 400, 300));
+    assert_eq!(detail.window, Some([301.0, 201.0, 400.0, 300.0]));
+    assert_eq!((detail.image.width(), detail.image.height()), (400, 300));
+    assert_eq!(detail.full_size, (ow, oh));
+    // That part of the whole photo rendered at full resolution: the same up to the
+    // rounding of clarity's running-sum blur, which starts at each row chunk.
+    let whole = window(PreviewQuality::Detail, (0, 0, ow, oh));
+    assert_eq!((whole.image.width(), whole.image.height()), (ow, oh));
+    let stride = ow as usize * 4;
+    let mut differ = 0;
+    for row in 0..300 {
+        let at = (201 + row) * stride + 301 * 4;
+        let a = &detail.image.data()[row * 400 * 4..(row + 1) * 400 * 4];
+        let b = &whole.image.data()[at..at + 400 * 4];
+        for (p, q) in a.iter().zip(b) {
+            assert!(p.abs_diff(*q) <= 1, "row {row}: {p} vs {q}");
+            differ += usize::from(p != q);
+        }
+    }
+    assert!(differ < 400 * 300 / 1000, "{differ} values differ");
+    assert!(
+        window(PreviewQuality::Detail, (301, 201, 400, 300)).cache_hit,
+        "a repeated window is cached"
+    );
+    // While dragging, windows still come from the preview source.
+    let dragging = window(PreviewQuality::Interactive, (301, 201, 400, 300));
+    assert_eq!(
+        (dragging.image.width(), dragging.image.height()),
+        (201, 151)
+    );
 }

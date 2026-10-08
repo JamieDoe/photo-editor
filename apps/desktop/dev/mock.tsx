@@ -120,6 +120,29 @@ function placeholderFrame(w: number, h: number): ArrayBuffer {
   return buf;
 }
 
+/** A window of the placeholder at its full size (2400 x 1600, ADR 0070): the same
+ *  gradient, with a fine grid only full resolution shows. */
+function windowFrame([x0, y0, ww, wh]: [number, number, number, number]): ArrayBuffer {
+  const [fw, fh] = [2400, 1600];
+  const w = Math.max(1, Math.min(ww, fw - x0));
+  const h = Math.max(1, Math.min(wh, fh - y0));
+  const buf = new ArrayBuffer(28 + 16 + w * h * 4);
+  const v = new DataView(buf);
+  [w, h, 0, 4].forEach((n, i) => v.setUint32(i * 4, n, true));
+  v.setFloat32(16, 9.5, true);
+  v.setUint32(20, fw, true);
+  v.setUint32(24, fh, true);
+  [x0, y0, w, h].forEach((n, i) => v.setFloat32(28 + i * 4, n, true));
+  const px = new Uint8Array(buf, 44);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = (y * w + x) * 4;
+    const [gx, gy] = [x0 + x, y0 + y];
+    const line = gx % 16 === 0 || gy % 16 === 0 ? 40 : 0;
+    px[i] = (gx * 255) / fw - line; px[i + 1] = (gy * 255) / fh - line; px[i + 2] = 128; px[i + 3] = 255;
+  }
+  return buf;
+}
+
 /** A gradient "photo" as JPEG bytes; every fourth one is portrait. Arrives after a
  *  short random delay, like a thumbnail being generated. */
 async function mockThumbnail(path: string): Promise<ArrayBuffer> {
@@ -224,8 +247,14 @@ mockIPC((cmd, payload) => {
         path: openedPath,
         savedRecipe: mockEdits.get(openedPath) ?? null,
         editSaving: cmd === "open_image_path" ? "library" : "notInLibrary", id: 1, fileName: "mock.nef", decoder: "libraw", cameraRaw: true, camera: "Mock Camera", iso: 100, aperture: 6.7, shutterSeconds: 1, focalLengthMm: 52, temperatureScale: { asShotKelvin: 5200, asShotTint: 6, miredPerUnit: 1.2, minKelvin: 1667, maxKelvin: 25000 }, fullWidth: 6000, fullHeight: 4000, levels: [[3000, 2000], [1500, 1000], [750, 500], [375, 250]], pyramidBytes: 0, identityMs: 0.5, decodeMs: 380, pyramidMs: 2, embeddedPreviewMs: 12 };
-    case "render_preview":
-      return placeholderFrame(600, 400);
+    case "render_preview": {
+      const { request } = payload as { request: { window?: [number, number, number, number] } };
+      const window = request.window;
+      if (!window) return placeholderFrame(600, 400);
+      return new Promise((r) => setTimeout(() => r(windowFrame(window)), 60));
+    }
+    case "prepare_full":
+      return new Promise((r) => setTimeout(() => r(null), 400));
     case "self_test_config":
       return null;
     case "diagnostics":

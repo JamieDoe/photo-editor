@@ -69,6 +69,11 @@ pub struct PreviewRequest {
     pub quality: PreviewQuality,
     /// Long edge of the viewport in device pixels.
     pub target_long_edge: u32,
+    /// Only this part of the output, at full resolution: `x`, `y`, `width`, `height`
+    /// in full-resolution output pixels (ADR 0070, zoom). Rendered from the full
+    /// source once [`Engine::prepare_full`](crate::Engine::prepare_full) has decoded
+    /// it (and for detail quality), otherwise from the largest preview level.
+    pub window: Option<(u32, u32, u32, u32)>,
 }
 
 /// A rendered preview (RGBA8, sRGB).
@@ -81,8 +86,13 @@ pub struct PreviewFrame {
     /// The size this recipe's output has at full resolution (after crop), so the
     /// viewer keeps one exact shape for all of its renders.
     pub full_size: (u32, u32),
-    /// The frame's histogram (ADR 0036), for viewer frames; `None` for thumbnails.
+    /// The frame's histogram (ADR 0036), for viewer frames; `None` for thumbnails and
+    /// windows (a window's histogram isn't the photo's).
     pub histogram: Option<Arc<renderer::Histogram>>,
+    /// For a window (ADR 0070): the part of the full-resolution output this frame
+    /// shows, `x`, `y`, `width`, `height` in its pixels (fractional when rendered from
+    /// a smaller level).
+    pub window: Option<[f64; 4]>,
 }
 
 #[derive(Debug, Clone)]

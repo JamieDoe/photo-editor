@@ -11,6 +11,7 @@ import { defaultCopyGroups, pasteChanges, pasteEdits as pasteInto, type CopiedEd
 import { EditHistory, describeChange } from "./history";
 import { PreviewScheduler, type FrameInfo, type SchedulerStats } from "./previewScheduler";
 import { defaultRecipe } from "./recipe";
+import { sameWindow, type OutputWindow } from "./zoom";
 
 /** What the viewer shows: a render of the open image's recipe. The camera's embedded
  * JPEG is never shown in the editor (ADR 0020). */
@@ -42,6 +43,8 @@ export function useEditor() {
   const [image, setImage] = useState<ImageSummaryDto | null>(null);
   const [recipe, setRecipeState] = useState<EditRecipe | null>(null);
   const [displayed, setDisplayed] = useState<DisplayedFrame | null>(null);
+  /** At 100 % (ADR 0070): the latest render of the visible window, over `displayed`. */
+  const [windowed, setWindowed] = useState<DisplayedFrame | null>(null);
   const [stats, setStats] = useState<SchedulerStats | null>(null);
   const [error, setError] = useState<AppError | null>(null);
   /** Shows an error to the user (logging it first if it did not come from Rust). */
@@ -69,6 +72,10 @@ export function useEditor() {
   const imageRef = useRef<ImageSummaryDto | null>(null);
   const recipeRef = useRef<EditRecipe | null>(null);
   const targetEdgeRef = useRef(1600);
+  /** The part of the photo the viewer shows at 100 % (ADR 0070); null at Fit. */
+  const viewWindowRef = useRef<OutputWindow | null>(null);
+  /** The photo whose full resolution has been asked for. */
+  const fullRequestedRef = useRef<number | null>(null);
   const listenersRef = useRef(new Set<FrameListener>());
   // Latest event per export job. Events can arrive before export_image resolves.
   const exportEventsRef = useRef(new Map<number, ExportEvent>());
@@ -85,9 +92,11 @@ export function useEditor() {
       render: async (r, quality) => {
         const img = imageRef.current;
         if (!img) throw ipc.staleError();
-        const frame = await ipc.renderPreview({ imageId: img.id, recipe: r, quality, targetLongEdge: targetEdgeRef.current });
-        // A different image was opened while this rendered.
+        const window = viewWindowRef.current ?? undefined;
+        const frame = await ipc.renderPreview({ imageId: img.id, recipe: r, quality, targetLongEdge: targetEdgeRef.current, window });
+        // A different image was opened while this rendered, or zoom went back to Fit.
         if (imageRef.current?.id !== img.id) throw ipc.staleError();
+        if (frame.window && viewWindowRef.current === null) throw ipc.staleError();
         return { frame, imageId: img.id };
       },
       isCancellation: ipc.isCancellation,
@@ -147,6 +156,10 @@ export function useEditor() {
   };
 
   function show(d: DisplayedFrame) {
+    if (d.frame.window) {
+      setWindowed(d);
+      return;
+    }
     setDisplayed(d);
     listenersRef.current.forEach((l) => l(d));
   }
@@ -245,6 +258,9 @@ export function useEditor() {
       if (!summary || !info) return summary;
       imageRef.current = summary;
       setImage(summary);
+      // The new photo renders whole first; the viewer then asks for its window.
+      viewWindowRef.current = null;
+      setWindowed(null);
       setError(null);
       // The saved edit (if any) is the starting point, so the first render shows it.
       const start = summary.savedRecipe ?? defaultRecipe(info.recipeVersion, info.adjustments);
@@ -307,6 +323,27 @@ export function useEditor() {
     [recipe],
   );
 
+  /** Shows only `window` of the photo, at full resolution (ADR 0070), or the whole
+   *  photo again with null. The full resolution is decoded the first time; windows
+   *  render from the largest preview until it is ready. */
+  const setViewWindow = useCallback((window: OutputWindow | null) => {
+    if (sameWindow(window, viewWindowRef.current)) return;
+    viewWindowRef.current = window;
+    const img = imageRef.current;
+    const rerender = () => {
+      if (imageRef.current === img && recipeRef.current) schedulerRef.current?.request(toRender(recipeRef.current));
+    };
+    if (window === null) setWindowed(null);
+    else if (img && fullRequestedRef.current !== img.id) {
+      fullRequestedRef.current = img.id;
+      ipc.prepareFull(img.id).then(rerender, (e: unknown) => {
+        if (fullRequestedRef.current === img.id) fullRequestedRef.current = null;
+        if (!ipc.isCancellation(e)) fail(e);
+      });
+    }
+    rerender();
+  }, []);
+
   const setTargetLongEdge = useCallback(
     (edge: number) => {
       const rounded = Math.max(64, Math.round(edge));
@@ -356,6 +393,8 @@ export function useEditor() {
     image,
     recipe,
     displayed,
+    windowed,
+    setViewWindow,
     stats,
     error,
     busy,
