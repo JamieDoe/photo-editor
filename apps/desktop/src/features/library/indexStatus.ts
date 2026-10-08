@@ -14,5 +14,10 @@ export function indexStatusText(indexing: IndexProgress | null, last: IndexFinis
   if (last.changed > 0) parts.push(`${last.changed.toLocaleString()} changed`);
   if (last.missing > 0) parts.push(`${last.missing.toLocaleString()} missing`);
   if (last.skipped > 0) parts.push(`${last.skipped.toLocaleString()} unreadable`);
+  // Marks another app left beside new RAWs (ADR 0067).
+  if (last.marksFromSidecars > 0) {
+    const n = last.marksFromSidecars;
+    parts.push(`ratings and labels from ${n.toLocaleString()} sidecar${n === 1 ? "" : "s"}`);
+  }
   return parts.join(" · ");
 }

@@ -31,6 +31,35 @@ pub fn is_raw(path: &Path, raw_extensions: &[&str]) -> bool {
         .is_some_and(|e| raw_extensions.contains(&e.to_ascii_lowercase().as_str()))
 }
 
+/// The marks in `raw`'s sidecar (ADR 0067, part 3), if it has one with any: for a
+/// photo joining the library with another app's culling beside it.
+pub fn read(raw: &Path) -> Option<catalogue::Marks> {
+    let sidecar = path_for(raw);
+    let meta = std::fs::metadata(&sidecar).ok()?;
+    if !meta.is_file() || meta.len() > MAX_SIDECAR_BYTES {
+        return None;
+    }
+    let text = std::fs::read_to_string(&sidecar).ok()?;
+    let j = export::sidecar::read_marks(&text)?;
+    use export::metadata::LabelName;
+    Some(catalogue::Marks {
+        rating: catalogue::Rating::new(j.rating).unwrap_or_default(),
+        flag: if j.rejected {
+            catalogue::Flag::Reject
+        } else {
+            catalogue::Flag::None
+        },
+        label: match j.label {
+            None => catalogue::ColourLabel::None,
+            Some(LabelName::Red) => catalogue::ColourLabel::Red,
+            Some(LabelName::Yellow) => catalogue::ColourLabel::Yellow,
+            Some(LabelName::Green) => catalogue::ColourLabel::Green,
+            Some(LabelName::Blue) => catalogue::ColourLabel::Blue,
+            Some(LabelName::Purple) => catalogue::ColourLabel::Purple,
+        },
+    })
+}
+
 /// Brings `raw`'s sidecar in line with `judgements`.
 pub fn sync(raw: &Path, judgements: &Judgements) -> Result<Synced, String> {
     let sidecar = path_for(raw);

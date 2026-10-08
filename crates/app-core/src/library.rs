@@ -49,6 +49,8 @@ pub struct IndexSummary {
     pub skipped: usize,
     /// Photos whose details were read in this pass.
     pub details_read: usize,
+    /// New photos that took their marks from another app's sidecar (ADR 0067).
+    pub marks_from_sidecars: usize,
     pub walk_ms: f64,
     pub details_ms: f64,
     pub total_ms: f64,
@@ -134,6 +136,7 @@ fn index(
         missing: 0,
         skipped: walk.skipped,
         details_read: 0,
+        marks_from_sidecars: 0,
         walk_ms,
         details_ms: 0.0,
         total_ms: 0.0,
@@ -167,13 +170,30 @@ fn index(
             .into_par_iter()
             .filter_map(|(p, size, modified)| SourceIdentity::from_known(p, size, modified).ok())
             .collect();
-        for (_, outcome) in catalogue.record_files(folder, &identities, scan)? {
+        let recorded = catalogue.record_files(folder, &identities, scan)?;
+        for (_, outcome) in &recorded {
             match outcome {
                 RecordOutcome::New => summary.new += 1,
                 RecordOutcome::Changed => summary.changed += 1,
                 RecordOutcome::Moved { .. } => summary.moved += 1,
                 RecordOutcome::Unchanged => summary.unchanged += 1,
             }
+        }
+        // Photos new to the library take the marks another app left in their sidecars
+        // (ADR 0067), unless they have their own. JPEGs carry theirs inside, and a
+        // `NAME.xmp` beside one belongs to a RAW of the same name.
+        let from_sidecars: Vec<(PhotoId, catalogue::Marks)> = recorded
+            .par_iter()
+            .zip(identities.par_iter())
+            .filter(|((_, outcome), id)| {
+                matches!(outcome, RecordOutcome::New) && !is_jpeg(&id.canonical_path)
+            })
+            .filter_map(|((photo, _), id)| {
+                crate::sidecars::read(&id.canonical_path).map(|m| (*photo, m))
+            })
+            .collect();
+        if !from_sidecars.is_empty() {
+            summary.marks_from_sidecars += catalogue.import_marks(&from_sidecars)?;
         }
         progress(IndexProgress {
             stage: IndexStage::Recording,
@@ -189,7 +209,7 @@ fn index(
     summary.total_ms = ms(start);
     log::info!(
         "indexed {} in {:.0} ms: {} found, {} new, {} changed, {} moved, {} unchanged, {} missing, {} skipped; \
-         details read for {} in {:.0} ms",
+         details read for {} in {:.0} ms; marks from {} sidecars",
         root.display(),
         summary.total_ms,
         summary.found,
@@ -200,7 +220,8 @@ fn index(
         summary.missing,
         summary.skipped,
         summary.details_read,
-        summary.details_ms
+        summary.details_ms,
+        summary.marks_from_sidecars
     );
     Ok(summary)
 }
@@ -248,6 +269,12 @@ fn read_details(
         });
     }
     Ok(done)
+}
+
+fn is_jpeg(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "jpg" | "jpeg"))
 }
 
 fn to_details(m: raw::PhotoMetadata) -> PhotoDetails {

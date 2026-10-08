@@ -1,7 +1,7 @@
 # ADR 0067: Marks for other apps
 
-- Status: Accepted (part 1: exports; part 2: sidecars beside RAWs; reading Lightroom's
-  back is to follow)
+- Status: Accepted (part 1: exports; part 2: sidecars beside RAWs; part 3: reading
+  other apps' sidecars)
 - Date: 2026-10-07
 
 ## Context
@@ -104,8 +104,50 @@ ADR 0063 left this open: rating and keywords "would go in XMP".
    - **Catalogue:** the marked photos are listed for writing everything when the
      setting is turned on.
 
+## Part 3: reading other apps' sidecars
+
+1. **When a RAW first joins the library** (indexing records it as new) and has a
+   sidecar beside it, `NAME.xmp`, its rating, reject and colour label are taken in.
+   That covers adding a folder culled in Lightroom, Bridge or Capture One. Moved,
+   changed and already-known photos are not touched.
+2. **The app's own marks always win:** the catalogue sets imported marks only on
+   photos with none of their own (one guarded update). Rescans never import again,
+   so a mark cleared here never comes back from an old sidecar.
+3. **Reading** (`export::sidecar::read_marks`, pure):
+   - **Rating:** 1–5 is taken as stars, and -1 as a reject.
+   - **Label:** recognised by its English name, any case.
+   - **Ignored:** labels renamed in another app's custom label set, out-of-range
+     ratings, and files without the XMP namespace.
+   - Attributes, elements and the older `xap` prefix are all read.
+   - What this app writes, it reads back.
+4. **Only RAWs:** a JPEG has its marks inside it, and a `NAME.xmp` beside a JPEG
+   belongs to the RAW of the same name. Sidecars over 4 MB aren't read.
+5. **Read-only:** the sidecars are never written here. Part 2's opt-in setting
+   decides that.
+6. **Shown:** the Library's status after indexing says how many came across ("…
+   · ratings and labels from 12 sidecars"), and the folder reloads with them.
+7. **Tests:**
+   - **Reading:**
+     - a Lightroom-style sidecar's 2 stars and Yellow;
+     - elements and `xap`;
+     - a reject;
+     - a label alone;
+     - nothing from unrated files, unknown labels, out-of-range ratings or a missing
+       namespace;
+     - this app's own packet reads back.
+   - **Catalogue:** imported marks go only to photos without marks of their own.
+   - **Indexing (app-core, real files):**
+     - two of three RAWs with sidecars take their stars, label and reject;
+     - the RAW without one and the JPEG of a pair stay unmarked;
+     - the sidecar is unchanged;
+     - after a mark is cleared here and the sidecar changed in another app, a rescan
+       imports nothing.
+   - **Status text:** the count, singular and plural.
+
 ## Consequences
 
-- **Part 3, reading back:** stars and labels from existing sidecars, such as
-  Lightroom's, read in when a folder is added, so switching tools keeps past culling.
+- **No two-way sync:** a sidecar changed in another app after a photo joined the
+  library isn't read again; the app's catalogue stays the source of truth. A "read
+  marks from sidecars" action could be added if photographers go back and forth.
+- **Pick flags** stay this app's own: no shared XMP property holds them.
 - **Keywords, titles and copyright** can join the same packet once the app has them.

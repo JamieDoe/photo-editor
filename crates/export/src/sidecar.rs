@@ -7,7 +7,7 @@
 //! structure isn't recognised is left alone. A sidecar is deleted only when it is
 //! exactly one this app would write with nothing in it.
 
-use crate::metadata::{Judgements, xmp_packet};
+use crate::metadata::{Judgements, LabelName, xmp_packet};
 
 /// What to do with a sidecar.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,6 +177,26 @@ fn remove_property(text: &str, prefix: &str, property: &str) -> String {
         out.replace_range(cut_from..cut_to, "");
     }
     out
+}
+
+/// The marks a sidecar holds (ADR 0067, part 3), as another app wrote them: the
+/// rating (-1 meaning rejected) and the colour label by its English name, any case.
+/// `None` when it holds neither, or the XMP namespace isn't declared. Labels renamed
+/// in another app (custom label sets) aren't recognised and are left out.
+pub fn read_marks(text: &str) -> Option<Judgements> {
+    let prefix = namespace_prefix(text, XMP_NAMESPACE)?;
+    let mut marks = Judgements::default();
+    match read_property(text, &prefix, "Rating").and_then(|r| r.trim().parse::<i32>().ok()) {
+        Some(-1) => marks.rejected = true,
+        Some(r @ 1..=5) => marks.rating = r as u8,
+        _ => {}
+    }
+    marks.label = read_property(text, &prefix, "Label").and_then(|l| {
+        LabelName::ALL
+            .into_iter()
+            .find(|name| name.as_str().eq_ignore_ascii_case(l.trim()))
+    });
+    (marks != Judgements::default()).then_some(marks)
 }
 
 /// The value of `prefix:property` in `text`, written as an attribute or an element.
@@ -376,6 +396,43 @@ mod tests {
             Some("Yellow")
         );
         assert_eq!(read_property(LIGHTROOM, "xmp", "Nothing"), None);
+    }
+
+    #[test]
+    fn marks_are_read_from_another_apps_sidecar() {
+        assert_eq!(
+            read_marks(LIGHTROOM),
+            Some(marks(2, false, Some(LabelName::Yellow)))
+        );
+        // Elements, an older prefix, any case of the label.
+        let elements = "<rdf:Description xmlns:xap=\"http://ns.adobe.com/xap/1.0/\"><xap:Rating>5</xap:Rating><xap:Label>purple</xap:Label></rdf:Description>";
+        assert_eq!(
+            read_marks(elements),
+            Some(marks(5, false, Some(LabelName::Purple)))
+        );
+        // A reject; a label alone.
+        let reject =
+            r#"<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="-1"/>"#;
+        assert_eq!(read_marks(reject), Some(marks(0, true, None)));
+        let label =
+            r#"<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Label="Green"/>"#;
+        assert_eq!(
+            read_marks(label),
+            Some(marks(0, false, Some(LabelName::Green)))
+        );
+        // Nothing to take: unrated, an unknown label, out-of-range ratings, no namespace.
+        for text in [
+            r#"<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="0"/>"#,
+            r#"<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Label="To Print"/>"#,
+            r#"<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="7"/>"#,
+            r#"<rdf:Description xmp:Rating="3"/>"#,
+            "not xmp",
+        ] {
+            assert_eq!(read_marks(text), None, "{text}");
+        }
+        // What this app writes, it reads back.
+        let m = marks(4, false, Some(LabelName::Blue));
+        assert_eq!(read_marks(&xmp_packet(&m).unwrap()), Some(m));
     }
 
     #[test]

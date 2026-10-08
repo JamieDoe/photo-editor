@@ -924,6 +924,8 @@ pub enum IndexEvent {
         missing: u32,
         skipped: u32,
         details_read: u32,
+        /// New photos that took their marks from another app's sidecars (ADR 0067).
+        marks_from_sidecars: u32,
         total_ms: f64,
     },
     Failed {

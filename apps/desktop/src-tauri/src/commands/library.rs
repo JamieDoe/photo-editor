@@ -278,6 +278,7 @@ pub fn index_library_folder(
                     missing: s.missing as u32,
                     skipped: s.skipped as u32,
                     details_read: s.details_read as u32,
+                    marks_from_sidecars: s.marks_from_sidecars as u32,
                     total_ms: s.total_ms,
                 }
             }
