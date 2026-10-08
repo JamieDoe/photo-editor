@@ -123,6 +123,7 @@ fn main() {
             commands::images::render_preview,
             commands::images::prepare_full,
             commands::images::prepare_fill,
+            commands::images::auto_tone,
             commands::images::auto_level,
             commands::images::new_spot,
             commands::images::find_dust,

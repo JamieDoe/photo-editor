@@ -176,6 +176,33 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       return e ? { estimate: e.bytes, actual: finished.bytes, size: `${e.width}x${e.height}`, errorPct: Math.round((e.bytes / finished.bytes - 1) * 1000) / 10, ms } : null;
     })();
 
+    // Auto (ADR 0071): the tone sliders found on a small sample, quickly; the photo
+    // rendered with them has its median near the middle (unless Exposure is at a
+    // limit), and the button is in the preset strip.
+    const autoTone = await (async () => {
+      const image = driver.editor().image;
+      if (!image) return null;
+      const t = performance.now();
+      const tone = await ipc.autoTone(image.id, a);
+      const ms = Math.round(performance.now() - t);
+      const frame = await ipc.renderPreview({ imageId: image.id, recipe: { ...a, ...tone }, quality: "detail", targetLongEdge: 1600, slot: "compare" });
+      const luma = frame.histogram?.luma;
+      let median = null as number | null;
+      if (luma) {
+        const total = luma.reduce((x, y) => x + y, 0);
+        let seen = 0;
+        median = luma.findIndex((n) => (seen += n) >= total / 2) / 255;
+      }
+      const atLimit = tone.exposure <= -2 || tone.exposure >= 2.5;
+      return {
+        tone,
+        ms,
+        median,
+        button: document.querySelector("button.auto-tone") !== null,
+        ok: median !== null && (atLimit || Math.abs(median - 0.43) < 0.1) && ms < 3000 && document.querySelector("button.auto-tone") !== null,
+      };
+    })();
+
     // Zoom (ADR 0070): a window at 100 % renders from the preview source until the full
     // resolution is decoded, then pixel for pixel from it; Z in the editor shows it.
     const zoom = await (async () => {
@@ -1780,6 +1807,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     const checks = {
       exportFinished: finished.type === "finished",
       zoom: zoom?.ok === true,
+      autoTone: autoTone?.ok === true,
       exportSizeEstimate: sizeEstimate !== null && Math.abs(sizeEstimate.errorPct) <= 30 && sizeEstimate.ms < 2000,
       framesDuringDrag: idleDrag.framesShown > 0,
       framesDuringExport: dragDuringExport.framesShown > 0,
@@ -1840,6 +1868,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       firstFrame: { ms: firstFrameMs, size: `${first.frame.width}x${first.frame.height}`, quality: first.info.quality },
       firstVisibleMs: firstFrameMs,
       reopen,
+      autoTone,
       zoom,
       toneCurve,
       history,

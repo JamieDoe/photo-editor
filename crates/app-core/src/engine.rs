@@ -32,6 +32,8 @@ const RGBA_FORMAT_TAG: u8 = 0;
 /// Window renders (ADR 0070) are keyed apart from whole previews.
 const RGBA_WINDOW_FORMAT_TAG: u8 = 7;
 const INTERACTIVE_UNDERSAMPLE_PERCENT: u32 = 85;
+/// Auto tone's sample (ADR 0071): about this many pixels on its long side.
+pub const AUTO_TONE_SAMPLE_EDGE: u32 = 512;
 
 /// The application engine. Cheap to share behind an `Arc`; all methods take `&self`.
 pub struct Engine {
@@ -544,6 +546,55 @@ impl Engine {
             );
             *open.fill.lock().expect("fill lock") = Some((removals, Arc::new(fill)));
             Ok(())
+        })
+    }
+
+    /// Auto tone for the open photo as `recipe` edits it (ADR 0071): its tone sliders
+    /// found by rendering a sample of about [`AUTO_TONE_SAMPLE_EDGE`] px through the
+    /// pipeline until it meets each target (`renderer::auto_tone`). On the interactive
+    /// lane, tens of renders of the small sample; a newer request replaces one still
+    /// running.
+    pub fn auto_tone(
+        &self,
+        image: ImageId,
+        recipe: &EditRecipe,
+    ) -> JobHandle<renderer::auto_tone::AutoTone, EngineError> {
+        let Some(open) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        let recipe = recipe.sanitized();
+        let (fw, fh) = open.full_size;
+        let full_output = recipe.geometry.map_or((fw, fh), |g| g.output_size(fw, fh));
+        // What the crop keeps decides the level, as for previews.
+        let kept = full_output.0.max(full_output.1) as f64 / fw.max(fh).max(1) as f64;
+        let min_edge = (f64::from(AUTO_TONE_SAMPLE_EDGE) / kept.max(1e-3)).ceil() as u32;
+        let level = Arc::clone(&open.pyramid.levels()[open.pyramid.select_index(min_edge)]);
+        let as_shot_white = open.as_shot_white;
+        let fill = FillState::of(&open, &recipe);
+        let shared = Arc::clone(&self.shared);
+        let spec = JobSpec::new(Lane::Interactive, Priority::VisiblePreview, "auto-tone")
+            .superseding("auto-tone");
+        self.jobs.submit(spec, move |token| {
+            let t0 = Instant::now();
+            let mut renders = 0;
+            let tone = renderer::auto_tone::auto_tone(&recipe, |r| {
+                renders += 1;
+                let plan = fill.plan(r, as_shot_white);
+                shared
+                    .renderer
+                    .render(&plan, &level, PixelFormat::Rgb8, token)
+                    .map(|out| renderer::auto_tone::ToneStats::of(&out))
+            })?;
+            log::info!(
+                "auto tone from a {}x{} sample: {renders} renders in {:.0} ms",
+                level.width(),
+                level.height(),
+                ms(t0)
+            );
+            Ok(tone)
         })
     }
 
