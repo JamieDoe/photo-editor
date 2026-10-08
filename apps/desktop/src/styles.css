@@ -403,6 +403,17 @@ button.geometry-crop { height: 34px; border-radius: 8px; justify-content: center
 .viewer { position: relative; }
 .viewer-canvas { transition: opacity 0.15s ease; }
 .viewer-canvas.loading { opacity: 0.45; }
+/* Zoom (ADR 0070): at Fit a click zooms in; at 100 % the photo's full-resolution box
+   is panned in the viewer's content box, its visible window drawn over it. */
+.viewer-canvas.zoomable { cursor: zoom-in; }
+.zoom-label { min-width: 32px; text-align: left; }
+.viewer-zoom { position: absolute; inset: 8px 32px 0; overflow: hidden; cursor: grab; touch-action: none; }
+.viewer-zoom.panning { cursor: grabbing; }
+.viewer-zoom.tool { cursor: auto; }
+.viewer-zoom:not(.tool) .retouch-surface { cursor: inherit; }
+.viewer-zoom-box { position: absolute; background: #000; }
+.viewer-zoom-box .viewer-canvas { border-radius: 0; box-shadow: none; max-width: none; max-height: none; }
+.viewer-window { position: absolute; display: block; pointer-events: none; }
 .viewer-loading {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 8px;

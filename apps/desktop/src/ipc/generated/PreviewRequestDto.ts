@@ -11,4 +11,9 @@ targetLongEdge: number,
 /**
  * Which view it is for; the viewer when left out (ADR 0045).
  */
-slot?: PreviewSlotDto, };
+slot?: PreviewSlotDto, 
+/**
+ * Only this part of the photo at full resolution (ADR 0070, zoom): `x`, `y`,
+ * `width`, `height` in full-resolution output pixels.
+ */
+window?: [number, number, number, number], };

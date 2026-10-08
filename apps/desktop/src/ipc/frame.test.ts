@@ -39,10 +39,27 @@ describe("decodeFrame", () => {
     expect(f.pixels.length).toBe(24);
     expect(f.pixels[0]).toBe(7);
     expect(decodeFrame(makeFrame(3, 2, 0, 1)).histogram).toBeNull();
+    expect(f.window).toBeNull();
+    expect(f.fillPending).toBe(false);
+    expect(decodeFrame(makeFrame(1, 1, 8, 0)).fillPending).toBe(true);
   });
 
   it("rejects truncated or inconsistent frames", () => {
     expect(() => decodeFrame(new ArrayBuffer(4))).toThrow();
     expect(() => decodeFrame(makeFrame(3, 2, 0, 0).slice(0, 30))).toThrow();
+  });
+
+  it("reads a window's place after the header", () => {
+    const buf = new ArrayBuffer(FRAME_HEADER_BYTES + 16 + 2 * 2 * 4);
+    const v = new DataView(buf);
+    v.setUint32(0, 2, true);
+    v.setUint32(4, 2, true);
+    v.setUint32(12, 4, true);
+    [100, 50.5, 2, 2].forEach((x, i) => v.setFloat32(FRAME_HEADER_BYTES + i * 4, x, true));
+    new Uint8Array(buf, FRAME_HEADER_BYTES + 16).fill(9);
+    const f = decodeFrame(buf);
+    expect(f.window).toEqual({ x: 100, y: 50.5, width: 2, height: 2 });
+    expect(f.histogram).toBeNull();
+    expect(f.pixels[0]).toBe(9);
   });
 });

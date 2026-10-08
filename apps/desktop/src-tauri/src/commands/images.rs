@@ -9,8 +9,8 @@ use tauri_plugin_dialog::DialogExt;
 use super::{IpcResult, wait};
 use crate::AppState;
 use crate::ipc::{
-    FRAME_FLAG_CACHE_HIT, FRAME_FLAG_HISTOGRAM, FRAME_HEADER_BYTES, ImageSummaryDto, IpcError,
-    PreviewRequestDto,
+    FRAME_FLAG_CACHE_HIT, FRAME_FLAG_FILL_PENDING, FRAME_FLAG_HISTOGRAM, FRAME_FLAG_WINDOW,
+    FRAME_HEADER_BYTES, FRAME_WINDOW_BYTES, ImageSummaryDto, IpcError, PreviewRequestDto,
 };
 
 /// Encodes a frame in the binary layout documented on [`FRAME_HEADER_BYTES`].
@@ -21,12 +21,19 @@ fn frame_bytes(
     ms: f64,
     full_size: (u32, u32),
     histogram: Option<&renderer::Histogram>,
+    window: Option<[f64; 4]>,
 ) -> Vec<u8> {
     if histogram.is_some() {
         flags |= FRAME_FLAG_HISTOGRAM;
     }
+    if window.is_some() {
+        flags |= FRAME_FLAG_WINDOW;
+    }
     let mut bytes = Vec::with_capacity(
-        FRAME_HEADER_BYTES + renderer::histogram::ENCODED_BYTES + img.byte_size(),
+        FRAME_HEADER_BYTES
+            + FRAME_WINDOW_BYTES
+            + renderer::histogram::ENCODED_BYTES
+            + img.byte_size(),
     );
     bytes.extend_from_slice(&img.width().to_le_bytes());
     bytes.extend_from_slice(&img.height().to_le_bytes());
@@ -35,6 +42,9 @@ fn frame_bytes(
     bytes.extend_from_slice(&(ms as f32).to_le_bytes());
     bytes.extend_from_slice(&full_size.0.to_le_bytes());
     bytes.extend_from_slice(&full_size.1.to_le_bytes());
+    for v in window.into_iter().flatten() {
+        bytes.extend_from_slice(&(v as f32).to_le_bytes());
+    }
     if let Some(h) = histogram {
         h.write_le(&mut bytes);
     }
@@ -170,15 +180,19 @@ pub async fn render_preview(
             recipe: request.recipe,
             quality: request.quality,
             target_long_edge: request.target_long_edge,
+            window: request.window.map(|[x, y, w, h]| (x, y, w, h)),
         },
         request.slot.into(),
     );
     let frame = wait(handle).await?;
-    let flags = if frame.cache_hit {
+    let mut flags = if frame.cache_hit {
         FRAME_FLAG_CACHE_HIT
     } else {
         0
     };
+    if frame.fill_pending {
+        flags |= FRAME_FLAG_FILL_PENDING;
+    }
     Ok(Response::new(frame_bytes(
         &frame.image,
         frame.level as u32,
@@ -186,5 +200,24 @@ pub async fn render_preview(
         frame.render_ms,
         frame.full_size,
         frame.histogram.as_deref(),
+        frame.window,
     )))
+}
+
+/// Decodes the open photo at full resolution (ADR 0070) for viewing it at 100 %;
+/// resolves when window renders can use it.
+/// Fills `removals` on the open photo at full resolution (ADR 0070), so every view
+/// shows the same fill; resolves when renders use it.
+#[tauri::command]
+pub async fn prepare_fill(
+    state: State<'_, AppState>,
+    image_id: u64,
+    removals: Vec<renderer::remove::Removal>,
+) -> IpcResult<()> {
+    wait(state.engine.prepare_fill(ImageId(image_id), removals)).await
+}
+
+#[tauri::command]
+pub async fn prepare_full(state: State<'_, AppState>, image_id: u64) -> IpcResult<()> {
+    wait(state.engine.prepare_full(ImageId(image_id))).await
 }

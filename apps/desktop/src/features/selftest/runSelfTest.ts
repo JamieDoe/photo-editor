@@ -176,6 +176,75 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       return e ? { estimate: e.bytes, actual: finished.bytes, size: `${e.width}x${e.height}`, errorPct: Math.round((e.bytes / finished.bytes - 1) * 1000) / 10, ms } : null;
     })();
 
+    // Zoom (ADR 0070): a window at 100 % renders from the preview source until the full
+    // resolution is decoded, then pixel for pixel from it; Z in the editor shows it.
+    const zoom = await (async () => {
+      const image = driver.editor().image;
+      if (!image) return null;
+      await sleep(300);
+      const [fw, fh] = [image.fullWidth, image.fullHeight];
+      const win: [number, number, number, number] = [Math.round(fw / 2 - 1000), Math.round(fh / 2 - 600), 2000, 1200];
+      // In the comparison's slot: the editor's own renders (such as one after a fill
+      // made in the background) must not cancel these, nor these the editor's.
+      const request = (quality: "interactive" | "detail", window: [number, number, number, number]) =>
+        ipc.renderPreview({ imageId: image.id, recipe: a, quality, targetLongEdge: 1600, window, slot: "compare" });
+      const early = await request("detail", win);
+      const t = performance.now();
+      await ipc.prepareFull(image.id);
+      const fullDecodeMs = Math.round(performance.now() - t);
+      const full = await request("detail", win);
+      const panned = await request("interactive", [win[0] + 160, win[1], win[2], win[3]]);
+      const fullPanned = await request("detail", [win[0] + 160, win[1], win[2], win[3]]);
+      const shown = full.window;
+      // A heavier edit: clarity reads around each pixel, and a straightened crop frames
+      // the whole full-resolution source first (once per framing; then cached).
+      const heavy = {
+        ...a,
+        clarity: 40,
+        texture: 20,
+        geometry: { straighten: 2, crop: { x: 0.05, y: 0.05, w: 0.9, h: 0.9 }, aspect: "free" as const, vertical: 0, horizontal: 0, rotation: 0, flip: false },
+      };
+      const heavyRequest = (window: [number, number, number, number]) =>
+        ipc.renderPreview({ imageId: image.id, recipe: heavy, quality: "detail", targetLongEdge: 1600, window, slot: "compare" });
+      const heavyFirst = await heavyRequest([win[0], win[1] - 200, win[2], win[3]]);
+      const heavyPanned = await heavyRequest([win[0] + 160, win[1] - 200, win[2], win[3]]);
+      // The editor: Z zooms to 100 % and its window arrives at full resolution; Z again fits.
+      const press = () => window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", bubbles: true }));
+      press();
+      const ui = await waitFor(() => {
+        const w = driver.editor().windowed?.frame;
+        return w?.window && w.width === Math.round(w.window.width) ? w : null;
+      }, 10_000, "zoomed window").catch(() => null);
+      press();
+      await sleep(300);
+      return {
+        early: `${early.width}x${early.height}`,
+        fullDecodeMs,
+        full: `${full.width}x${full.height}`,
+        window: shown ? [shown.x, shown.y, shown.width, shown.height] : null,
+        detailRenderMs: Math.round(full.renderMs),
+        interactiveRenderMs: Math.round(panned.renderMs),
+        interactive: `${panned.width}x${panned.height}`,
+        pannedDetailRenderMs: Math.round(fullPanned.renderMs),
+        heavyFirstRenderMs: Math.round(heavyFirst.renderMs),
+        heavyPannedRenderMs: Math.round(heavyPanned.renderMs),
+        ui: ui ? `${ui.width}x${ui.height}` : null,
+        uiFit: driver.editor().windowed === null,
+        ok:
+          early.width < win[2] &&
+          full.width === win[2] &&
+          full.height === win[3] &&
+          shown !== null &&
+          shown.x === win[0] &&
+          shown.y === win[1] &&
+          panned.width < win[2] &&
+          fullPanned.width === win[2] &&
+          heavyPanned.width === win[2] &&
+          ui !== null &&
+          driver.editor().windowed === null,
+      };
+    })();
+
     // Re-open the same file once the app has settled: separates app-startup effects
     // from steady-state open cost, and exercises opening while an image is open.
     const framesBefore = frames.length;
@@ -1456,6 +1525,32 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         plainMs: brighter?.frame.renderMs ?? null,
       };
     })();
+    // One fill for every view (ADR 0070): until the removal is filled at full
+    // resolution, frames say they show a stand-in; after, the whole photo and a window
+    // at 100 % both show that fill.
+    const fullFill = await (async () => {
+      const image = driver.editor().image;
+      if (!image) return null;
+      const removal = { strokes: [{ size: 0.02, feather: 10, flow: 100, points: [[0.62, 0.35], [0.66, 0.38]] as [number, number][] }] };
+      const recipe = { ...beforeCrop, masks: undefined, geometry: undefined, spots: undefined, removals: [removal] };
+      const whole = () => ipc.renderPreview({ imageId: image.id, recipe, quality: "detail", targetLongEdge: 1600, slot: "compare" });
+      const before = await whole();
+      const t = performance.now();
+      await ipc.prepareFill(image.id, [removal]);
+      const fillMs = Math.round(performance.now() - t);
+      const after = await whole();
+      const [x, y] = [Math.round(0.6 * image.fullWidth), Math.round(0.3 * image.fullHeight)];
+      const window = await ipc.renderPreview({ imageId: image.id, recipe, quality: "detail", targetLongEdge: 1600, window: [x, y, 800, 600], slot: "compare" });
+      return {
+        standInFirst: before.fillPending,
+        fillMs,
+        wholePending: after.fillPending,
+        windowPending: window.fillPending,
+        wholeRenderMs: Math.round(after.renderMs),
+        windowRenderMs: Math.round(window.renderMs),
+        ok: before.fillPending && !after.fillPending && !window.fillPending && fillMs < 15_000,
+      };
+    })();
     driver.editor().setRecipe(beforeCrop);
     const removeOk =
       removeCheck.insideChange !== null &&
@@ -1660,6 +1755,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     const stats = driver.editor().schedulerStats();
     const checks = {
       exportFinished: finished.type === "finished",
+      zoom: zoom?.ok === true,
       exportSizeEstimate: sizeEstimate !== null && Math.abs(sizeEstimate.errorPct) <= 30 && sizeEstimate.ms < 2000,
       framesDuringDrag: idleDrag.framesShown > 0,
       framesDuringExport: dragDuringExport.framesShown > 0,
@@ -1693,6 +1789,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       calibration: calibrationOk,
       retouch: retouchOk,
       remove: removeOk,
+      removalFill: fullFill?.ok === true,
       dust: dustOk,
       copyPaste: copyPasteOk,
       crop: cropOk,
@@ -1719,6 +1816,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       firstFrame: { ms: firstFrameMs, size: `${first.frame.width}x${first.frame.height}`, quality: first.info.quality },
       firstVisibleMs: firstFrameMs,
       reopen,
+      zoom,
       toneCurve,
       history,
       compare: compareCheck,
@@ -1730,6 +1828,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       calibration: calibrationCheck,
       retouch: retouchCheck,
       remove: removeCheck,
+      removalFill: fullFill,
       dust: dustCheck,
       copyPaste: copyPasteCheck,
       crop,
@@ -1761,7 +1860,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       devicePixelRatio: window.devicePixelRatio,
     };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e), scheduler: driver.editor().schedulerStats() };
+    const message = e instanceof Error ? e.message : typeof e === "object" && e !== null && "message" in e ? String(e.message) : String(e);
+    return { ok: false, error: message, scheduler: driver.editor().schedulerStats() };
   } finally {
     unsubscribe();
   }

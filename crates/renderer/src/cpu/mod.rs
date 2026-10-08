@@ -37,18 +37,81 @@ impl CpuRenderer {
         out: &mut OutputImage,
         cancel: &dyn Cancellation,
     ) -> Result<(), RenderError> {
+        let rows = 0..out.height() as usize;
+        self.render_rows_into(plan, source, rows, out, cancel)
+    }
+
+    /// A window of the plan's output for `source`: `x`, `y`, `width` x `height` in its
+    /// pixels (clamped to it). Every pixel is what a whole render gives there: stages
+    /// that look around a pixel read the whole framed source, and only the window's
+    /// rows are worked through (ADR 0070, zoom). Running-sum blurs (clarity) start
+    /// their sums at each chunk of rows, so a value may round one level apart, as it
+    /// already may between whole renders split into different chunks.
+    pub fn render_window(
+        &self,
+        plan: &RenderPlan,
+        source: &LinearImage,
+        format: PixelFormat,
+        window: (u32, u32, u32, u32),
+        cancel: &dyn Cancellation,
+    ) -> Result<OutputImage, RenderError> {
+        let (ow, oh) = plan.output_size(source.width(), source.height());
+        let (x, y) = (
+            window.0.min(ow.saturating_sub(1)),
+            window.1.min(oh.saturating_sub(1)),
+        );
+        let (w, h) = (window.2.clamp(1, ow - x), window.3.clamp(1, oh - y));
+        let backend = |e: image_core::ImageError| RenderError::Backend(e.to_string());
+        let mut rows = OutputImage::new(ow, h, format).map_err(backend)?;
+        self.render_rows_into(
+            plan,
+            source,
+            y as usize..(y + h) as usize,
+            &mut rows,
+            cancel,
+        )?;
+        if w == ow {
+            return Ok(rows);
+        }
+        let bytes = format.bytes_per_pixel();
+        let (stride, from, len) = (ow as usize * bytes, x as usize * bytes, w as usize * bytes);
+        let data: Vec<u8> = rows
+            .data()
+            .chunks_exact(stride)
+            .flat_map(|row| row[from..from + len].iter().copied())
+            .collect();
+        OutputImage::from_raw(w, h, format, data).map_err(backend)
+    }
+
+    /// Renders `rows` of the plan's output for `source` into `out`: the output's full
+    /// width, `rows.len()` tall.
+    fn render_rows_into(
+        &self,
+        plan: &RenderPlan,
+        source: &LinearImage,
+        rows: std::ops::Range<usize>,
+        out: &mut OutputImage,
+        cancel: &dyn Cancellation,
+    ) -> Result<(), RenderError> {
         // Removals (ADR 0066), then spots (ADR 0054): everything after works on the
         // retouched source, which is cached while other controls change.
         let retouched;
-        let source = if plan.spots.is_empty() && plan.removals.is_empty() {
-            source
-        } else {
-            retouched = kernels::cached_retouch(source, &plan.removals, &plan.spots, cancel)?;
-            &*retouched
-        };
+        let source =
+            if plan.spots.is_empty() && plan.removals.is_empty() && plan.removal_fill.is_none() {
+                source
+            } else {
+                retouched = kernels::cached_retouch(
+                    source,
+                    &plan.removals,
+                    plan.removal_fill.as_ref(),
+                    &plan.spots,
+                    cancel,
+                )?;
+                &*retouched
+            };
         let (sw, sh) = (source.width(), source.height());
         if plan.geometry.is_none() && plan.chromatic_aberration.is_none() {
-            return self.render_frame(plan, source, Frame::whole(sw, sh), out, cancel);
+            return self.render_frame(plan, source, Frame::whole(sw, sh), rows, out, cancel);
         }
         // Framing first (crop, straighten, perspective, chromatic aberration); the
         // stages run on the framed image, which is cached while other controls change.
@@ -60,19 +123,24 @@ impl CpuRenderer {
             height: fh,
         };
         let framed = kernels::cached_frame(source, &g, plan.chromatic_aberration.as_ref());
-        self.render_frame(plan, &framed, where_in_frame, out, cancel)
+        self.render_frame(plan, &framed, where_in_frame, rows, out, cancel)
     }
 
-    /// Renders `source`, which is `frame`'s crop of the frame masks are drawn in.
+    /// Renders `rows` of `source`, which is `frame`'s crop of the frame masks are drawn
+    /// in, into `out` (`source`'s width, `rows.len()` tall).
     fn render_frame(
         &self,
         plan: &RenderPlan,
         source: &LinearImage,
         frame: Frame,
+        rows: std::ops::Range<usize>,
         out: &mut OutputImage,
         cancel: &dyn Cancellation,
     ) -> Result<(), RenderError> {
-        if (out.width(), out.height()) != (source.width(), source.height()) {
+        if out.width() != source.width()
+            || out.height() as usize != rows.len()
+            || rows.end > source.height() as usize
+        {
             return Err(RenderError::Backend(
                 "output size does not match source".into(),
             ));
@@ -88,8 +156,9 @@ impl CpuRenderer {
         };
         let rows_per_chunk = (CHUNK_PIXELS / width)
             .max(min_chunk_rows(&kernels))
-            .min(height)
+            .min(rows.len())
             .max(1);
+        let first_row = rows.start;
         let src = source.data();
 
         out.data_mut()
@@ -101,10 +170,11 @@ impl CpuRenderer {
                     if cancel.is_cancelled() {
                         return Err(RenderError::Cancelled);
                     }
-                    let first = i * rows_per_chunk * width * 3;
+                    let row = first_row + i * rows_per_chunk;
+                    let first = row * width * 3;
                     let src_chunk = &src[first..first + out_chunk.len() / bytes * 3];
                     let span = RowSpan {
-                        first_row: i * rows_per_chunk,
+                        first_row: row,
                         width,
                         height,
                         source,

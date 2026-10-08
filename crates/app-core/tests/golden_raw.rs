@@ -60,6 +60,7 @@ fn raw_pipeline_matches_golden() {
                 recipe,
                 quality: PreviewQuality::Detail,
                 target_long_edge: 600,
+                window: None,
             })
             .wait()
             .unwrap();

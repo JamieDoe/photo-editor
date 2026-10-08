@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use cache::SourceId;
 use image_core::Pyramid;
@@ -17,6 +17,39 @@ pub(crate) struct OpenedImage {
     pub as_shot_white: Option<image_core::Chromaticity>,
     /// The photo's full size (after orientation), which crops are measured against.
     pub full_size: (u32, u32),
+    /// The photo at full resolution, decoded on demand for viewing at 100 % (ADR 0070)
+    /// and dropped with the image.
+    pub full: Mutex<Option<Arc<image_core::LinearImage>>>,
+    /// Held while the full resolution decodes, so two jobs never decode it twice.
+    pub full_decode: Mutex<()>,
+    /// The removals' fill made at full resolution (ADR 0070), for the removals it was
+    /// made for: every view of the photo shows it, scaled.
+    pub fill: Mutex<Option<(Vec<renderer::remove::Removal>, Arc<renderer::remove::Fill>)>>,
+}
+
+impl OpenedImage {
+    /// The full-resolution source, if it has been decoded.
+    pub fn full(&self) -> Option<Arc<image_core::LinearImage>> {
+        self.full.lock().expect("full source lock").clone()
+    }
+
+    /// The full-resolution fill of `removals`, if it has been made.
+    pub fn fill_for(
+        &self,
+        removals: &[renderer::remove::Removal],
+    ) -> Option<Arc<renderer::remove::Fill>> {
+        let fill = self.fill.lock().expect("fill lock");
+        fill.as_ref()
+            .filter(|(made_for, _)| made_for.as_slice() == removals)
+            .map(|(_, fill)| Arc::clone(fill))
+    }
+
+    fn byte_size(&self) -> usize {
+        let fill = self.fill.lock().expect("fill lock");
+        self.pyramid.byte_size()
+            + self.full().map_or(0, |f| f.byte_size())
+            + fill.as_ref().map_or(0, |(_, f)| f.byte_size())
+    }
 }
 
 /// Bounded most-recently-used set of open images.
@@ -49,12 +82,17 @@ impl OpenImages {
         Some(image)
     }
 
+    /// The open image read from `path`, if any (without making it the most recent).
+    pub fn by_path(&self, path: &std::path::Path) -> Option<Arc<OpenedImage>> {
+        self.images.iter().find(|i| i.path == path).cloned()
+    }
+
     pub fn remove(&mut self, id: ImageId) -> Option<Arc<OpenedImage>> {
         let pos = self.images.iter().position(|i| i.id == id)?;
         Some(self.images.remove(pos))
     }
 
     pub fn bytes(&self) -> usize {
-        self.images.iter().map(|i| i.pyramid.byte_size()).sum()
+        self.images.iter().map(|i| i.byte_size()).sum()
     }
 }

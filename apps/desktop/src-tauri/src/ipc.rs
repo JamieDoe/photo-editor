@@ -163,7 +163,8 @@ pub enum ExportQueueEvent {
 /// | 16     | f32  | render / extract time in ms   |
 /// | 20     | u32  | full-resolution output width  |
 /// | 24     | u32  | full-resolution output height |
-/// | 28     | u32[]| histogram, if `FRAME_FLAG_HISTOGRAM`: red, green, blue, luma counts, 256 each |
+/// | 28     | f32[4]| window, if `FRAME_FLAG_WINDOW`: x, y, width, height in full-resolution output pixels (ADR 0070) |
+/// | …      | u32[]| histogram, if `FRAME_FLAG_HISTOGRAM`: red, green, blue, luma counts, 256 each |
 /// | …      | u8[] | RGBA8 pixels, width*height*4  |
 ///
 /// The full-resolution size is the recipe's output (after crop) at the photo's full
@@ -174,6 +175,14 @@ pub const FRAME_HEADER_BYTES: usize = 28;
 pub const FRAME_FLAG_CACHE_HIT: u32 = 1;
 /// A histogram (`renderer::histogram::ENCODED_BYTES`) follows the header (ADR 0036).
 pub const FRAME_FLAG_HISTOGRAM: u32 = 2;
+/// The frame is a window of the photo (ADR 0070, zoom); where it lies follows the
+/// header.
+pub const FRAME_FLAG_WINDOW: u32 = 4;
+/// The removals were filled at the frame's own size, until their full-resolution fill
+/// is made (`prepare_fill`, ADR 0070).
+pub const FRAME_FLAG_FILL_PENDING: u32 = 8;
+/// The window's four `f32`s.
+pub const FRAME_WINDOW_BYTES: usize = 16;
 
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -422,6 +431,11 @@ pub struct PreviewRequestDto {
     #[serde(default)]
     #[ts(optional, as = "Option<PreviewSlotDto>")]
     pub slot: PreviewSlotDto,
+    /// Only this part of the photo at full resolution (ADR 0070, zoom): `x`, `y`,
+    /// `width`, `height` in full-resolution output pixels.
+    #[serde(default)]
+    #[ts(optional, as = "Option<[u32; 4]>")]
+    pub window: Option<[u32; 4]>,
 }
 
 /// Which view a preview is for: each cancels only its own earlier renders.

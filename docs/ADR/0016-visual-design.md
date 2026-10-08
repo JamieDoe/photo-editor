@@ -71,7 +71,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Library sidebar "All photos" with its count (ADR 0065) | as designed |
 | Sidebar Picks / Rated / Rejected with counts | as designed |
 | Edit header: name, mono file details, "● Edited", "N of M" counter | as designed |
-| Floating photo toolbar under the photo: rating stars, pick, reject | as designed (zoom and compare to follow) |
+| Floating photo toolbar under the photo: zoom ("Fit" / "100%"), crop, masks, compare, rating stars, pick, reject | as designed (zoom: ADR 0070) |
 | Panel: exposure strip, collapsible sections, sliders with reset-on-hover | as designed |
 | Histogram above the exposure details: red, green and blue filled, luminance line, clipping triangles | as designed (ADR 0036), and draggable as in Lightroom |
 | Light section: Exposure (in EV), Contrast, Highlights, Shadows; "More controls" with the tone curve graph, then Whites, Blacks and Dehaze | as designed; the curve is editable (ADR 0037) |
@@ -117,10 +117,11 @@ existing screens to the design now, and to match it for every screen built from 
 | Presets (ADR 0046) | Strip under the histogram, 64×44 previews with names, accent ring on the applied one | Save… and Import… where the design has Auto (not built); Export… in a saved preset's menu, and a popover listing what an import brought in (ADR 0047); ⋯ on a saved preset opens a popover to rename, update or delete it; previews are real renders of the photo |
 | Undo and redo (ADR 0044) | Two icon buttons in the Edit header, between the save status and the photo counter; ⌘Z and ⇧⌘Z | The design has no undo control; placed with the edit's other status and actions |
 | Before / after (ADR 0045) | Compare button, white divider and round handle, Before and After pills, drag anywhere on the photo | The `\` shortcut; "Before…" while the before image renders; no focus-header button (that header is not built) |
+| Zoom (ADR 0070) | "Fit" / "100%" button first in the photo toolbar | Z toggles it; a click on the photo zooms in on that spot, a click at 100 % fits; drag or scroll to pan; crop, masks and compare fit it; in retouch mode clicks paint, so scroll or Space-drag pans |
 
 ### Not built yet (and so not shown)
 
-Search, Recently imported, albums, presets and Auto, Subject / Sky masks, compare, zoom,
+Search, Recently imported, albums, presets and Auto, Subject / Sky masks, compare,
 the filmstrip, batch selection, the Export dialog, and the Lens correction switch.
 
 ## Consequences
