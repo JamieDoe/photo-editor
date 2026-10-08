@@ -3,6 +3,7 @@ import type { ExportColourSpace } from "./ExportColourSpace";
 import type { ExportFileFormat } from "./ExportFileFormat";
 import type { ExportItemDto } from "./ExportItemDto";
 import type { OutputSharpening } from "./OutputSharpening";
+import type { WatermarkDto } from "./WatermarkDto";
 
 /**
  * Photos to export, and how (ADR 0050).
@@ -36,6 +37,10 @@ keepMetadata?: boolean,
  * Whether to leave the location out of them (ADR 0063); no when left out.
  */
 stripLocation?: boolean, 
+/**
+ * A watermark to lay on every photo (ADR 0069); none when left out.
+ */
+watermark?: WatermarkDto, 
 /**
  * The folder to export to, for the self-test only; otherwise the one chosen in
  * the folder dialog (settings).

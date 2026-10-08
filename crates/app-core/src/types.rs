@@ -99,6 +99,8 @@ pub struct ExportRequest {
     pub metadata: export::metadata::MetadataChoice,
     /// The photographer's marks, written with the metadata as XMP (ADR 0067).
     pub judgements: export::metadata::Judgements,
+    /// A watermark to lay on it (ADR 0069), shared by every photo of a batch.
+    pub watermark: Option<std::sync::Arc<export::watermark::Watermark>>,
 }
 
 /// Exporting a photo straight from its file (ADR 0050), as the export queue does: it
@@ -119,6 +121,8 @@ pub struct FileExport {
     pub metadata: export::metadata::MetadataChoice,
     /// The photographer's marks, written with the metadata as XMP (ADR 0067).
     pub judgements: export::metadata::Judgements,
+    /// A watermark to lay on it (ADR 0069), shared by every photo of a batch.
+    pub watermark: Option<std::sync::Arc<export::watermark::Watermark>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

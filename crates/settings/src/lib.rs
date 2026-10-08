@@ -14,6 +14,6 @@ pub use model::{
     BackgroundIntensity, BackupSettings, ExportColourSpace, ExportFileFormat, ExportSettings,
     GeneralSettings, LibraryCollection, LibraryFilter, LibraryLabel, LibraryLayout, LibraryPlace,
     LibrarySettings, LibrarySort, LibraryViewSettings, OutputSharpening, PerformanceSettings,
-    SETTINGS_VERSION, Settings, Theme,
+    SETTINGS_VERSION, Settings, Theme, WatermarkPosition, WatermarkSettings, WatermarkSize,
 };
 pub use store::{LoadOutcome, SettingsStore};

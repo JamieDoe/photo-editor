@@ -30,6 +30,8 @@ pub struct QueuedExport {
     pub metadata: app_core::MetadataChoice,
     /// The photo's marks, written as XMP with the metadata (ADR 0067).
     pub judgements: app_core::Judgements,
+    /// The batch's watermark (ADR 0069), if any.
+    pub watermark: Option<std::sync::Arc<app_core::Watermark>>,
 }
 
 #[derive(Default)]
@@ -163,6 +165,7 @@ async fn run_queue(app: AppHandle) {
                 colour_space: item.colour_space,
                 metadata: item.metadata,
                 judgements: item.judgements,
+                watermark: item.watermark.clone(),
             },
             move |p| {
                 let _ = progress_app.emit(

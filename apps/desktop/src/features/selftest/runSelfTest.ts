@@ -1,3 +1,5 @@
+import type { WatermarkDto } from "../../ipc/generated/WatermarkDto";
+import { watermarkFor } from "../export/watermark";
 import * as ipc from "../../ipc/client";
 import type { ExportFileFormat } from "../../ipc/generated/ExportFileFormat";
 import type { OutputSharpening } from "../../ipc/generated/OutputSharpening";
@@ -532,7 +534,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         format: ExportFileFormat = "jpeg",
         sharpen: OutputSharpening = "screen",
         colourSpace: ExportColourSpace = "srgb",
-        metadata: { keepMetadata?: boolean; stripLocation?: boolean } = {},
+        metadata: { keepMetadata?: boolean; stripLocation?: boolean; watermark?: WatermarkDto } = {},
       ) => {
         let progress = 0;
         let finished: Extract<ExportQueueEvent, { type: "finished" }> | null = null;
@@ -588,6 +590,24 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const markedNone = await withMetadata(false, false);
       await ipc.setPhotoMarks([config.imagePath], { type: "rating", stars: 0 });
       await ipc.setPhotoMarks([config.imagePath], { type: "label", label: "none" });
+      // A watermark (ADR 0069), drawn by the UI as the dialog's export does, laid on
+      // by the queue: the same JPEG, plus the text in its corner.
+      const drawn = await watermarkFor({ enabled: true, text: "© 2026 Self-test", position: "bottomRight", size: "large" });
+      const watermarked = drawn
+        ? (await run([config.imagePath], 1350, false, "jpeg", "screen", "srgb", { keepMetadata: false, watermark: drawn })).done?.outputs[0] ?? null
+        : null;
+      // Repeated across the photo: far more text, so a far larger file.
+      const repeatedDrawn = drawn ? { ...drawn, position: "repeat" as const, size: "medium" as const } : null;
+      const repeated = repeatedDrawn
+        ? (await run([config.imagePath], 1350, false, "jpeg", "screen", "srgb", { keepMetadata: false, watermark: repeatedDrawn })).done?.outputs[0] ?? null
+        : null;
+      const watermark = {
+        drawnBytes: drawn?.png.length ?? null,
+        file: watermarked?.path ?? null,
+        bytes: watermarked?.bytes ?? null,
+        repeatedFile: repeated?.path ?? null,
+        repeatedBytes: repeated?.bytes ?? null,
+      };
       const metadata = {
         all: await withMetadata(true, false),
         withoutLocation: await withMetadata(true, true),
@@ -600,6 +620,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         sharpening,
         colourSpaces,
         metadata,
+        watermark,
         exported: sized.done?.exported ?? null,
         longEdges: sized.done?.outputs.map((o) => Math.max(o.width, o.height)) ?? [],
         failed: sized.done?.failed.length ?? null,
@@ -636,6 +657,16 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       exportQueue.metadata.withoutLocation - exportQueue.metadata.none > 200 &&
       exportQueue.metadata.all >= exportQueue.metadata.withoutLocation;
     // An XMP packet with a rating and a label is about 350 bytes.
+    // The text adds detail to the corner: the file grows over the plain one (without
+    // metadata either).
+    const watermarkOk =
+      exportQueue !== null &&
+      exportQueue.watermark.drawnBytes !== null &&
+      exportQueue.watermark.bytes !== null &&
+      exportQueue.metadata.none !== null &&
+      exportQueue.watermark.bytes > exportQueue.metadata.none + 500 &&
+      exportQueue.watermark.repeatedBytes !== null &&
+      exportQueue.watermark.repeatedBytes > exportQueue.watermark.bytes;
     const marksInExportOk =
       exportQueue !== null &&
       exportQueue.metadata.marked !== null &&
@@ -1656,6 +1687,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       exportColourSpace: colourSpacesOk,
       exportMetadata: metadataOk,
       marksInExports: marksInExportOk,
+      exportWatermark: watermarkOk,
       whiteBalanceLight: lightOk,
       colourGrading: gradingOk,
       calibration: calibrationOk,

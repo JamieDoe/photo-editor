@@ -1,3 +1,5 @@
+import type { WatermarkPosition } from "../../ipc/generated/WatermarkPosition";
+import type { WatermarkSize } from "../../ipc/generated/WatermarkSize";
 import { estimateExport } from "../../ipc/client";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { ExportEstimateDto } from "../../ipc/generated/ExportEstimateDto";
@@ -28,6 +30,46 @@ export const EXPORT_PRESETS: ReadonlyArray<{ id: string; label: string; sub: str
   { id: "social", label: "Social", sub: "JPEG · 1350 px", format: "jpeg", longEdge: 1350, jpegQuality: 90, colourSpace: "srgb", sharpen: "screen" },
   { id: "full", label: "Full quality", sub: "TIFF · original", format: "tiff", longEdge: null, jpegQuality: 95, colourSpace: "adobeRgb", sharpen: "screen" },
 ];
+
+/** Where the watermark sits (ADR 0069), and how large it is. */
+const WATERMARK_POSITIONS: ReadonlyArray<{ id: WatermarkPosition; label: string }> = [
+  { id: "topLeft", label: "Top left" },
+  { id: "topRight", label: "Top right" },
+  { id: "centre", label: "Centre" },
+  { id: "bottomLeft", label: "Bottom left" },
+  { id: "bottomRight", label: "Bottom right" },
+  { id: "repeat", label: "Repeat across the photo" },
+];
+const WATERMARK_SIZES: ReadonlyArray<{ id: WatermarkSize; short: string; label: string }> = [
+  { id: "small", short: "S", label: "Small" },
+  { id: "medium", short: "M", label: "Medium" },
+  { id: "large", short: "L", label: "Large" },
+];
+
+/** A frame with a dot where the watermark sits, or slanted dashes across it. */
+function PositionIcon({ at }: { at: WatermarkPosition }) {
+  if (at === "repeat") {
+    return (
+      <svg className="icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+        <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
+        <path d="M4 7l3-2M9 12l3-2M4 12.2l2-1.3M10 5.2l2-1.3" />
+      </svg>
+    );
+  }
+  const [x, y] = {
+    topLeft: [4.5, 4.5],
+    topRight: [11.5, 4.5],
+    centre: [8, 8],
+    bottomLeft: [4.5, 11.5],
+    bottomRight: [11.5, 11.5],
+  }[at];
+  return (
+    <svg className="icon" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="1.5" y="1.5" width="13" height="13" rx="2" />
+      <circle cx={x} cy={y} r="1.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
 
 /** Changes to the choices wait this long before the size is estimated again. */
 const ESTIMATE_DELAY_MS = 150;
@@ -262,7 +304,52 @@ export function ExportDialog({
             disabled={!settings.keepMetadata}
             onChange={(stripLocation) => onChange({ stripLocation })}
           />
+          <ExportSwitch
+            label="Watermark"
+            hint="A line of text in a corner of each photo"
+            on={settings.watermark.enabled}
+            onChange={(enabled) => onChange({ watermark: { ...settings.watermark, enabled } })}
+          />
         </div>
+        {settings.watermark.enabled && (
+          <div className="export-watermark">
+            <input
+              className="text-input"
+              aria-label="Watermark text"
+              placeholder={`© ${new Date().getFullYear()} Your name`}
+              maxLength={120}
+              value={settings.watermark.text}
+              onChange={(e) => onChange({ watermark: { ...settings.watermark, text: e.target.value } })}
+            />
+            <div className="segmented small" role="radiogroup" aria-label="Watermark position">
+              {WATERMARK_POSITIONS.map((p) => (
+                <button
+                  key={p.id}
+                  role="radio"
+                  aria-checked={settings.watermark.position === p.id}
+                  aria-label={p.label}
+                  title={p.label}
+                  onClick={() => onChange({ watermark: { ...settings.watermark, position: p.id } })}
+                >
+                  <PositionIcon at={p.id} />
+                </button>
+              ))}
+            </div>
+            <div className="segmented small" role="radiogroup" aria-label="Watermark size">
+              {WATERMARK_SIZES.map((s) => (
+                <button
+                  key={s.id}
+                  role="radio"
+                  aria-checked={settings.watermark.size === s.id}
+                  title={s.label}
+                  onClick={() => onChange({ watermark: { ...settings.watermark, size: s.id } })}
+                >
+                  {s.short}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="export-footer">
           <button className="export-folder" onClick={onChooseFolder} title={settings.folder ?? "Choose where exported photos go"}>
             <span className="export-folder-label">Save to</span>

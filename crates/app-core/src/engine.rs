@@ -434,6 +434,7 @@ impl Engine {
                 colour_space: req.colour_space,
                 metadata: req.metadata,
                 judgements: req.judgements,
+                watermark: req.watermark.clone(),
                 long_edge: None,
             },
             progress,
@@ -676,6 +677,12 @@ impl Shared {
         };
         // Sharpened for its medium at the size it is written (ADR 0059).
         let rendered = export::sharpen::sharpen(&rendered, req.sharpening);
+        // The watermark (ADR 0069) at the size written, after sharpening so its edges
+        // stay as drawn.
+        let rendered = match &req.watermark {
+            Some(w) => export::watermark::apply(&rendered, w),
+            None => rendered,
+        };
         // In the chosen colour space (ADR 0062), rounded to the file's depth once.
         let rendered =
             export::colour::convert(&rendered, req.colour_space, req.format.pixel_format());
