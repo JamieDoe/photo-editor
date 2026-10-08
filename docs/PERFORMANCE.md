@@ -1022,6 +1022,10 @@ Release self-test, Nikon Z 6 (6048×4024), through IPC, for a 2000×1200 window:
 diagonal took 1.4 s (with the full resolution already decoded). After it, a whole
 detail frame using it rendered in 15 ms, and an 800×600 window in 23 ms.
 
+**Brush masks at 100 % (2026-10-08):** a 2000×1200 window with a brush mask
+(exposure −1) rendered in 43 ms the first time, which includes rasterising its
+coverage at 6048×4024, and 39 ms panned. Without masks the same window takes 24 ms.
+
 The full-resolution source takes 146 MB (16-bit RGB) while the photo is open, counted
 in the open-images budget. Rendering a window costs its rows at the output's full
 width, then a crop of the columns. For a viewer-sized window, that is a fraction of a

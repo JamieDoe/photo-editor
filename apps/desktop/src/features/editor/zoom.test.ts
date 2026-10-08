@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { centreKeeping, clampCentre, panned, sameWindow, zoomLayout } from "./zoom";
+import { centreKeeping, clampCentre, drawnPart, panned, sameWindow, visiblePart, zoomLayout } from "./zoom";
 
 const view = { width: 1000, height: 600 };
 const full = { width: 6000, height: 4000 };
@@ -55,4 +55,26 @@ it("compares windows by value", () => {
   expect(sameWindow([1, 2, 3, 4], [1, 2, 3, 5])).toBe(false);
   expect(sameWindow(null, null)).toBe(true);
   expect(sameWindow(null, [1, 2, 3, 4])).toBe(false);
+});
+
+describe("overlays at 100 %", () => {
+  it("know the part of the photo in view", () => {
+    const z = zoomLayout(view, full, 1, { x: 0.5, y: 0.5 });
+    const [x0, y0, x1, y1] = visiblePart(view, z);
+    expect(x0).toBeCloseTo(2500 / 6000);
+    expect(x1).toBeCloseTo(3500 / 6000);
+    expect(y0).toBeCloseTo(1700 / 4000);
+    expect(y1).toBeCloseTo(2300 / 4000);
+  });
+
+  it("draw a little more than is in view, the same for small pans", () => {
+    const centre = { x: 0.513, y: 0.487 };
+    const visible = visiblePart(view, zoomLayout(view, full, 1, centre));
+    const drawn = drawnPart(visible);
+    expect(drawn[0]).toBeLessThan(visible[0]);
+    expect(drawn[2]).toBeGreaterThan(visible[2]);
+    const nudged = visiblePart(view, zoomLayout(view, full, 1, panned(view, full, 1, centre, 3, 2)));
+    expect(drawnPart(nudged)).toEqual(drawn);
+    expect(drawnPart([0, 0, 1, 1])).toEqual([0, 0, 1, 1]);
+  });
 });

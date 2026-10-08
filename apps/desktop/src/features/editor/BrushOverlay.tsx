@@ -3,6 +3,7 @@ import type { MaskShape } from "../../ipc/generated/MaskShape";
 import type { Stroke } from "../../ipc/generated/Stroke";
 import type { MaskTool } from "./MaskTool";
 import { fromShown, type Point } from "./masks";
+import { useViewerZoom } from "./viewerZoom";
 
 type Brush = Extract<MaskShape, { kind: "brush" }>;
 
@@ -23,7 +24,8 @@ const round = (v: number) => Math.round(v * 10_000) / 10_000;
  * A brush mask on the photo (ADR 0042): paint by dragging (holding Option, or with
  * Erase chosen, takes paint away). The design's two rings follow the pointer: the
  * brush's size and, dashed, where its soft edge starts. The tint is the mask's (see
- * `MaskTint`).
+ * `MaskTint`). Zoomed in (ADR 0070), the brush keeps its size on screen, so it paints
+ * finer strokes, as in other editors.
  */
 export function BrushGuides({
   tool,
@@ -37,6 +39,7 @@ export function BrushGuides({
   shape: Brush;
 }) {
   const { w: W, h: H, diagonal: D } = space;
+  const size = tool.brush.size / useViewerZoom().magnification;
   const [pointer, setPointer] = useState<Point | null>(null);
   const [alt, setAlt] = useState(false);
   const drawing = useRef<{ base: Stroke[]; stroke: Stroke; last: [number, number]; frame: number | null } | null>(null);
@@ -71,7 +74,7 @@ export function BrushGuides({
       base: shape.strokes,
       stroke: {
         erase: b.erase || ev.altKey ? true : undefined,
-        size: b.size,
+        size: round(size),
         feather: b.feather,
         flow: b.flow,
         points: [[round(frame[0]), round(frame[1])]],
@@ -101,7 +104,7 @@ export function BrushGuides({
   };
 
   const erasing = tool.brush.erase || alt;
-  const r = tool.brush.size * D;
+  const r = size * D;
   const inner = r * (1 - tool.brush.feather / 100);
   return (
     <div

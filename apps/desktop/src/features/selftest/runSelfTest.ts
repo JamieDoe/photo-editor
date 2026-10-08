@@ -206,6 +206,21 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       };
       const heavyRequest = (window: [number, number, number, number]) =>
         ipc.renderPreview({ imageId: image.id, recipe: heavy, quality: "detail", targetLongEdge: 1600, window, slot: "compare" });
+      // A brush mask at 100 %: its coverage is rasterised at full size once, then cached.
+      const brushed = {
+        ...a,
+        masks: [
+          {
+            id: 1,
+            shape: { kind: "brush" as const, strokes: [{ size: 0.01, feather: 40, flow: 100, points: [[0.3, 0.5], [0.5, 0.52], [0.7, 0.5]] as [number, number][] }] },
+            adjustments: { exposure: -1, warmth: 0, clarity: 0 },
+          },
+        ],
+      };
+      const brushRequest = (window: [number, number, number, number]) =>
+        ipc.renderPreview({ imageId: image.id, recipe: brushed, quality: "detail", targetLongEdge: 1600, window, slot: "compare" });
+      const brushFirst = await brushRequest(win);
+      const brushPanned = await brushRequest([win[0] + 160, win[1], win[2], win[3]]);
       const heavyFirst = await heavyRequest([win[0], win[1] - 200, win[2], win[3]]);
       const heavyPanned = await heavyRequest([win[0] + 160, win[1] - 200, win[2], win[3]]);
       // The editor: Z zooms to 100 % and its window arrives at full resolution; Z again fits.
@@ -227,6 +242,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         interactive: `${panned.width}x${panned.height}`,
         pannedDetailRenderMs: Math.round(fullPanned.renderMs),
         heavyFirstRenderMs: Math.round(heavyFirst.renderMs),
+        brushFirstRenderMs: Math.round(brushFirst.renderMs),
+        brushPannedRenderMs: Math.round(brushPanned.renderMs),
         heavyPannedRenderMs: Math.round(heavyPanned.renderMs),
         ui: ui ? `${ui.width}x${ui.height}` : null,
         uiFit: driver.editor().windowed === null,

@@ -115,16 +115,28 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
   const retouching = retouchOpen && !crop.open && !masks.open && !compare.open;
   const frame = editor.displayed?.frame;
 
-  // Zoom (ADR 0070): Fit or 100 %, also while retouching (the spots and removals are
-  // drawn on the zoomed photo); cropping, masking and comparing fit it. It stays at
-  // 100 % from photo to photo, once each one's first render has arrived.
+  // Zoom (ADR 0070): Fit or 100 %, also while retouching or masking (their marks are
+  // drawn on the zoomed photo); cropping and comparing fit it. It stays at 100 % from
+  // photo to photo, once each one's first render has arrived.
   const [zoomCentre, setZoomCentre] = useState<ZoomCentre | null>(null);
-  const zoomable = image !== null && !crop.open && !masks.open && !compare.open;
+  const zoomable = image !== null && !crop.open && !compare.open;
   useEffect(() => {
     if (!zoomable) setZoomCentre(null);
   }, [zoomable]);
   const zoom = zoomable && editor.displayed?.imageId === image?.id ? zoomCentre : null;
   const toggleZoom = () => setZoomCentre((c) => (c || !zoomable ? null : { x: 0.5, y: 0.5 }));
+  const zoomButton = (
+    <button
+      className="tool-button zoom-button"
+      title={zoom ? "Fit the photo (Z)" : "Zoom to 100 % (Z)"}
+      aria-label={zoom ? "Zoom: 100 %, fit the photo" : "Zoom: fit, zoom to 100 %"}
+      onClick={toggleZoom}
+      disabled={!zoomable}
+    >
+      <SearchIcon size={15} />
+      <span className="mono zoom-label">{zoom ? "100%" : "Fit"}</span>
+    </button>
+  );
 
   // Keyboard: 0–5 / P / X / U mark the photo, ← → move through the Library's photos.
   // Ignored while a control (such as a slider) has focus, so its own keys still work.
@@ -335,20 +347,11 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
           {crop.open && info ? (
             <CropToolbar tool={crop} straighten={info.straighten} />
           ) : masks.open ? (
-            <MaskToolbar tool={masks} />
+            <MaskToolbar tool={masks} zoom={zoomButton} />
           ) : (
             image && (
               <div className="photo-toolbar" role="toolbar" aria-label="Photo tools">
-                <button
-                  className="tool-button zoom-button"
-                  title={zoom ? "Fit the photo (Z)" : "Zoom to 100 % (Z)"}
-                  aria-label={zoom ? "Zoom: 100 %, fit the photo" : "Zoom: fit, zoom to 100 %"}
-                  onClick={toggleZoom}
-                  disabled={!zoomable}
-                >
-                  <SearchIcon size={15} />
-                  <span className="mono zoom-label">{zoom ? "100%" : "Fit"}</span>
-                </button>
+                {zoomButton}
                 <span className="toolbar-divider" />
                 <button className="tool-button" title="Crop & straighten" onClick={enterCrop}>
                   <CropIcon size={15} />

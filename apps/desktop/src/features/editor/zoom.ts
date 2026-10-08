@@ -84,3 +84,36 @@ export function panned(view: Size, full: Size, dpr: number, centre: ZoomCentre, 
 
 export const sameWindow = (a: OutputWindow | null, b: OutputWindow | null) =>
   a === b || (a !== null && b !== null && a.every((v, i) => v === b[i]));
+
+/** A part of the photo's box, as fractions of it: left, top, right, bottom. */
+export type BoxPart = [number, number, number, number];
+
+/** The part of the box the viewport shows at 100 %. */
+export function visiblePart(view: Size, layout: ZoomLayout): BoxPart {
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  return [
+    clamp(-layout.left / layout.width),
+    clamp(-layout.top / layout.height),
+    clamp((view.width - layout.left) / layout.width),
+    clamp((view.height - layout.top) / layout.height),
+  ];
+}
+
+/** About how many steps a drawn part snaps to per visible span: small pans reuse what
+ *  is drawn. */
+const PART_STEPS = 8;
+
+/** The part of the box an overlay draws for `visible`: grown by a step on each side
+ *  and snapped to steps of its span, so panning redraws it only every so often. */
+export function drawnPart(visible: BoxPart): BoxPart {
+  const axis = (a: number, b: number): [number, number] => {
+    // A power of two at most an eighth of the span: exact in floating point, so the
+    // same pan position always gives the same part.
+    const step = Math.max((b - a) / PART_STEPS, 1 / 4096);
+    const grid = 2 ** Math.floor(Math.log2(step));
+    return [Math.max(0, Math.floor(a / grid) * grid - grid), Math.min(1, Math.ceil(b / grid) * grid + grid)];
+  };
+  const [x0, x1] = axis(visible[0], visible[2]);
+  const [y0, y1] = axis(visible[1], visible[3]);
+  return [x0, y0, x1, y1];
+}
