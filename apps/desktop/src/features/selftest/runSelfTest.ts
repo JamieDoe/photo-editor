@@ -161,6 +161,19 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     );
     const exportWallMs = performance.now() - tExport;
 
+    // The export dialog's size estimate (ADR 0068) for the same photo, edit and
+    // settings (the defaults: JPEG 85, full size, Screen, sRGB), against the file made.
+    const sizeEstimate = await (async () => {
+      const image = driver.editor().image;
+      if (!image || finished.type !== "finished") return null;
+      const t = performance.now();
+      const e = await ipc
+        .estimateExport({ imageId: image.id, recipe: a, format: "jpeg", quality: 85, sharpen: "screen", colourSpace: "srgb" })
+        .catch(() => null);
+      const ms = Math.round(performance.now() - t);
+      return e ? { estimate: e.bytes, actual: finished.bytes, size: `${e.width}x${e.height}`, errorPct: Math.round((e.bytes / finished.bytes - 1) * 1000) / 10, ms } : null;
+    })();
+
     // Re-open the same file once the app has settled: separates app-startup effects
     // from steady-state open cost, and exercises opening while an image is open.
     const framesBefore = frames.length;
@@ -1616,6 +1629,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     const stats = driver.editor().schedulerStats();
     const checks = {
       exportFinished: finished.type === "finished",
+      exportSizeEstimate: sizeEstimate !== null && Math.abs(sizeEstimate.errorPct) <= 30 && sizeEstimate.ms < 2000,
       framesDuringDrag: idleDrag.framesShown > 0,
       framesDuringExport: dragDuringExport.framesShown > 0,
       cacheHitOnReturn,
@@ -1710,7 +1724,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       idleDrag,
       cacheHitOnReturn,
       dragDuringExport,
-      export: { wallMs: exportWallMs, result: finished },
+      export: { wallMs: exportWallMs, result: finished, sizeEstimate },
       scheduler: stats,
       devicePixelRatio: window.devicePixelRatio,
     };

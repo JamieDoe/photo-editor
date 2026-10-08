@@ -39,8 +39,8 @@ pub use thumbnails::{
     BatchSummary, Pregenerated, THUMBNAIL_LONG_EDGE, Thumbnail, ThumbnailBatch, ThumbnailSource,
 };
 pub use types::{
-    EmbeddedFrame, EngineInfo, ExportProgress, ExportRequest, ExportStage, ExportSummary,
-    FileExport, ImageId, ImageSummary, PreviewFrame, PreviewRequest, PreviewSlot,
+    EmbeddedFrame, EngineInfo, ExportEstimate, ExportProgress, ExportRequest, ExportStage,
+    ExportSummary, FileExport, ImageId, ImageSummary, PreviewFrame, PreviewRequest, PreviewSlot,
 };
 
 // Re-exported so shells depend on one crate for the engine API.

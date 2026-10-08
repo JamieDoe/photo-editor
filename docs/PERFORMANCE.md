@@ -968,3 +968,23 @@ drag. While it runs (on the render's background lane) it can be cancelled.
   on the preview and 1.20–1.66 s at full size on the 20–26 MP files, and 0.88–0.91 s /
   4.06–4.15 s on the 61 MP file. Over the whole work region it had cost about 0.5 s
   more.
+
+## 49. Export size estimate (ADR 0068)
+
+`bench --estimate`: each camera file exported for real and estimated from a ~1,024 px
+sample, with the fitted model. Error = estimate / actual − 1, over the six files
+(median, range):
+
+| Format | 1,350 px | 2,048 px | Full size |
+|---|---|---|---|
+| JPEG 85 | +0.9 % (−6.9…+11.9) | −0.3 % (−3.0…+3.0) | +3.4 % (−10.3…+26.0) |
+| JPEG 95 | +0.3 % (−2.3…+5.8) | −3.8 % (−7.0…+5.0) | −2.0 % (−17.1…+17.1) |
+| PNG | +1.4 % (−1.4…+3.6) | −1.9 % (−3.4…+1.3) | −0.5 % (−5.9…+14.3) |
+| 16-bit TIFF | +0.1 % (−0.1…+0.4) | −0.3 % (−0.8…+1.0) | −0.1 % (−1.4…+3.8) |
+
+Before fitting, scaling the sample's bytes by pixel count alone overestimated full-size
+JPEGs by up to 83 %.
+
+**Speed:** an estimate takes 57 ms for the Nikon Z 6 (release self-test, through IPC).
+It renders a ~1,024 px level and encodes it once, and runs only when the dialog's
+choices settle.

@@ -925,4 +925,5 @@ select.sort-select { height: 34px; margin-left: 6px; padding: 0 26px 0 10px; bor
 button.setting-switch { flex-shrink: 0; height: auto; padding: 4px; border: 0; border-radius: 12px; background: transparent; }
 button.setting-switch:hover:not(:disabled) { background: transparent; }
 button.setting-switch[aria-checked="true"] .switch { justify-content: flex-end; background: var(--accent); }
+.export-estimate { margin-right: 6px; font-family: var(--mono); font-size: 12px; color: var(--text-3); white-space: nowrap; }
 

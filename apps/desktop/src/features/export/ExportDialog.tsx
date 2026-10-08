@@ -1,4 +1,9 @@
-import { useEffect, useRef } from "react";
+import { estimateExport } from "../../ipc/client";
+import type { EditRecipe } from "../../ipc/generated/EditRecipe";
+import type { ExportEstimateDto } from "../../ipc/generated/ExportEstimateDto";
+import type { ExportEstimateRequestDto } from "../../ipc/generated/ExportEstimateRequestDto";
+import { formatEstimate } from "./estimate";
+import { useEffect, useRef, useState } from "react";
 import { CloseIcon, FolderIcon } from "../../components/icons";
 import type { PreviewFrame } from "../../ipc/frame";
 import type { ExportColourSpace } from "../../ipc/generated/ExportColourSpace";
@@ -23,6 +28,9 @@ export const EXPORT_PRESETS: ReadonlyArray<{ id: string; label: string; sub: str
   { id: "social", label: "Social", sub: "JPEG · 1350 px", format: "jpeg", longEdge: 1350, jpegQuality: 90, colourSpace: "srgb", sharpen: "screen" },
   { id: "full", label: "Full quality", sub: "TIFF · original", format: "tiff", longEdge: null, jpegQuality: 95, colourSpace: "adobeRgb", sharpen: "screen" },
 ];
+
+/** Changes to the choices wait this long before the size is estimated again. */
+const ESTIMATE_DELAY_MS = 150;
 
 /** The design's Colour space choices (ADR 0062). The photo is edited in sRGB (with
  *  colours beyond it brought in softly), so the wider spaces hold the same colours,
@@ -79,6 +87,7 @@ export function ExportDialog({
   onChooseFolder,
   onExport,
   onClose,
+  photo,
 }: {
   count: number;
   /** The first photo's name, for "DSC_0012.NEF and 11 others". */
@@ -90,6 +99,8 @@ export function ExportDialog({
   onChooseFolder: () => void;
   onExport: () => void;
   onClose: () => void;
+  /** The open photo and its edit, for the size estimate (ADR 0068); null without one. */
+  photo: { imageId: number; recipe: EditRecipe } | null;
 }) {
   const thumb = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
@@ -104,6 +115,38 @@ export function ExportDialog({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  // The size estimate (ADR 0068): asked for when the choices settle, the newest wins.
+  const [estimate, setEstimate] = useState<ExportEstimateDto | null>(null);
+  const estimateFor = photo
+    ? {
+        imageId: photo.imageId,
+        recipe: photo.recipe,
+        format: settings.format,
+        quality: settings.jpegQuality,
+        longEdge: settings.longEdge ?? undefined,
+        sharpen: settings.sharpen,
+        colourSpace: settings.colourSpace,
+      }
+    : null;
+  const estimateKey = estimateFor ? JSON.stringify(estimateFor) : null;
+  useEffect(() => {
+    if (!estimateKey) {
+      setEstimate(null);
+      return;
+    }
+    let current = true;
+    const timer = window.setTimeout(() => {
+      estimateExport(JSON.parse(estimateKey) as ExportEstimateRequestDto).then(
+        (e) => current && setEstimate(e),
+        () => undefined, // replaced by a newer one, or no estimate: show the last
+      );
+    }, ESTIMATE_DELAY_MS);
+    return () => {
+      current = false;
+      window.clearTimeout(timer);
+    };
+  }, [estimateKey]);
 
   const longEdge = settings.longEdge;
   const format = settings.format;
@@ -229,6 +272,11 @@ export function ExportDialog({
             </span>
           </button>
           <div className="export-actions">
+            {estimate && (
+              <span className="export-estimate" title={`Estimated from a preview of this photo: ${estimate.width} × ${estimate.height} px`}>
+                {formatEstimate(estimate.bytes, count)}
+              </span>
+            )}
             <button className="ghost" onClick={onClose}>
               Cancel
             </button>

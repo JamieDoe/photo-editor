@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use image_core::{OutputImage, PixelFormat};
 
 pub mod colour;
+pub mod estimate;
 mod icc;
 pub mod metadata;
 pub mod resize;

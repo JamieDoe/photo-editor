@@ -15,9 +15,9 @@ use renderer::{
 use crate::previews::PreviewCache;
 use crate::session::{OpenImages, OpenedImage};
 use crate::{
-    EmbeddedFrame, EngineConfig, EngineError, EngineInfo, ExportProgress, ExportRequest,
-    ExportStage, ExportSummary, FileExport, ImageId, ImageSummary, PreviewFrame, PreviewRequest,
-    PreviewSlot, SourceIdentity,
+    EditRecipe, EmbeddedFrame, EngineConfig, EngineError, EngineInfo, ExportEstimate, ExportFormat,
+    ExportProgress, ExportRequest, ExportStage, ExportSummary, FileExport, ImageId, ImageSummary,
+    PreviewFrame, PreviewRequest, PreviewSlot, SourceIdentity,
 };
 
 /// Supersede key for the main viewer's preview renders: a new request cancels the
@@ -336,6 +336,71 @@ impl Engine {
                 render_ms,
                 full_size: full_output,
                 histogram,
+            })
+        })
+    }
+
+    /// The size an export of the open photo will have (ADR 0068): a sample of about
+    /// [`export::estimate::SAMPLE_LONG_EDGE`] px is rendered with `recipe`, sharpened,
+    /// converted and encoded as the export would be, and scaled to the export's pixel
+    /// count. Tens of milliseconds, on the interactive lane; a newer estimate replaces
+    /// one still running.
+    pub fn estimate_export(
+        &self,
+        image: ImageId,
+        recipe: &EditRecipe,
+        format: ExportFormat,
+        long_edge: Option<u32>,
+        sharpening: export::sharpen::OutputSharpening,
+        colour_space: export::colour::ExportColourSpace,
+    ) -> JobHandle<ExportEstimate, EngineError> {
+        let Some(open) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        let recipe = recipe.sanitized();
+        let (fw, fh) = open.full_size;
+        let full_output = recipe.geometry.map_or((fw, fh), |g| g.output_size(fw, fh));
+        // What the crop keeps decides the level, as for previews.
+        let kept = full_output.0.max(full_output.1) as f64 / fw.max(fh).max(1) as f64;
+        let min_edge =
+            (f64::from(export::estimate::SAMPLE_LONG_EDGE) / kept.max(1e-3)).ceil() as u32;
+        let level = Arc::clone(&open.pyramid.levels()[open.pyramid.select_index(min_edge)]);
+        let as_shot_white = open.as_shot_white;
+        let shared = Arc::clone(&self.shared);
+        let spec = JobSpec::new(
+            Lane::Interactive,
+            Priority::VisiblePreview,
+            "export-estimate",
+        )
+        .superseding("export-estimate");
+        self.jobs.submit(spec, move |token| {
+            let plan = RenderPlan::from_recipe(&recipe, as_shot_white);
+            let render_format = if colour_space == export::colour::ExportColourSpace::Srgb {
+                format.pixel_format()
+            } else {
+                image_core::PixelFormat::Rgb16
+            };
+            let sample = shared
+                .renderer
+                .render(&plan, &level, render_format, token)?;
+            let sample = export::sharpen::sharpen(&sample, sharpening);
+            let sample = export::colour::convert(&sample, colour_space, format.pixel_format());
+            let sample_bytes = export::encode_in(&sample, format, colour_space, None)?.len() as u64;
+            let sample_pixels = u64::from(sample.width()) * u64::from(sample.height());
+            let long = full_output.0.max(full_output.1).max(1);
+            let s = long_edge.map_or(1.0, |e| (f64::from(e) / f64::from(long)).min(1.0));
+            let width = (f64::from(full_output.0) * s).round().max(1.0) as u32;
+            let height = (f64::from(full_output.1) * s).round().max(1.0) as u32;
+            let target_pixels = u64::from(width) * u64::from(height);
+            Ok(ExportEstimate {
+                bytes: export::estimate::scale(sample_bytes, sample_pixels, target_pixels, format),
+                width,
+                height,
+                sample_pixels,
+                sample_bytes,
             })
         })
     }

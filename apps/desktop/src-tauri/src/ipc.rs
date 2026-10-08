@@ -12,6 +12,37 @@ pub const EXPORT_EVENT: &str = "export://event";
 /// Name of the Tauri event carrying [`ExportQueueEvent`]s (ADR 0050).
 pub const EXPORT_QUEUE_EVENT: &str = "export://queue";
 
+/// What to estimate an export's size for (ADR 0068): the open photo with its edit as
+/// it is now, and the dialog's choices.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ExportEstimateRequestDto {
+    #[ts(type = "number")]
+    pub image_id: u64,
+    pub recipe: app_core::EditRecipe,
+    pub format: settings::ExportFileFormat,
+    /// JPEG quality, 50-100.
+    pub quality: u8,
+    /// The long edge in pixels; the full size when left out.
+    #[serde(default)]
+    #[ts(optional)]
+    pub long_edge: Option<u32>,
+    pub sharpen: settings::OutputSharpening,
+    pub colour_space: settings::ExportColourSpace,
+}
+
+/// An export's estimated size (ADR 0068).
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct ExportEstimateDto {
+    #[ts(type = "number")]
+    pub bytes: u64,
+    pub width: u32,
+    pub height: u32,
+}
+
 /// Photos to export, and how (ADR 0050).
 #[derive(Debug, Clone, Deserialize, TS)]
 #[serde(rename_all = "camelCase")]

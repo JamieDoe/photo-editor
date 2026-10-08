@@ -227,6 +227,7 @@ export function App() {
           }
           onExport={() => void runExport()}
           onClose={() => setExportOpen(false)}
+          photo={editor.image && editor.recipe ? { imageId: editor.image.id, recipe: editor.recipe } : null}
         />
       )}
       <Toast toast={toast} />
