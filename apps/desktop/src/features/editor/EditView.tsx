@@ -53,10 +53,13 @@ interface Props {
   onOpenPhoto: (path: string) => void;
   /** Opens the export dialog (the batch bar's Export…). */
   onExport: () => void;
+  /** Focus mode (ADR 0072): the panels and filmstrip hidden; F toggles it, Esc ends it. */
+  focus: boolean;
+  onFocus: (on: boolean) => void;
 }
 
 /** The Edit mode: photograph in the centre, adjustments on the right. */
-export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, notify, library, currentPath, onOpenPhoto, onExport }: Props) {
+export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, notify, library, currentPath, onOpenPhoto, onExport, focus, onFocus }: Props) {
   const { info, image, recipe, busy } = editor;
   // The histogram of what the viewer shows, for the panel's graph and the tone curve.
   const histogram = image && editor.displayed?.imageId === image.id ? editor.displayed.frame.histogram : null;
@@ -149,6 +152,17 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
         e.preventDefault();
         return;
       }
+      // F toggles focus mode; Esc ends it when no tool takes Esc for itself.
+      if (e.key.toLowerCase() === "f" && !e.altKey) {
+        onFocus(!focus);
+        e.preventDefault();
+        return;
+      }
+      if (e.key === "Escape" && focus && !crop.open && !masks.open && !compare.open) {
+        onFocus(false);
+        e.preventDefault();
+        return;
+      }
       // Z toggles Fit and 100 %, as in Lightroom.
       if (e.key.toLowerCase() === "z" && !e.altKey && zoomable) {
         toggleZoom();
@@ -168,7 +182,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [marks, onMark, onStep, image, toggleCompare, zoomable, zoomModel]);
+  }, [marks, onMark, onStep, image, toggleCompare, zoomable, zoomModel, focus, onFocus, crop.open, masks.open, compare.open]);
 
   // Copy and paste (ADR 0048), confirmed as the design does. With photos ticked in the
   // filmstrip, Paste also applies to them, and Sync edits gives them this photo's edit
@@ -278,7 +292,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
   const size = image ? `${((image.fullWidth * image.fullHeight) / 1e6).toFixed(1)} MP` : "";
   const details = image ? [image.camera, image.cameraRaw ? "RAW" : "JPEG", size].filter(Boolean).join(" · ") : "";
   return (
-    <div className="edit-view">
+    <div className={focus ? "edit-view focus" : "edit-view"}>
       <div className="stage-column">
         <div className="meta-row">
           <div className="meta-title">
@@ -403,11 +417,11 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
             )
           )}
         </div>
-        {library.visible.length > 0 && (
+        {library.visible.length > 0 && !focus && (
           <Filmstrip library={library} current={currentPath} onOpen={onOpenPhoto} onSync={() => void syncEdits()} syncing={syncing} onExport={onExport} />
         )}
       </div>
-      <aside className="panel-right" aria-label="Adjustments">
+      <aside className="panel-right" aria-label="Adjustments" hidden={focus}>
         <Histogram
           histogram={histogram}
           specs={info?.adjustments ?? []}
