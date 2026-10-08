@@ -400,11 +400,22 @@ fn cases() -> Vec<(&'static str, EditRecipe)> {
                 ..r.clone()
             },
         ),
+        // Whites near the sensor's white, as recipes before version 26 have it (ADR
+        // 0073): unchanged, so old edits render as they did.
         (
             "whites_plus50_blacks_minus50",
             EditRecipe {
                 whites: 50.0,
+                whites_from_sensor: true,
                 blacks: -50.0,
+                ..r.clone()
+            },
+        ),
+        // Whites near the photo's own white (ADR 0073).
+        (
+            "whites_plus50_photo",
+            EditRecipe {
+                whites: 50.0,
                 ..r.clone()
             },
         ),

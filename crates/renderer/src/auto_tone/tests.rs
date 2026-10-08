@@ -200,11 +200,21 @@ fn one_setting_follows_the_rest_of_the_edit() {
 
 #[test]
 fn a_setting_that_cannot_change_the_photo_stays_at_zero() {
-    // Nothing within Whites' reach of white: however far it goes, the photo hardly
-    // changes, so it stays where it is rather than going to its limit.
-    let img = scene(|x, _| 0.01 + 0.05 * x);
-    assert_eq!(
-        auto_setting(&EditRecipe::default(), ToneSetting::Whites, measure(&img)).unwrap(),
-        0.0
-    );
+    // A photo no setting changes (the same tones whatever the recipe): however far a
+    // setting goes, nothing moves, so it stays where it is rather than going to its
+    // limit.
+    let img = scene(|x, _| 0.05 + 0.6 * x);
+    let fixed = measure(&img)(&EditRecipe::default()).unwrap();
+    let unmoved = |_: &EditRecipe| Ok::<_, crate::RenderError>(fixed.clone());
+    for setting in [
+        ToneSetting::Whites,
+        ToneSetting::Blacks,
+        ToneSetting::Exposure,
+    ] {
+        assert_eq!(
+            auto_setting(&EditRecipe::default(), setting, unmoved).unwrap(),
+            0.0,
+            "{setting:?}"
+        );
+    }
 }

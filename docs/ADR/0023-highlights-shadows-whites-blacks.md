@@ -1,5 +1,8 @@
 # ADR 0023: Highlights and Shadows are local (edge-aware); Whites and Blacks are end points
 
+> Amended by ADR 0073: Whites acts near the photo's own white (its brightest tones),
+> not the sensor's, for recipes from version 26.
+
 - Status: Accepted (Phase 4, milestone 1)
 - Date: 2026-09-29
 

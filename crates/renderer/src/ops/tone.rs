@@ -8,7 +8,9 @@
 //!   areas are lifted as a whole while the texture inside them keeps its contrast, and
 //!   strong edges do not glow, because the base map follows them.
 //! - **Whites / Blacks** set the ends of the tonal range: the amount depends on the
-//!   pixel's own brightness, near white or near black.
+//!   pixel's own brightness, near white or near black. Whites acts near the photo's
+//!   own white (ADR 0073): its brightest tones, wherever they are, not the sensor's
+//!   white, which many photos never reach.
 //!
 //! Brightness is measured in stops below sensor white (`d = -log2(Y)`, so mid grey
 //! 0.18 is 2.47 stops down). Every weight is a smoothstep, so there are no tonal steps.
@@ -38,6 +40,12 @@ pub struct ToneParams {
     pub shadows: f32,
     pub whites: f32,
     pub blacks: f32,
+    /// Whether Whites acts near the photo's own white (ADR 0073); `false` near the
+    /// sensor's, as recipes made before it did.
+    pub whites_relative: bool,
+    /// The photo's white, in stops below the sensor's (see [`white_point_stops`]):
+    /// where Whites acts. 0 (the sensor's white) unless resolved for a photo.
+    pub white_stops: f32,
 }
 
 impl ToneParams {
@@ -71,11 +79,54 @@ pub fn local_stops(d: f32, p: &ToneParams) -> f32 {
 }
 
 /// End-point part, from the pixel's own brightness `d`: whites act on the top 1.5
-/// stops, blacks on the deepest tones.
+/// stops below the photo's white (and anything brighter), blacks on the deepest tones.
 pub fn endpoint_stops(d: f32, p: &ToneParams) -> f32 {
-    let whites = 1.0 - smoothstep(0.0, 1.5, d);
+    let w = p.white_stops;
+    let whites = 1.0 - smoothstep(w, w + 1.5, d);
     let blacks = smoothstep(4.0, 8.0, d);
     p.whites / 100.0 * WHITES_STOPS * whites + p.blacks / 100.0 * BLACKS_STOPS * blacks
+}
+
+/// The share of the photo brighter than its white: the 99.5th percentile of luminance.
+const WHITE_PERCENTILE: f32 = 0.995;
+/// The photo's white may sit above the sensor's (after Exposure pushes it) or below,
+/// down to this many stops.
+const WHITE_RANGE: (f32, f32) = (-4.0, 10.0);
+/// About this many pixels are measured, on a regular grid, so every size of the photo
+/// (a preview level, the full resolution) measures alike.
+const WHITE_SAMPLES: usize = 1 << 18;
+
+/// The photo's white (ADR 0073), in stops below the sensor's: the luminance its
+/// brightest tones reach, the 99.5th percentile, after `gains` (white balance and
+/// Exposure, as the tone stage sees it). Whites acts near it.
+pub fn white_point_stops(source: &LinearImage, gains: [f32; 3]) -> f32 {
+    let (w, h) = (source.width() as usize, source.height() as usize);
+    if w == 0 || h == 0 {
+        return 0.0;
+    }
+    let step = ((w * h) as f64 / WHITE_SAMPLES as f64).sqrt().max(1.0);
+    let [wr, wg, wb] = REC709_LUMA;
+    let (kr, kg, kb) = (wr * gains[0], wg * gains[1], wb * gains[2]);
+    let mut d: Vec<f32> = Vec::with_capacity(WHITE_SAMPLES * 2);
+    let mut y = 0.0f64;
+    while (y as usize) < h {
+        let row = source.row(y as u32);
+        let mut x = 0.0f64;
+        while (x as usize) < w {
+            let i = x as usize * 3;
+            let lum =
+                (kr * f32::from(row[i]) + kg * f32::from(row[i + 1]) + kb * f32::from(row[i + 2]))
+                    / 65535.0;
+            d.push(stops_below_white(lum));
+            x += step;
+        }
+        y += step;
+    }
+    // The brightest 0.5 %: the stops below white that 99.5 % of pixels are at least.
+    let k = ((1.0 - WHITE_PERCENTILE) * d.len() as f32) as usize;
+    let k = k.min(d.len() - 1);
+    let (_, v, _) = d.select_nth_unstable_by(k, f32::total_cmp);
+    v.clamp(WHITE_RANGE.0, WHITE_RANGE.1)
 }
 
 /// Reference implementation for one pixel: `base_d` is the surroundings' brightness
@@ -162,6 +213,7 @@ mod tests {
             shadows,
             whites,
             blacks,
+            ..ToneParams::default()
         }
     }
 
@@ -202,6 +254,46 @@ mod tests {
         let b = params(0.0, 0.0, 0.0, -100.0);
         assert!((endpoint_stops(10.0, &b) + BLACKS_STOPS).abs() < 1e-6);
         assert_eq!(endpoint_stops(2.47, &b), 0.0, "mid grey untouched");
+    }
+
+    #[test]
+    fn whites_act_near_the_photos_own_white() {
+        // A photo whose brightest tones are 3 stops below the sensor's white: Whites
+        // near the sensor's (as before ADR 0073) doesn't reach them; near the photo's,
+        // +100 lifts them by its full stop, and mid tones far below stay put.
+        let sensor = params(0.0, 0.0, 100.0, 0.0);
+        assert_eq!(endpoint_stops(3.0, &sensor), 0.0);
+        let photo = ToneParams {
+            whites_relative: true,
+            white_stops: 3.0,
+            ..sensor
+        };
+        assert!((endpoint_stops(3.0, &photo) - WHITES_STOPS).abs() < 1e-6);
+        assert!(
+            (endpoint_stops(2.0, &photo) - WHITES_STOPS).abs() < 1e-6,
+            "brighter still"
+        );
+        assert_eq!(endpoint_stops(5.0, &photo), 0.0);
+    }
+
+    #[test]
+    fn the_photos_white_is_its_brightest_half_percent_at_any_size() {
+        // Luminance rising across the photo to a quarter of the sensor's white: its
+        // white is about 2 stops down, measured alike on the photo and on it halved.
+        let image = |w: u32, h: u32| {
+            let data = (0..h)
+                .flat_map(|_| 0..w)
+                .flat_map(|x| [((x as f32 + 0.5) / w as f32 * 0.25 * 65535.0) as u16; 3])
+                .collect();
+            LinearImage::new(w, h, data).unwrap()
+        };
+        let full = white_point_stops(&image(1200, 800), [1.0; 3]);
+        let half = white_point_stops(&image(600, 400), [1.0; 3]);
+        assert!((full - 2.0).abs() < 0.02, "{full}");
+        assert!((full - half).abs() < 0.01, "{full} vs {half}");
+        // Gains (white balance, Exposure) move it: one stop brighter, one stop up.
+        let brighter = white_point_stops(&image(1200, 800), [2.0; 3]);
+        assert!((brighter - (full - 1.0)).abs() < 1e-3, "{brighter}");
     }
 
     #[test]

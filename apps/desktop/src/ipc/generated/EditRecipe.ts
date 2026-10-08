@@ -45,6 +45,12 @@ shadows: number,
  */
 whites: number, 
 /**
+ * Whites acts near the sensor's white, as before recipe version 26, instead of
+ * the photo's own (ADR 0073). Set on older recipes with Whites, so they render
+ * as they did; written only when set.
+ */
+whitesFromSensor?: boolean, 
+/**
  * Blacks, -100..100: moves the black end of the tonal range.
  */
 blacks: number, 
