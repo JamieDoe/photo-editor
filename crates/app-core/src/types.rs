@@ -67,12 +67,14 @@ pub struct PreviewRequest {
     pub image: ImageId,
     pub recipe: EditRecipe,
     pub quality: PreviewQuality,
-    /// Long edge of the viewport in device pixels.
+    /// Long edge of the viewport in device pixels. For a window: the long edge the
+    /// whole output has at the zoom shown, which picks the source rendered from.
     pub target_long_edge: u32,
-    /// Only this part of the output, at full resolution: `x`, `y`, `width`, `height`
-    /// in full-resolution output pixels (ADR 0070, zoom). Rendered from the full
-    /// source once [`Engine::prepare_full`](crate::Engine::prepare_full) has decoded
-    /// it (and for detail quality), otherwise from the largest preview level.
+    /// Only this part of the output: `x`, `y`, `width`, `height` in full-resolution
+    /// output pixels (ADR 0070, zoom). Rendered from the smallest source at least as
+    /// sharp as the zoom (`target_long_edge`): a preview level, or above the largest
+    /// one the full resolution, once [`Engine::prepare_full`](crate::Engine::prepare_full)
+    /// has decoded it (and for detail quality).
     pub window: Option<(u32, u32, u32, u32)>,
 }
 

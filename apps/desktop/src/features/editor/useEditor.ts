@@ -11,7 +11,7 @@ import { defaultCopyGroups, pasteChanges, pasteEdits as pasteInto, type CopiedEd
 import { EditHistory, describeChange } from "./history";
 import { PreviewScheduler, type FrameInfo, type SchedulerStats } from "./previewScheduler";
 import { defaultRecipe } from "./recipe";
-import { sameWindow, type OutputWindow } from "./zoom";
+import { needsFull, sameWindow, type OutputWindow } from "./zoom";
 
 /** What the viewer shows: a render of the open image's recipe. The camera's embedded
  * JPEG is never shown in the editor (ADR 0020). */
@@ -72,8 +72,13 @@ export function useEditor() {
   const imageRef = useRef<ImageSummaryDto | null>(null);
   const recipeRef = useRef<EditRecipe | null>(null);
   const targetEdgeRef = useRef(1600);
-  /** The part of the photo the viewer shows at 100 % (ADR 0070); null at Fit. */
+  /** The part of the photo the viewer shows when zoomed (ADR 0070); null at Fit. And
+   *  the whole photo's long edge at the zoom, which picks the source of its renders. */
   const viewWindowRef = useRef<OutputWindow | null>(null);
+  const zoomedEdgeRef = useRef(0);
+  /** The open photo's output long edge at full resolution (after crop), from its last
+   *  whole frame. */
+  const outputLongRef = useRef(0);
   /** The photo whose full resolution has been asked for. */
   const fullRequestedRef = useRef<number | null>(null);
   /** The photo and removals whose full-resolution fill has been asked for. */
@@ -95,7 +100,8 @@ export function useEditor() {
         const img = imageRef.current;
         if (!img) throw ipc.staleError();
         const window = viewWindowRef.current ?? undefined;
-        const frame = await ipc.renderPreview({ imageId: img.id, recipe: r, quality, targetLongEdge: targetEdgeRef.current, window });
+        const targetLongEdge = window ? zoomedEdgeRef.current : targetEdgeRef.current;
+        const frame = await ipc.renderPreview({ imageId: img.id, recipe: r, quality, targetLongEdge, window });
         // A different image was opened while this rendered, or zoom went back to Fit.
         if (imageRef.current?.id !== img.id) throw ipc.staleError();
         if (frame.window && viewWindowRef.current === null) throw ipc.staleError();
@@ -163,6 +169,7 @@ export function useEditor() {
       setWindowed(d);
       return;
     }
+    outputLongRef.current = Math.max(d.frame.fullWidth, d.frame.fullHeight);
     setDisplayed(d);
     listenersRef.current.forEach((l) => l(d));
   }
@@ -344,18 +351,20 @@ export function useEditor() {
     );
   }
 
-  /** Shows only `window` of the photo, at full resolution (ADR 0070), or the whole
-   *  photo again with null. The full resolution is decoded the first time; windows
+  /** Shows only `window` of the photo (ADR 0070), at a zoom where the whole photo's
+   *  long edge is `zoomedLongEdge`, or the whole photo again with null. Past what the
+   *  largest preview holds, the full resolution is decoded the first time; windows
    *  render from the largest preview until it is ready. */
-  const setViewWindow = useCallback((window: OutputWindow | null) => {
-    if (sameWindow(window, viewWindowRef.current)) return;
+  const setViewWindow = useCallback((window: OutputWindow | null, zoomedLongEdge = 0) => {
+    if (sameWindow(window, viewWindowRef.current) && zoomedLongEdge === zoomedEdgeRef.current) return;
     viewWindowRef.current = window;
+    zoomedEdgeRef.current = zoomedLongEdge;
     const img = imageRef.current;
     const rerender = () => {
       if (imageRef.current === img && recipeRef.current) schedulerRef.current?.request(toRender(recipeRef.current));
     };
     if (window === null) setWindowed(null);
-    else if (img && fullRequestedRef.current !== img.id) {
+    else if (img && fullRequestedRef.current !== img.id && needsFull(img.levels[0] ?? [img.fullWidth, img.fullHeight], [img.fullWidth, img.fullHeight], zoomedLongEdge, outputLongRef.current)) {
       fullRequestedRef.current = img.id;
       ipc.prepareFull(img.id).then(rerender, (e: unknown) => {
         if (fullRequestedRef.current === img.id) fullRequestedRef.current = null;

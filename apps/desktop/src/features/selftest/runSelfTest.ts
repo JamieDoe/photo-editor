@@ -183,11 +183,12 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       if (!image) return null;
       await sleep(300);
       const [fw, fh] = [image.fullWidth, image.fullHeight];
+      // Windows at 100 %: the whole photo's long edge at the zoom is its own.
       const win: [number, number, number, number] = [Math.round(fw / 2 - 1000), Math.round(fh / 2 - 600), 2000, 1200];
       // In the comparison's slot: the editor's own renders (such as one after a fill
       // made in the background) must not cancel these, nor these the editor's.
       const request = (quality: "interactive" | "detail", window: [number, number, number, number]) =>
-        ipc.renderPreview({ imageId: image.id, recipe: a, quality, targetLongEdge: 1600, window, slot: "compare" });
+        ipc.renderPreview({ imageId: image.id, recipe: a, quality, targetLongEdge: Math.max(image.fullWidth, image.fullHeight), window, slot: "compare" });
       const early = await request("detail", win);
       const t = performance.now();
       await ipc.prepareFull(image.id);
@@ -196,6 +197,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const panned = await request("interactive", [win[0] + 160, win[1], win[2], win[3]]);
       const fullPanned = await request("detail", [win[0] + 160, win[1], win[2], win[3]]);
       const shown = full.window;
+      // At 50 %, from the half-size preview: half the pixels each way, and quicker.
+      const half = await ipc.renderPreview({ imageId: image.id, recipe: a, quality: "detail", targetLongEdge: Math.round(Math.max(fw, fh) / 2), window: win, slot: "compare" });
       // A heavier edit: clarity reads around each pixel, and a straightened crop frames
       // the whole full-resolution source first (once per framing; then cached).
       const heavy = {
@@ -205,7 +208,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         geometry: { straighten: 2, crop: { x: 0.05, y: 0.05, w: 0.9, h: 0.9 }, aspect: "free" as const, vertical: 0, horizontal: 0, rotation: 0, flip: false },
       };
       const heavyRequest = (window: [number, number, number, number]) =>
-        ipc.renderPreview({ imageId: image.id, recipe: heavy, quality: "detail", targetLongEdge: 1600, window, slot: "compare" });
+        ipc.renderPreview({ imageId: image.id, recipe: heavy, quality: "detail", targetLongEdge: Math.max(image.fullWidth, image.fullHeight), window, slot: "compare" });
       // A brush mask at 100 %: its coverage is rasterised at full size once, then cached.
       const brushed = {
         ...a,
@@ -218,7 +221,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         ],
       };
       const brushRequest = (window: [number, number, number, number]) =>
-        ipc.renderPreview({ imageId: image.id, recipe: brushed, quality: "detail", targetLongEdge: 1600, window, slot: "compare" });
+        ipc.renderPreview({ imageId: image.id, recipe: brushed, quality: "detail", targetLongEdge: Math.max(image.fullWidth, image.fullHeight), window, slot: "compare" });
       const brushFirst = await brushRequest(win);
       const brushPanned = await brushRequest([win[0] + 160, win[1], win[2], win[3]]);
       const heavyFirst = await heavyRequest([win[0], win[1] - 200, win[2], win[3]]);
@@ -231,7 +234,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         return w?.window && w.width === Math.round(w.window.width) ? w : null;
       }, 10_000, "zoomed window").catch(() => null);
       press();
-      await sleep(300);
+      // Back to Fit, animated.
+      await sleep(700);
       return {
         early: `${early.width}x${early.height}`,
         fullDecodeMs,
@@ -241,6 +245,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         interactiveRenderMs: Math.round(panned.renderMs),
         interactive: `${panned.width}x${panned.height}`,
         pannedDetailRenderMs: Math.round(fullPanned.renderMs),
+        half: `${half.width}x${half.height}`,
+        halfRenderMs: Math.round(half.renderMs),
         heavyFirstRenderMs: Math.round(heavyFirst.renderMs),
         brushFirstRenderMs: Math.round(brushFirst.renderMs),
         brushPannedRenderMs: Math.round(brushPanned.renderMs),
@@ -256,6 +262,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
           shown.y === win[1] &&
           panned.width < win[2] &&
           fullPanned.width === win[2] &&
+          half.width === win[2] / 2 &&
           heavyPanned.width === win[2] &&
           ui !== null &&
           driver.editor().windowed === null,
@@ -1557,7 +1564,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const fillMs = Math.round(performance.now() - t);
       const after = await whole();
       const [x, y] = [Math.round(0.6 * image.fullWidth), Math.round(0.3 * image.fullHeight)];
-      const window = await ipc.renderPreview({ imageId: image.id, recipe, quality: "detail", targetLongEdge: 1600, window: [x, y, 800, 600], slot: "compare" });
+      const window = await ipc.renderPreview({ imageId: image.id, recipe, quality: "detail", targetLongEdge: Math.max(image.fullWidth, image.fullHeight), window: [x, y, 800, 600], slot: "compare" });
       return {
         standInFirst: before.fillPending,
         fillMs,

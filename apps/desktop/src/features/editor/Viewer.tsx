@@ -1,9 +1,10 @@
 import { type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent, useEffect, useRef, useState } from "react";
-import type { DisplayedFrame } from "./useEditor";
-import { fitSize, nextBoxShape, type BoxShape } from "./viewerLayout";
 import { isTextEntry } from "../../lib/keyboard";
+import type { DisplayedFrame } from "./useEditor";
+import type { ViewPoint, ZoomControl } from "./useZoom";
+import { fitSize, nextBoxShape, type BoxShape } from "./viewerLayout";
 import { ViewerZoomContext } from "./viewerZoom";
-import { centreKeeping, panned, visiblePart, zoomLayout, type OutputWindow, type ZoomCentre } from "./zoom";
+import { visiblePart, zoomLayout, type OutputWindow, type Zoom } from "./zoom";
 
 interface Props {
   displayed: DisplayedFrame | null;
@@ -14,15 +15,16 @@ interface Props {
   placeholder: string;
   /** Drawn over the photo, in its box (the crop tool). */
   overlay?: ReactNode;
-  /** Zoom (ADR 0070): where the photo is centred at 100 %, or null at Fit. Without
-   *  `onZoom` the photo can't be zoomed (a tool is open). With an overlay (retouch),
-   *  clicks are the overlay's: the photo pans by scrolling or Space-dragging. */
-  zoom?: ZoomCentre | null;
-  onZoom?: (centre: ZoomCentre | null) => void;
-  /** At 100 %, the latest render of the visible part, drawn over the whole photo. */
+  /** Zoom (ADR 0070), or null at Fit. Without `zoomControl` the photo can't be zoomed
+   *  (a tool is open). With an overlay (retouch, masks), clicks are the overlay's: the
+   *  photo pans by scrolling or Space-dragging. */
+  zoom?: Zoom | null;
+  zoomControl?: ZoomControl;
+  /** Zoomed, the latest render of the visible part, drawn over the whole photo. */
   windowed?: DisplayedFrame | null;
-  /** Reports the part of the photo shown at 100 % (null at Fit), for rendering. */
-  onWindow?: (window: OutputWindow | null) => void;
+  /** Reports the part of the photo in view when zoomed (null at Fit), in
+   *  full-resolution pixels, and the long edge the whole photo has at the zoom. */
+  onWindow?: (window: OutputWindow | null, zoomedLongEdge: number) => void;
 }
 
 /** A pointer moving less than this (CSS px) between down and up is a click. */
@@ -33,12 +35,11 @@ const CLICK_SLOP = 4;
  * canvas is sized to fit the viewer (not to the frame's pixel count), so a quick
  * low-resolution frame and the later sharp one appear at the same size.
  */
-export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoom = null, onZoom, windowed = null, onWindow }: Props) {
+export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoom = null, zoomControl, windowed = null, onWindow }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const windowCanvasRef = useRef<HTMLCanvasElement>(null);
-  const zoomRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ id: number; x: number; y: number; centre: ZoomCentre; moved: boolean } | null>(null);
+  const dragRef = useRef<{ id: number; x: number; y: number; moved: boolean } | null>(null);
   const [panning, setPanning] = useState(false);
   // Space held: drags pan even over an overlay, as in other editors.
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -66,10 +67,14 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
     return () => observer.disconnect();
   }, [onResize]);
 
-  // At 100 %: the photo's box at full resolution, positioned by the zoom centre.
+  // Zoomed: the photo's box at the zoom's scale, positioned by its centre.
   const dpr = window.devicePixelRatio || 1;
   const full = displayed && displayed.frame.fullWidth > 0 ? { width: displayed.frame.fullWidth, height: displayed.frame.fullHeight } : null;
-  const zoomed = zoom !== null && onZoom !== undefined && full !== null;
+  const [fullWidth, fullHeight] = [full?.width ?? 0, full?.height ?? 0];
+  useEffect(() => {
+    zoomControl?.setGeometry(fullWidth > 0 && space.width > 0 ? { view: space, full: { width: fullWidth, height: fullHeight }, dpr } : null);
+  }, [zoomControl, space, fullWidth, fullHeight, dpr]);
+  const zoomed = zoom !== null && zoomControl !== undefined && full !== null;
   useEffect(() => {
     if (!zoomed || overlay === undefined) return;
     const onKey = (e: KeyboardEvent) => {
@@ -93,11 +98,13 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
   // What overlays need of it: the part in view and how much larger than at Fit.
   const fitWidth = shape ? fitSize(space, shape).width : 0;
   const zoomInfo = layout && fitWidth > 0 ? { visible: visiblePart(space, layout), magnification: layout.width / fitWidth } : null;
-  const visibleKey = visible?.join(",") ?? "";
+  // Rendering asks for the whole photo's long edge at the zoom, which picks its source.
+  const zoomedLongEdge = zoomed ? Math.round(Math.max(full.width, full.height) * zoom.scale) : 0;
+  const visibleKey = `${visible?.join(",") ?? ""}@${zoomedLongEdge}`;
   // Reported by value (the array is new on every render).
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
-  useEffect(() => onWindow?.(visibleRef.current), [visibleKey, onWindow]);
+  useEffect(() => onWindow?.(visibleRef.current, zoomedLongEdge), [visibleKey, onWindow]);
 
   // With an overlay the canvas sits in a frame, without one it stands alone (and
   // zoomed, in the zoomed box): a different element, so the frame is drawn again when
@@ -129,70 +136,48 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
     canvas.getContext("2d")?.putImageData(new ImageData(frame.pixels, frame.width, frame.height), 0, 0);
   }, [shownWindow]);
 
-  /** Zooms to 100 % keeping the photo's point under `client` (a pointer) in place. */
-  const zoomInAt = (client: { x: number; y: number }) => {
+  /** A pointer's place in the viewport (the viewer's content box), in CSS pixels. */
+  const toView = (clientX: number, clientY: number): ViewPoint => {
     const container = containerRef.current;
-    const photo = container?.querySelector(".viewer-frame, .viewer-canvas")?.getBoundingClientRect();
-    if (!onZoom || !full || !container || !photo || photo.width === 0) return;
-    const at = {
-      x: Math.min(1, Math.max(0, (client.x - photo.left) / photo.width)),
-      y: Math.min(1, Math.max(0, (client.y - photo.top) / photo.height)),
-    };
+    if (!container) return { x: 0, y: 0 };
     const box = container.getBoundingClientRect();
     const style = getComputedStyle(container);
-    const pointer = { x: client.x - box.left - parseFloat(style.paddingLeft), y: client.y - box.top - parseFloat(style.paddingTop) };
-    onZoom(centreKeeping(space, full, dpr, at, pointer));
+    return { x: clientX - box.left - parseFloat(style.paddingLeft), y: clientY - box.top - parseFloat(style.paddingTop) };
   };
+  const toViewRef = useRef(toView);
+  toViewRef.current = toView;
   /** Fit: a click zooms to 100 % on the spot clicked. */
   const zoomIn = (e: ReactPointerEvent<HTMLElement>) => {
-    if (e.button === 0) zoomInAt({ x: e.clientX, y: e.clientY });
+    if (e.button === 0) zoomControl?.zoomIn(toView(e.clientX, e.clientY));
   };
 
-  // Pinching on a trackpad: apart zooms to 100 % where the fingers are, together fits.
-  // WebKit reports a pinch as gesture events, other engines as a wheel with Ctrl; the
-  // page itself never zooms.
-  const pinchRef = useRef({ zoomIn: zoomInAt, zoomed, fit: () => onZoom?.(null), allowed: onZoom !== undefined && full !== null, spread: 0 });
-  pinchRef.current = { ...pinchRef.current, zoomIn: zoomInAt, zoomed, fit: () => onZoom?.(null), allowed: onZoom !== undefined && full !== null };
+  // Pinching on a trackpad zooms smoothly around the fingers, down to Fit. WebKit
+  // reports a pinch as gesture events, other engines as a wheel with Ctrl; the page
+  // itself never zooms.
+  const controlRef = useRef(zoomControl);
+  controlRef.current = zoomControl;
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const p = pinchRef;
-    /** A pinch's accumulated spread (log of its scale): ±0.15 decides it. */
-    const settle = (client: { x: number; y: number }) => {
-      const { spread } = p.current;
-      if (spread > 0.15 && !p.current.zoomed) {
-        p.current.zoomIn(client);
-        p.current.spread = 0;
-      } else if (spread < -0.15 && p.current.zoomed) {
-        p.current.fit();
-        p.current.spread = 0;
-      }
-    };
-    let lastWheel = 0;
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey) return;
       e.preventDefault();
-      if (!p.current.allowed) return;
-      // A pause ends one pinch; the next starts afresh.
-      if (e.timeStamp - lastWheel > 300) p.current.spread = 0;
-      lastWheel = e.timeStamp;
-      p.current.spread -= e.deltaY / 100;
-      settle({ x: e.clientX, y: e.clientY });
+      const lines = e.deltaMode === 1 ? 16 : 1;
+      controlRef.current?.zoomBy(Math.exp((-e.deltaY * lines) / 100), toViewRef.current(e.clientX, e.clientY));
     };
+    // Safari's gesture scale is since the gesture began; each change applies its step.
     let last = 1;
     type Gesture = Event & { scale: number; clientX: number; clientY: number };
     const onGestureStart = (e: Event) => {
       e.preventDefault();
       last = 1;
-      p.current.spread = 0;
     };
     const onGestureChange = (e: Event) => {
       e.preventDefault();
       const g = e as Gesture;
-      if (!p.current.allowed || !(g.scale > 0)) return;
-      p.current.spread += Math.log(g.scale / last);
+      if (!(g.scale > 0)) return;
+      controlRef.current?.zoomBy(g.scale / last, toViewRef.current(g.clientX, g.clientY));
       last = g.scale;
-      settle({ x: g.clientX, y: g.clientY });
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     el.addEventListener("gesturestart", onGestureStart);
@@ -211,17 +196,18 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
     if (overlay !== undefined && !spaceHeld) return;
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
-    dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, centre: zoom, moved: false };
+    dragRef.current = { id: e.pointerId, x: e.clientX, y: e.clientY, moved: false };
   };
   const zoomMove = (e: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
-    if (!drag || drag.id !== e.pointerId || !full || !onZoom) return;
+    if (!drag || drag.id !== e.pointerId) return;
     const dx = e.clientX - drag.x;
     const dy = e.clientY - drag.y;
     if (!drag.moved && Math.hypot(dx, dy) < CLICK_SLOP) return;
     if (!drag.moved) setPanning(true);
     drag.moved = true;
-    onZoom(panned(space, full, dpr, drag.centre, dx, dy));
+    [drag.x, drag.y] = [e.clientX, e.clientY];
+    zoomControl?.panBy(dx, dy);
   };
   const zoomUp = (e: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
@@ -229,21 +215,22 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
     dragRef.current = null;
     setPanning(false);
     // A click (no drag) goes back to Fit, unless clicks are the overlay's.
-    if (!drag.moved && e.type === "pointerup" && overlay === undefined) onZoom?.(null);
+    if (!drag.moved && e.type === "pointerup" && overlay === undefined) zoomControl?.fit();
   };
   /** Scrolling (two fingers on a trackpad) pans. */
   const zoomWheel = (e: ReactWheelEvent<HTMLDivElement>) => {
-    if (!zoom || !full || !onZoom || e.ctrlKey) return;
+    if (!zoom || e.ctrlKey) return;
     const lines = e.deltaMode === 1 ? 16 : 1;
-    onZoom(panned(space, full, dpr, zoom, -e.deltaX * lines, -e.deltaY * lines));
+    zoomControl?.panBy(-e.deltaX * lines, -e.deltaY * lines);
   };
+  // Output pixels to the box's CSS pixels.
+  const perPixel = zoomed ? zoom.scale / dpr : 1;
 
   return (
     <div className="viewer" ref={containerRef}>
       {displayed ? (
         layout && shape ? (
           <div
-            ref={zoomRef}
             className={["viewer-zoom", panning && "panning", overlay !== undefined && !spaceHeld && "tool"].filter(Boolean).join(" ")}
             onPointerDownCapture={zoomDown}
             onPointerMove={zoomMove}
@@ -258,10 +245,10 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
                   ref={windowCanvasRef}
                   className="viewer-window"
                   style={{
-                    left: shownWindow.frame.window.x / dpr,
-                    top: shownWindow.frame.window.y / dpr,
-                    width: shownWindow.frame.window.width / dpr,
-                    height: shownWindow.frame.window.height / dpr,
+                    left: shownWindow.frame.window.x * perPixel,
+                    top: shownWindow.frame.window.y * perPixel,
+                    width: shownWindow.frame.window.width * perPixel,
+                    height: shownWindow.frame.window.height * perPixel,
                   }}
                 />
               )}
@@ -276,9 +263,9 @@ export function Viewer({ displayed, loading, onResize, placeholder, overlay, zoo
         ) : (
           <canvas
             ref={canvasRef}
-            className={["viewer-canvas", loading && "loading", onZoom && "zoomable"].filter(Boolean).join(" ")}
+            className={["viewer-canvas", loading && "loading", zoomControl && "zoomable"].filter(Boolean).join(" ")}
             style={canvasStyle(space, shape ?? displayed.frame)}
-            onPointerUp={onZoom ? zoomIn : undefined}
+            onPointerUp={zoomControl ? zoomIn : undefined}
           />
         )
       ) : (

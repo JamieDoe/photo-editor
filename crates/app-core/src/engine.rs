@@ -253,7 +253,14 @@ impl Engine {
             );
         };
         if let Some(window) = req.window {
-            return self.render_window(image, req.recipe, req.quality, window, slot);
+            return self.render_window(
+                image,
+                req.recipe,
+                req.quality,
+                window,
+                req.target_long_edge,
+                slot,
+            );
         }
         let target = req
             .quality
@@ -350,26 +357,41 @@ impl Engine {
         })
     }
 
-    /// A window of the open photo's output at full resolution (ADR 0070, zoom), for
-    /// the viewer. Detail renders come from the full-resolution source once it is
-    /// decoded ([`Engine::prepare_full`]); interactive ones (while dragging) and those
-    /// before it is ready come from the largest preview level, the window scaled to it.
-    /// The pixels a whole render gives there (`CpuRenderer::render_window`).
+    /// A window of the open photo's output (ADR 0070, zoom), for the viewer, from the
+    /// smallest source at least as sharp as the zoom (`zoomed_long_edge`, the whole
+    /// output's long edge at it): a preview level, or past the largest one the full
+    /// resolution once it is decoded ([`Engine::prepare_full`]). Interactive renders
+    /// (while dragging) and those before it is ready take the largest level. The
+    /// window is scaled to the source; its pixels are what a whole render of that
+    /// source gives there (`CpuRenderer::render_window`).
     fn render_window(
         &self,
         image: Arc<OpenedImage>,
         recipe: EditRecipe,
         quality: PreviewQuality,
         window: (u32, u32, u32, u32),
+        zoomed_long_edge: u32,
         slot: PreviewSlot,
     ) -> JobHandle<PreviewFrame, EngineError> {
         let recipe = recipe.sanitized();
         let (fw, fh) = image.full_size;
         let full_output = recipe.geometry.map_or((fw, fh), |g| g.output_size(fw, fh));
-        let full = (quality != PreviewQuality::Interactive)
+        // The smallest source at least as sharp as the zoom shows: the source's long
+        // edge must be the photo's times the zoom (output long edge over the full
+        // output's). While dragging, a little less will do, as for whole previews.
+        let zoom = f64::from(zoomed_long_edge) / f64::from(full_output.0.max(full_output.1).max(1));
+        let allowance = match quality {
+            PreviewQuality::Interactive => f64::from(INTERACTIVE_UNDERSAMPLE_PERCENT) / 100.0,
+            PreviewQuality::Thumbnail | PreviewQuality::Detail => 1.0,
+        };
+        let needed = (zoom * allowance * f64::from(fw.max(fh))).ceil() as u32;
+        let base = image.pyramid.base();
+        let full = (quality != PreviewQuality::Interactive && needed > base.long_edge())
             .then(|| image.full())
             .flatten();
-        let source = full.unwrap_or_else(|| Arc::clone(image.pyramid.base()));
+        let source = full.unwrap_or_else(|| {
+            Arc::clone(&image.pyramid.levels()[image.pyramid.select_index(needed)])
+        });
         // The source's output is the full output scaled by the source's size.
         let s = f64::from(source.width()) / f64::from(fw.max(1));
         let (x, y, w, h) = window;
