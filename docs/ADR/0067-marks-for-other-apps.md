@@ -1,7 +1,7 @@
-# ADR 0067: Marks for other apps (part 1: in exports)
+# ADR 0067: Marks for other apps
 
-- Status: Accepted (part 1: exports; sidecars and reading Lightroom's back are to
-  follow)
+- Status: Accepted (part 1: exports; part 2: sidecars beside RAWs; reading Lightroom's
+  back is to follow)
 - Date: 2026-10-07
 
 ## Context
@@ -47,11 +47,65 @@ ADR 0063 left this open: rating and keywords "would go in XMP".
      purple through the real commands, exports 344 bytes larger with metadata kept,
      and byte-for-byte the same with it off.
 
+## Part 2: sidecars beside RAWs
+
+1. **An opt-in setting**, "Sidecar files for other apps" in Settings → Library, off
+   by default: it writes files into the photographer's folders, which nothing else in
+   the app does.
+2. **What's written:** `NAME.xmp` beside a RAW, Lightroom, Bridge and Capture One's
+   convention (`DSC_0012.NEF` → `DSC_0012.xmp`), with the same rating and label as
+   exports.
+   - JPEGs get none: other apps read their marks from inside the file, and originals
+     are never modified.
+   - RAW files are never written to.
+3. **When:**
+   - when a photo's stars, reject or label change (one or many at once), for the
+     RAWs among them;
+   - when the setting is turned on, for every marked RAW in the granted folders, in
+     the background.
+   - Turning it off leaves the sidecars written so far.
+   - A sidecar that can't be written is logged and never fails the change that caused
+     it.
+4. **Never damaging another app's sidecar** (`export::sidecar`, a pure function
+   tested without files):
+   - Only the rating and label change. Every other byte stays, including attributes,
+     elements, other namespaces and Lightroom's develop settings.
+   - The prefix the file binds to the XMP namespace is used (Lightroom's `xmp`, older
+     files' `xap`); one is declared only if none is.
+   - Marks written as attributes (`xmp:Rating="3"`) or elements
+     (`<xmp:Rating>3</xmp:Rating>`) are both replaced. Look-alike names
+     (`xmpMM:Rating`) are not touched.
+   - **Unchanged marks leave the file untouched**, so another app's sidecar is never
+     rewritten for nothing.
+   - **Unrecognised files are left alone:** a file with no `rdf:Description` is logged
+     and not modified, and so is one larger than 4 MB.
+   - **Deleting:** a sidecar is removed only when it is exactly this app's own packet
+     with its marks cleared. Clearing marks in another app's file removes just the
+     marks.
+   - Writes are atomic (a temporary file renamed into place).
+5. **Tests:**
+   - **Sidecar update:**
+     - a new sidecar is the export packet;
+     - a Lightroom-style sidecar keeps its creator tool, develop settings, tone curve
+       and toolkit, with one namespace declaration;
+     - clearing marks removes only them;
+     - element-form marks are replaced;
+     - an older prefix is used, and a missing one is declared;
+     - our own sidecar is deleted when cleared;
+     - matching marks leave files untouched;
+     - an unrecognised file is refused;
+     - look-alike names are kept.
+   - **On disk (app-core):**
+     - a sidecar follows the marks (written, unchanged, deleted), and the RAW's bytes
+       never change;
+     - another app's sidecar is updated, not replaced, and stays when cleared;
+     - an unreadable sidecar is left alone;
+     - only RAWs get sidecars, named by Lightroom's convention.
+   - **Catalogue:** the marked photos are listed for writing everything when the
+     setting is turned on.
+
 ## Consequences
 
-- **Part 2, sidecars:** an `.xmp` file beside each RAW, which Lightroom and Capture One
-  read when importing, so marks travel with the originals. RAW files themselves are
-  never written to.
 - **Part 3, reading back:** stars and labels from existing sidecars, such as
   Lightroom's, read in when a folder is added, so switching tools keeps past culling.
 - **Keywords, titles and copyright** can join the same packet once the app has them.

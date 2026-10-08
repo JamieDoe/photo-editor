@@ -540,11 +540,19 @@ fn colour_labels_are_a_third_independent_mark() {
         .unwrap();
     let picks = l.cat.collection(Collection::Picks).unwrap();
     assert_eq!(picks[0].marks.label, ColourLabel::Purple);
+    // Every marked photo, for writing sidecars: the labelled pick, not the other.
+    let marked = l.cat.marked().unwrap();
+    assert_eq!(marked.len(), 1);
+    assert_eq!(marked[0].photo, ids[0]);
     // Clearing it.
     l.cat
         .set_marks(&ids[..1], MarkChange::Label(ColourLabel::None))
         .unwrap();
     assert_eq!(l.cat.marks(ids[0]).unwrap().label, ColourLabel::None);
+    l.cat
+        .set_marks(&ids[..1], MarkChange::Flag(Flag::None))
+        .unwrap();
+    assert!(l.cat.marked().unwrap().is_empty());
 }
 
 #[test]

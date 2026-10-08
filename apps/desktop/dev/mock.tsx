@@ -42,7 +42,7 @@ let mockSettings: Record<string, unknown> = {
   version: 1,
   general: { theme: "system" },
   performance: { previewCacheMb: 256, backgroundIntensity: "balanced" },
-  library: { defaultFolder: null, recentFolders: [], view: { layout: "grid", filter: "all", label: null, sort: "captured" }, lastPlace: null },
+  library: { defaultFolder: null, recentFolders: [], view: { layout: "grid", filter: "all", label: null, sort: "captured" }, lastPlace: null, writeSidecars: false },
   export: { format: "jpeg", sharpen: "screen", colourSpace: "srgb", keepMetadata: true, stripLocation: false, jpegQuality: 85, folder: null, longEdge: 2048, preset: "web" },
   backups: { copyFolder: null },
 };

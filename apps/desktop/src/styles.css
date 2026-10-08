@@ -920,3 +920,9 @@ button.search-clear { width: 20px; height: 20px; padding: 0; border-radius: 10px
 .label-filter { margin-left: 6px; height: 34px; box-sizing: border-box; padding: 0 3px; border-radius: 8px; background: var(--surface); border: 1px solid var(--hairline); }
 .label-filter > button { height: 26px; }
 select.sort-select { height: 34px; margin-left: 6px; padding: 0 26px 0 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--hairline); color: var(--text-2); font-size: 12px; }
+
+/* A setting's on/off switch (ADR 0067's sidecars first): the lens toggles' switch. */
+button.setting-switch { flex-shrink: 0; height: auto; padding: 4px; border: 0; border-radius: 12px; background: transparent; }
+button.setting-switch:hover:not(:disabled) { background: transparent; }
+button.setting-switch[aria-checked="true"] .switch { justify-content: flex-end; background: var(--accent); }
+

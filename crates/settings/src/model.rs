@@ -114,6 +114,9 @@ pub struct LibrarySettings {
     /// Where the Library was left, reopened at the next launch (ADR 0065). Recorded by
     /// Rust (a folder only once its access is checked), never by a settings update.
     pub last_place: Option<LibraryPlace>,
+    /// Whether ratings and labels are also written to `.xmp` sidecars beside RAW files,
+    /// for other photo apps (ADR 0067). Off by default: it writes into photo folders.
+    pub write_sidecars: bool,
 }
 
 impl<'de> Deserialize<'de> for LibrarySettings {
@@ -126,6 +129,7 @@ impl<'de> Deserialize<'de> for LibrarySettings {
             recent_folders: lenient(&value, "recentFolders"),
             view: lenient(&value, "view"),
             last_place: lenient(&value, "lastPlace"),
+            write_sidecars: lenient(&value, "writeSidecars"),
         })
     }
 }

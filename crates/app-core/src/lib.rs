@@ -14,6 +14,7 @@ mod lightroom;
 mod presets;
 mod previews;
 mod session;
+pub mod sidecars;
 mod thumbnails;
 mod types;
 

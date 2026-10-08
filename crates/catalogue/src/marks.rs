@@ -260,6 +260,12 @@ impl Catalogue {
         self.entries(&collection.condition(), [])
     }
 
+    /// Present photos with any mark (a rating, a flag or a colour label): the ones whose
+    /// sidecars to write when sidecars are turned on (ADR 0067).
+    pub fn marked(&self) -> Result<Vec<CollectionEntry>> {
+        self.entries("(p.rating > 0 OR p.flag <> 0 OR p.label <> 0)", [])
+    }
+
     /// Present photos meeting `condition` (SQL over `p`, the photo, and `f`, its file),
     /// oldest capture first (then by path; photos without a capture time last).
     pub(crate) fn entries(

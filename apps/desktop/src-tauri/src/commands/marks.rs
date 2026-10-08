@@ -31,12 +31,19 @@ pub async fn set_photo_marks(
     };
     let files = granted_files(&state, &paths)?;
     let catalogue = Arc::clone(&state.catalogue);
+    // Sidecars for other apps (ADR 0067), when turned on: the RAWs changed here.
+    let sidecars = state.settings.get().library.write_sidecars;
+    let raw = raw_extensions(&state.engine.info().extensions);
     let counts = tauri::async_runtime::spawn_blocking(move || {
         let mut photos = Vec::with_capacity(files.len());
         for (file, root) in &files {
             photos.push(library_photo(&catalogue, file, root)?);
         }
         catalogue.set_marks(&photos, change)?;
+        if sidecars {
+            let changed: Vec<PathBuf> = files.iter().map(|(file, _)| file.clone()).collect();
+            app_core::sidecars::sync_files(&catalogue, &changed, &raw);
+        }
         catalogue.collection_counts()
     })
     .await
