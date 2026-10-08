@@ -111,3 +111,20 @@ impl From<renderer::RenderError> for EngineError {
         }
     }
 }
+
+impl From<ai::AiError> for EngineError {
+    fn from(e: ai::AiError) -> Self {
+        match e {
+            ai::AiError::Unsupported(_) => Self::new(
+                ErrorKind::Unsupported,
+                "This kind of mask isn't available on this computer.",
+                e.to_string(),
+            ),
+            ai::AiError::BadPicture | ai::AiError::Failed(_) => Self::new(
+                ErrorKind::Internal,
+                "The mask could not be made.",
+                e.to_string(),
+            ),
+        }
+    }
+}

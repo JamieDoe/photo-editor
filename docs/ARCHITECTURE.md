@@ -35,6 +35,7 @@ crates/app-core         Engine: open / render_preview / export / close
    ├── renderer         EditRecipe -> RenderPlan -> RenderBackend (CPU)
    ├── export           encode + atomic write, never over the source
    ├── jpeg-turbo       libjpeg-turbo binding: JPEG encode, DCT-scaled decode
+   ├── ai               generated masks (ADR 0074): Segmenter, Apple Vision on macOS
    └── image-core       LinearImage, OutputImage, Pyramid, colour maths, Cancellation
 
 crates/fixtures         synthetic, copyright-free DNG/JPEG/linear test images
@@ -59,6 +60,7 @@ workspace; `renderer` and `raw` never know about each other, jobs, caches or Tau
 | `renderer` | recipe schema/versioning, render plan, CPU backend | do I/O; know which decoder produced the pixels |
 | `raw` | converting files into `LinearImage` | apply edits |
 | `jobs` | scheduling, cancellation, lane isolation | know what a job does |
+| `ai` | making masks from an 8-bit picture (`Segmenter`; Apple Vision on macOS) | know about recipes, rendering or files; be required (a platform may have none) |
 
 Visual design: design tokens in `apps/desktop/src/styles.css` and bundled Geist fonts,
 following the app design (ADR 0016). New screens reuse the tokens and components.

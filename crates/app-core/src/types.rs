@@ -206,3 +206,15 @@ pub struct EngineInfo {
     pub grading: Vec<AdjustmentSpec>,
     pub calibration: Vec<AdjustmentSpec>,
 }
+
+/// A mask made from the photo by the AI subsystem (ADR 0074): what it covers, what
+/// made it (to store it with, and to know a newer model's from an older's), and the
+/// coverage over the whole photo as decoded (oriented, before any crop).
+#[derive(Debug, Clone)]
+pub struct GeneratedMask {
+    pub kind: ai::MaskKind,
+    pub generator: String,
+    pub coverage: Arc<ai::Coverage>,
+    /// How long making it took.
+    pub ms: f64,
+}
