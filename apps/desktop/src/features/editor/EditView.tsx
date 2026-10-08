@@ -31,7 +31,8 @@ import { PresetStrip } from "./PresetStrip";
 import { StatsPanel } from "./StatsPanel";
 import type { Editor } from "./useEditor";
 import { Viewer } from "./Viewer";
-import type { ZoomCentre } from "./zoom";
+import { useZoom } from "./useZoom";
+import { zoomPercent } from "./zoom";
 
 interface Props {
   editor: Editor;
@@ -115,16 +116,26 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
   const retouching = retouchOpen && !crop.open && !masks.open && !compare.open;
   const frame = editor.displayed?.frame;
 
-  // Zoom (ADR 0070): Fit or 100 %, also while retouching (the spots and removals are
-  // drawn on the zoomed photo); cropping, masking and comparing fit it. It stays at
-  // 100 % from photo to photo, once each one's first render has arrived.
-  const [zoomCentre, setZoomCentre] = useState<ZoomCentre | null>(null);
-  const zoomable = image !== null && !crop.open && !masks.open && !compare.open;
-  useEffect(() => {
-    if (!zoomable) setZoomCentre(null);
-  }, [zoomable]);
-  const zoom = zoomable && editor.displayed?.imageId === image?.id ? zoomCentre : null;
-  const toggleZoom = () => setZoomCentre((c) => (c || !zoomable ? null : { x: 0.5, y: 0.5 }));
+  // Zoom (ADR 0070): Fit, or from just above it to 800 %, also while retouching or
+  // masking (their marks are drawn on the zoomed photo); cropping and comparing fit
+  // it. It stays from photo to photo, once each one's first render has arrived.
+  const zoomable = image !== null && !crop.open && !compare.open;
+  const zooming = useZoom(zoomable);
+  const zoom = editor.displayed?.imageId === image?.id ? zooming.zoom : null;
+  const zoomModel = zooming.model;
+  const toggleZoom = () => zoomModel.toggle();
+  const zoomButton = (
+    <button
+      className="tool-button zoom-button"
+      title={zoom ? "Fit the photo (Z, ⌘−)" : "Zoom to 100 % (Z, ⌘+)"}
+      aria-label={zoom ? `Zoom: ${zoomPercent(zoom.scale)}, fit the photo` : "Zoom: fit, zoom to 100 %"}
+      onClick={toggleZoom}
+      disabled={!zoomable}
+    >
+      <SearchIcon size={15} />
+      <span className="mono zoom-label">{zoom ? zoomPercent(zoom.scale) : "Fit"}</span>
+    </button>
+  );
 
   // Keyboard: 0–5 / P / X / U mark the photo, ← → move through the Library's photos.
   // Ignored while a control (such as a slider) has focus, so its own keys still work.
@@ -157,7 +168,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [marks, onMark, onStep, image, toggleCompare, zoomable]);
+  }, [marks, onMark, onStep, image, toggleCompare, zoomable, zoomModel]);
 
   // Copy and paste (ADR 0048), confirmed as the design does. With photos ticked in the
   // filmstrip, Paste also applies to them, and Sync edits gives them this photo's edit
@@ -207,7 +218,8 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
   };
 
   // ⌘Z undoes, ⇧⌘Z (or ⌘Y) redoes (ADR 0044); ⇧⌘C and ⇧⌘V copy and paste edits, as in
-  // Lightroom (⌘C and ⌘V stay with text). Text fields keep their own keys.
+  // Lightroom (⌘C and ⌘V stay with text); ⌘+ and ⌘− zoom in and out a level, ⌘0 fits
+  // (ADR 0070). Text fields keep their own keys.
   const { undo, redo } = editor;
   const copyRef = useRef(copyEdits);
   const pasteRef = useRef(pasteEdits);
@@ -221,12 +233,15 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
       else if (key === "y") redo();
       else if (key === "c" && e.shiftKey) copyRef.current();
       else if (key === "v" && e.shiftKey) void pasteRef.current();
+      else if ((key === "=" || key === "+") && zoomable) zoomModel.step(1);
+      else if (key === "-" && zoomable) zoomModel.step(-1);
+      else if (key === "0" && zoomable) zoomModel.fit();
       else return;
       e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo]);
+  }, [undo, redo, zoomable, zoomModel]);
   const exif = image
     ? [
         image.iso != null ? `ISO ${image.iso}` : null,
@@ -308,7 +323,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
           loading={busy}
           onResize={editor.setTargetLongEdge}
           zoom={zoom}
-          onZoom={zoomable ? setZoomCentre : undefined}
+          zoomControl={zoomable ? zoomModel : undefined}
           windowed={editor.windowed}
           onWindow={editor.setViewWindow}
           placeholder="Open a photo from the Library, or use “Open photo…”."
@@ -335,20 +350,11 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
           {crop.open && info ? (
             <CropToolbar tool={crop} straighten={info.straighten} />
           ) : masks.open ? (
-            <MaskToolbar tool={masks} />
+            <MaskToolbar tool={masks} zoom={zoomButton} />
           ) : (
             image && (
               <div className="photo-toolbar" role="toolbar" aria-label="Photo tools">
-                <button
-                  className="tool-button zoom-button"
-                  title={zoom ? "Fit the photo (Z)" : "Zoom to 100 % (Z)"}
-                  aria-label={zoom ? "Zoom: 100 %, fit the photo" : "Zoom: fit, zoom to 100 %"}
-                  onClick={toggleZoom}
-                  disabled={!zoomable}
-                >
-                  <SearchIcon size={15} />
-                  <span className="mono zoom-label">{zoom ? "100%" : "Fit"}</span>
-                </button>
+                {zoomButton}
                 <span className="toolbar-divider" />
                 <button className="tool-button" title="Crop & straighten" onClick={enterCrop}>
                   <CropIcon size={15} />

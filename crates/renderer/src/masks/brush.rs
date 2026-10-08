@@ -6,9 +6,11 @@
 //! build up in order as paint does (two 50 % strokes over each other give 75 %), and
 //! an erasing stroke takes away only what was painted before it.
 //!
-//! Coverage is rasterised once per set of strokes, at [`RASTER_LONG_EDGE`] pixels on
-//! the frame's long side, and cached: renders read it with bilinear sampling, so
-//! dragging other controls never repaints it.
+//! Coverage is rasterised once per set of strokes and size, at the frame's own size
+//! (between [`RASTER_LONG_EDGE`] and [`MAX_RASTER_LONG_EDGE`] pixels on its long
+//! side), and cached: renders read it with bilinear sampling, so dragging other
+//! controls never repaints it. Preview levels up to [`RASTER_LONG_EDGE`] share one map;
+//! larger renders (100 %, exports) get their own, so mask edges stay sharp there.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -17,13 +19,18 @@ use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
-/// Coverage map resolution: pixels on the frame's long side.
+/// Coverage map resolution, at least: pixels on the frame's long side.
 pub const RASTER_LONG_EDGE: f32 = 2048.0;
+/// Coverage map resolution, at most: a full-resolution render of up to about 8K
+/// rasterises at its own size (ADR 0070), a larger one at this.
+pub const MAX_RASTER_LONG_EDGE: f32 = 8192.0;
 /// Brush radii, as fractions of the frame's diagonal.
 pub const MIN_SIZE: f32 = 0.0005;
 pub const MAX_SIZE: f32 = 0.5;
-/// Coverage maps kept (a few masks' worth; each is at most 2048 x 2048 x 2 bytes).
+/// Coverage maps kept: a few masks' worth, and at most this many bytes (full-size
+/// maps are large).
 const CACHED_MAPS: usize = 6;
+const CACHED_BYTES: usize = 192 << 20;
 
 /// One painted (or erased) stroke.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -98,9 +105,11 @@ impl CoverageMap {
     }
 }
 
-/// The map's size for a frame of `w` x `h` (its shape, [`RASTER_LONG_EDGE`] long).
+/// The map's size for a frame of `w` x `h`: its shape, as long as the frame between
+/// [`RASTER_LONG_EDGE`] and [`MAX_RASTER_LONG_EDGE`].
 pub fn raster_size(w: f32, h: f32) -> (usize, usize) {
-    let s = RASTER_LONG_EDGE / w.max(h).max(1.0);
+    let long = w.max(h).max(1.0);
+    let s = long.clamp(RASTER_LONG_EDGE, MAX_RASTER_LONG_EDGE) / long;
     (
         ((w * s).round() as usize).max(1),
         ((h * s).round() as usize).max(1),
@@ -132,10 +141,14 @@ pub fn coverage(strokes: &[Stroke], w: f32, h: f32) -> Arc<CoverageMap> {
         _ => Arc::new(rasterize_onto(None, strokes, size)),
     };
     let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    if cache.len() >= CACHED_MAPS {
+    cache.push((key, Arc::clone(&map)));
+    let bytes = |cache: &[(u64, Arc<CoverageMap>)]| -> usize {
+        cache.iter().map(|(_, m)| m.data.len() * 2).sum()
+    };
+    // The least recently used go first; the newest map always stays.
+    while cache.len() > 1 && (cache.len() > CACHED_MAPS || bytes(&cache) > CACHED_BYTES) {
         cache.remove(0);
     }
-    cache.push((key, Arc::clone(&map)));
     map
 }
 
@@ -471,8 +484,8 @@ mod tests {
 
     #[test]
     fn a_stroke_covers_its_path_and_fades_at_its_edge() {
-        // A 3:2 frame: the map is 2048 x 1365, diagonal about 2461 px.
-        let size = raster_size(6000.0, 4000.0);
+        // A 3:2 preview level: the map is 2048 x 1365, diagonal about 2461 px.
+        let size = raster_size(1500.0, 1000.0);
         assert_eq!(size, (2048, 1365));
         let s = stroke(&[[0.2, 0.5], [0.8, 0.5]], 0.05, 50.0, 100.0, false);
         let map = rasterize(&[s], size);
@@ -489,6 +502,14 @@ mod tests {
         );
         // Even along the path.
         assert!((at(&map, 0.3, 0.5) - at(&map, 0.7, 0.5)).abs() < 1e-3);
+    }
+
+    #[test]
+    fn maps_follow_the_frame_between_their_limits() {
+        assert_eq!(raster_size(400.0, 300.0), (2048, 1536));
+        assert_eq!(raster_size(3000.0, 2000.0), (3000, 2000));
+        assert_eq!(raster_size(6048.0, 4024.0), (6048, 4024));
+        assert_eq!(raster_size(12000.0, 8000.0), (8192, 5461));
     }
 
     #[test]
@@ -520,13 +541,17 @@ mod tests {
     #[test]
     fn maps_are_cached_by_their_strokes_and_shape() {
         let s = vec![stroke(&[[0.1, 0.1], [0.4, 0.3]], 0.02, 30.0, 80.0, false)];
-        let a = coverage(&s, 6000.0, 4000.0);
-        // Another size of the same shape (a pyramid level): the same map.
-        let b = coverage(&s, 1500.0, 1000.0);
+        let a = coverage(&s, 1500.0, 1000.0);
+        // Another preview level of the same shape: the same map.
+        let b = coverage(&s, 750.0, 500.0);
         assert!(Arc::ptr_eq(&a, &b));
         let mut moved = s.clone();
         moved[0].points[1][0] = 0.41;
-        assert!(!Arc::ptr_eq(&a, &coverage(&moved, 6000.0, 4000.0)));
+        assert!(!Arc::ptr_eq(&a, &coverage(&moved, 1500.0, 1000.0)));
+        // Full resolution: a map of its own, at its size.
+        let full = coverage(&s, 6000.0, 4000.0);
+        assert_eq!(full.size(), (6000, 4000));
+        assert!(!Arc::ptr_eq(&a, &full));
     }
 
     #[test]

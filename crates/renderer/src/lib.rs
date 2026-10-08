@@ -46,4 +46,6 @@ pub use recipe::{EditRecipe, RECIPE_VERSION, RecipeError};
 ///   their colours beyond sRGB brought in smoothly, and colours that edits push past
 ///   sRGB are compressed on output instead of clipped channel by channel. Only the
 ///   most saturated colours change.
-pub const RENDERER_VERSION: u32 = 4;
+/// - 5: Brush masks are rasterised at the render's own size above 2048 px (ADR 0070),
+///   not always at 2048: their edges are sharper at 100 % and in full-size exports.
+pub const RENDERER_VERSION: u32 = 5;

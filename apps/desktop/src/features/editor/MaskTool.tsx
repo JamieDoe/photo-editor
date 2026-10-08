@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from "react";
 import { EyeIcon } from "../../components/icons";
 import type { Combine } from "../../ipc/generated/Combine";
 import type { CropRect } from "../../ipc/generated/CropRect";
@@ -350,7 +350,9 @@ function RadialGuides({ tool, space, boxRef, shape }: GuideProps<Radial>) {
 
 /** The floating toolbar in mask mode, as in the design: the masks, Add, the overlay
  *  switch and Done. */
-export function MaskToolbar({ tool }: { tool: MaskTool }) {
+/** The masks' toolbar, in place of the photo's; `zoom` is its zoom button (ADR 0070),
+ *  first, as in the photo's. */
+export function MaskToolbar({ tool, zoom }: { tool: MaskTool; zoom?: ReactNode }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTextEntry(e.target) || e.target instanceof HTMLInputElement) return;
@@ -373,6 +375,12 @@ export function MaskToolbar({ tool }: { tool: MaskTool }) {
   }, [tool]);
   return (
     <div className="photo-toolbar mask-toolbar" role="toolbar" aria-label="Masks">
+      {zoom && (
+        <>
+          {zoom}
+          <span className="toolbar-divider" />
+        </>
+      )}
       {tool.masks.map((m) => (
         <button
           key={m.id}

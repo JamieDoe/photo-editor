@@ -654,13 +654,14 @@ fn windows_show_their_part_of_the_photo_at_full_resolution() {
         }),
         ..Default::default()
     };
+    // At 100 % (the whole output's long edge at the zoom is its own).
     let window = |quality, window| {
         engine
             .render_preview(PreviewRequest {
                 image: id,
                 recipe: recipe.clone(),
                 quality,
-                target_long_edge: 1000,
+                target_long_edge: 3200,
                 window: Some(window),
             })
             .wait()
@@ -736,11 +737,12 @@ fn removals_show_one_full_resolution_fill_at_every_size() {
         removals: vec![removal.clone()],
         ..Default::default()
     };
-    let request = |window| PreviewRequest {
+    let request = |window: Option<_>| PreviewRequest {
         image: id,
         recipe: recipe.clone(),
         quality: PreviewQuality::Detail,
-        target_long_edge: 800,
+        // Fit in an 800 px view; a window at 100 %.
+        target_long_edge: if window.is_some() { 1600 } else { 800 },
         window,
     };
 
@@ -797,4 +799,46 @@ fn removals_show_one_full_resolution_fill_at_every_size() {
         inside < 2.0 * outside + 1.0 && inside < stand_in / 2.0,
         "over the removal {inside}, elsewhere {outside}, the stand-in {stand_in}"
     );
+}
+
+#[test]
+fn windows_come_from_the_smallest_source_sharp_enough_for_the_zoom() {
+    let dir = fixtures::TempDir::new("engine-window-zoom");
+    let path = write(
+        dir.path(),
+        "chart.jpg",
+        fixtures::chart_jpeg(3200, 2000, 90),
+    );
+    let engine = Engine::new(EngineConfig {
+        preview_source_min_edge: 1600,
+        ..EngineConfig::default()
+    });
+    let s = engine.open(&path).wait().unwrap();
+    assert_eq!(s.levels, vec![(1600, 1000), (800, 500), (400, 250)]);
+    engine.prepare_full(s.id).wait().unwrap();
+    // A 600 x 400 px part of the photo (in full-resolution pixels), at a zoom given as
+    // the whole photo's long edge at it.
+    let at = |long_edge: u32| {
+        engine
+            .render_preview(PreviewRequest {
+                image: s.id,
+                recipe: EditRecipe::default(),
+                quality: PreviewQuality::Detail,
+                target_long_edge: long_edge,
+                window: Some((1000, 600, 600, 400)),
+            })
+            .wait()
+            .unwrap()
+    };
+    let size = |f: &app_core::PreviewFrame| (f.image.width(), f.image.height());
+    // 100 % and beyond: the full resolution.
+    assert_eq!(size(&at(3200)), (600, 400));
+    assert_eq!(size(&at(6400)), (600, 400));
+    // 50 %: the half-size level; just under it, still that one.
+    assert_eq!(size(&at(1600)), (300, 200));
+    assert_eq!(size(&at(1700)), (600, 400));
+    // 25 %: the next level, and the window it covers is the same.
+    let quarter = at(800);
+    assert_eq!(size(&quarter), (150, 100));
+    assert_eq!(quarter.window, Some([1000.0, 600.0, 600.0, 400.0]));
 }
