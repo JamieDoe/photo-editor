@@ -253,6 +253,11 @@ mockIPC((cmd, payload) => {
       if (!window) return placeholderFrame(600, 400);
       return new Promise((r) => setTimeout(() => r(windowFrame(window)), 60));
     }
+    case "auto_setting": {
+      const { setting } = payload as { setting: string };
+      const values: Record<string, number> = { exposure: 0.35, contrast: 8, highlights: -42, shadows: 28, whites: 14, blacks: -9, vibrance: 15 };
+      return new Promise((r) => setTimeout(() => r(values[setting] ?? 0), 80));
+    }
     case "auto_tone":
       return new Promise((r) => setTimeout(() => r({ exposure: 0.35, contrast: 8, highlights: -42, shadows: 28, whites: 14, blacks: -9, vibrance: 15 }), 120));
     case "prepare_fill":

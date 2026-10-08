@@ -194,12 +194,17 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         median = luma.findIndex((n) => (seen += n) >= total / 2) / 255;
       }
       const atLimit = tone.exposure <= -2 || tone.exposure >= 2.5;
+      // Auto for one setting (Shift-double-click on its slider): Exposure alone is
+      // what Auto finds for it first.
+      const exposureAlone = await ipc.autoSetting(image.id, a, "exposure");
       return {
         tone,
         ms,
         median,
         button: document.querySelector("button.auto-tone") !== null,
-        ok: median !== null && (atLimit || Math.abs(median - 0.43) < 0.1) && ms < 3000 && document.querySelector("button.auto-tone") !== null,
+        exposureAlone,
+        ok:
+          exposureAlone === tone.exposure && median !== null && (atLimit || Math.abs(median - 0.43) < 0.1) && ms < 3000 && document.querySelector("button.auto-tone") !== null,
       };
     })();
 

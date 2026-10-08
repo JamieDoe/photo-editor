@@ -559,6 +559,40 @@ impl Engine {
         image: ImageId,
         recipe: &EditRecipe,
     ) -> JobHandle<renderer::auto_tone::AutoTone, EngineError> {
+        self.auto_job(image, recipe, |r, measure| {
+            renderer::auto_tone::auto_tone(r, measure)
+        })
+    }
+
+    /// Auto for one setting (ADR 0071; Shift-double-click on its slider): as
+    /// [`Engine::auto_tone`], for `setting` alone, the rest of `recipe` as it is.
+    pub fn auto_setting(
+        &self,
+        image: ImageId,
+        recipe: &EditRecipe,
+        setting: renderer::auto_tone::ToneSetting,
+    ) -> JobHandle<f32, EngineError> {
+        self.auto_job(image, recipe, move |r, measure| {
+            renderer::auto_tone::auto_setting(r, setting, measure)
+        })
+    }
+
+    /// Runs `find` on the open photo's Auto sample: `recipe` sanitised, and a measure
+    /// that renders a recipe on the sample and reads its tones.
+    fn auto_job<T: Send + 'static>(
+        &self,
+        image: ImageId,
+        recipe: &EditRecipe,
+        find: impl FnOnce(
+            &EditRecipe,
+            &mut dyn FnMut(
+                &EditRecipe,
+            )
+                -> Result<renderer::auto_tone::ToneStats, renderer::RenderError>,
+        ) -> Result<T, renderer::RenderError>
+        + Send
+        + 'static,
+    ) -> JobHandle<T, EngineError> {
         let Some(open) = self.shared.images.lock().expect("images lock").get(image) else {
             return JobHandle::ready(
                 self.jobs.next_id(),
@@ -580,21 +614,22 @@ impl Engine {
         self.jobs.submit(spec, move |token| {
             let t0 = Instant::now();
             let mut renders = 0;
-            let tone = renderer::auto_tone::auto_tone(&recipe, |r| {
+            let mut measure = |r: &EditRecipe| {
                 renders += 1;
                 let plan = fill.plan(r, as_shot_white);
                 shared
                     .renderer
                     .render(&plan, &level, PixelFormat::Rgb8, token)
                     .map(|out| renderer::auto_tone::ToneStats::of(&out))
-            })?;
+            };
+            let found = find(&recipe, &mut measure)?;
             log::info!(
-                "auto tone from a {}x{} sample: {renders} renders in {:.0} ms",
+                "auto from a {}x{} sample: {renders} renders in {:.0} ms",
                 level.width(),
                 level.height(),
                 ms(t0)
             );
-            Ok(tone)
+            Ok(found)
         })
     }
 

@@ -180,9 +180,98 @@ fn settle<E>(
     }
 }
 
+/// One of the settings Auto sets: Auto per setting (Shift-double-click on its slider,
+/// as in Lightroom) finds just that one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum ToneSetting {
+    Exposure,
+    Contrast,
+    Highlights,
+    Shadows,
+    Whites,
+    Blacks,
+    Vibrance,
+}
+
+impl ToneSetting {
+    /// The order Auto finds them in: each measured with the ones before it set.
+    pub const ALL: [Self; 7] = [
+        Self::Exposure,
+        Self::Contrast,
+        Self::Highlights,
+        Self::Shadows,
+        Self::Whites,
+        Self::Blacks,
+        Self::Vibrance,
+    ];
+
+    /// `recipe` with this setting at `v`.
+    fn with(self, recipe: &EditRecipe, v: f32) -> EditRecipe {
+        let mut r = recipe.clone();
+        *match self {
+            Self::Exposure => &mut r.exposure,
+            Self::Contrast => &mut r.contrast,
+            Self::Highlights => &mut r.highlights,
+            Self::Shadows => &mut r.shadows,
+            Self::Whites => &mut r.whites,
+            Self::Blacks => &mut r.blacks,
+            Self::Vibrance => &mut r.vibrance,
+        } = v;
+        r
+    }
+}
+
+/// The value of `setting` for the photo `measure` renders, the rest of `recipe` as it
+/// is: zero while the photo is within the setting's band, else the band's nearer edge
+/// (see the module's notes). Vibrance follows from the photo's colourfulness.
+pub fn auto_setting<E>(
+    recipe: &EditRecipe,
+    setting: ToneSetting,
+    mut measure: impl FnMut(&EditRecipe) -> Result<ToneStats, E>,
+) -> Result<f32, E> {
+    let mut at =
+        |v: f32, read: fn(&ToneStats) -> f32| measure(&setting.with(recipe, v)).map(|s| read(&s));
+    Ok(match setting {
+        ToneSetting::Exposure => {
+            let (lo, hi) = EXPOSURE_RANGE;
+            round_to(
+                settle(lo, hi, MEDIAN, |v| at(v, |s| s.percentile(0.5)))?,
+                0.05,
+            )
+        }
+        ToneSetting::Contrast => settle(0.0, 30.0, (MIN_SPREAD, f32::INFINITY), |v| {
+            at(v, |s| s.percentile(0.75) - s.percentile(0.25))
+        })?
+        .round(),
+        // More Highlights means less near white: recover down to the share allowed.
+        ToneSetting::Highlights => settle(-70.0, 0.0, (f32::NEG_INFINITY, BRIGHT_SHARE), |v| {
+            at(v, |s| s.share_above(BRIGHT))
+        })?
+        .round(),
+        // More Shadows means less near black: open up to the share allowed.
+        ToneSetting::Shadows => settle(0.0, 60.0, (-DARK_SHARE, f32::INFINITY), |v| {
+            at(v, |s| -s.share_below(DARK))
+        })?
+        .round(),
+        ToneSetting::Whites => {
+            settle(-40.0, 40.0, WHITE_POINT, |v| at(v, |s| s.percentile(0.995)))?.round()
+        }
+        ToneSetting::Blacks => {
+            settle(-40.0, 30.0, BLACK_POINT, |v| at(v, |s| s.percentile(0.005)))?.round()
+        }
+        // Muted photos gain colour, already colourful ones hardly any.
+        ToneSetting::Vibrance => {
+            let colourful = at(0.0, |s| s.colourfulness)?;
+            (((0.30 - colourful) * 100.0).clamp(0.0, 20.0) / 5.0).round() * 5.0
+        }
+    })
+}
+
 /// Auto tone for the photo `measure` renders: it renders `recipe` (a small sample is
 /// plenty) and gives its tones. `recipe` is the photo as edited; its six tone
-/// sliders are found afresh, the rest of the edit kept.
+/// sliders are found afresh, in [`ToneSetting::ALL`]'s order, the rest of the edit kept.
 pub fn auto_tone<E>(
     recipe: &EditRecipe,
     mut measure: impl FnMut(&EditRecipe) -> Result<ToneStats, E>,
@@ -196,62 +285,10 @@ pub fn auto_tone<E>(
         blacks: 0.0,
         ..recipe.clone()
     };
-    let (lo, hi) = EXPOSURE_RANGE;
-    r.exposure = round_to(
-        settle(lo, hi, MEDIAN, |v| {
-            measure(&EditRecipe {
-                exposure: v,
-                ..r.clone()
-            })
-            .map(|s| s.percentile(0.5))
-        })?,
-        0.05,
-    );
-    r.contrast = settle(0.0, 30.0, (MIN_SPREAD, f32::INFINITY), |v| {
-        measure(&EditRecipe {
-            contrast: v,
-            ..r.clone()
-        })
-        .map(|s| s.percentile(0.75) - s.percentile(0.25))
-    })?
-    .round();
-    // More Highlights means less near white: recover down to the share allowed.
-    r.highlights = settle(-70.0, 0.0, (f32::NEG_INFINITY, BRIGHT_SHARE), |v| {
-        measure(&EditRecipe {
-            highlights: v,
-            ..r.clone()
-        })
-        .map(|s| s.share_above(BRIGHT))
-    })?
-    .round();
-    // More Shadows means less near black: open up to the share allowed.
-    r.shadows = settle(0.0, 60.0, (-DARK_SHARE, f32::INFINITY), |v| {
-        measure(&EditRecipe {
-            shadows: v,
-            ..r.clone()
-        })
-        .map(|s| -s.share_below(DARK))
-    })?
-    .round();
-    r.whites = settle(-40.0, 40.0, WHITE_POINT, |v| {
-        measure(&EditRecipe {
-            whites: v,
-            ..r.clone()
-        })
-        .map(|s| s.percentile(0.995))
-    })?
-    .round();
-    r.blacks = settle(-40.0, 30.0, BLACK_POINT, |v| {
-        measure(&EditRecipe {
-            blacks: v,
-            ..r.clone()
-        })
-        .map(|s| s.percentile(0.005))
-    })?
-    .round();
-    // Vibrance: muted photos gain colour, already colourful ones hardly any.
-    let colourful = measure(&r)?.colourfulness;
-    let vibrance = (((0.30 - colourful) * 100.0).clamp(0.0, 20.0) / 5.0).round() * 5.0;
+    for setting in ToneSetting::ALL {
+        let v = auto_setting(&r, setting, &mut measure)?;
+        r = setting.with(&r, v);
+    }
     Ok(AutoTone {
         exposure: r.exposure,
         contrast: r.contrast,
@@ -259,7 +296,7 @@ pub fn auto_tone<E>(
         shadows: r.shadows,
         whites: r.whites,
         blacks: r.blacks,
-        vibrance,
+        vibrance: r.vibrance,
     })
 }
 

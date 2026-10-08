@@ -217,6 +217,23 @@ pub async fn auto_tone(
     wait(state.engine.auto_tone(ImageId(image_id), &recipe)).await
 }
 
+/// Auto for one setting (ADR 0071): its value for the open photo as `recipe` edits
+/// it, the rest of the edit as it is.
+#[tauri::command]
+pub async fn auto_setting(
+    state: State<'_, AppState>,
+    image_id: u64,
+    recipe: renderer::EditRecipe,
+    setting: renderer::auto_tone::ToneSetting,
+) -> IpcResult<f32> {
+    wait(
+        state
+            .engine
+            .auto_setting(ImageId(image_id), &recipe, setting),
+    )
+    .await
+}
+
 /// Fills `removals` on the open photo at full resolution (ADR 0070), so every view
 /// shows the same fill; resolves when renders use it.
 #[tauri::command]

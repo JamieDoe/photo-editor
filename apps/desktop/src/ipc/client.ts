@@ -39,6 +39,7 @@ import type { QuitRequestedDto } from "./generated/QuitRequestedDto";
 import type { SelfTestConfigDto } from "./generated/SelfTestConfigDto";
 import type { Settings } from "./generated/Settings";
 import type { AutoTone } from "./generated/AutoTone";
+import type { ToneSetting } from "./generated/ToneSetting";
 import type { Removal } from "./generated/Removal";
 import type { Spot } from "./generated/Spot";
 import type { SpotKind } from "./generated/SpotKind";
@@ -79,6 +80,11 @@ export const prepareFill = (imageId: number, removals: Removal[]) => invoke<null
 /** Auto tone (ADR 0071): the tone sliders as a starting point for the open photo as
  *  `recipe` edits it. */
 export const autoTone = (imageId: number, recipe: EditRecipe) => invoke<AutoTone>("auto_tone", { imageId, recipe });
+
+/** Auto for one setting (ADR 0071): its value for the open photo as `recipe` edits it,
+ *  the rest of the edit as it is. */
+export const autoSetting = (imageId: number, recipe: EditRecipe, setting: ToneSetting) =>
+  invoke<number>("auto_setting", { imageId, recipe, setting });
 
 /** A synthetic cancellation, for responses that became obsolete on the UI side. */
 export const staleError = (): IpcError => ({ kind: "cancelled", message: "stale", reference: null });

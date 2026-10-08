@@ -57,7 +57,19 @@ Lightroom's Auto is the reference most photographers know: one click, one undo s
    - **The result:** applied to the newest edit as one step ("Undo Auto tone"),
      confirmed with the design's "Auto tone applied". The button is disabled while
      Auto runs.
-5. **Tests:**
+5. **Auto per setting** (added on 2026-10-08):
+   - **How:** Shift-double-click on a slider's name or track, as in Lightroom. A plain
+     double-click still resets.
+   - **Which:** Exposure, Contrast, Highlights, Shadows, Whites, Blacks and Vibrance.
+     Their names say so on hover ("Shift-double-click for Auto Whites").
+   - **What it finds:** that setting alone, the rest of the edit as it is, by its
+     band as above. With Exposure pushed until the photo clips, Auto Whites pulls the
+     white end in rather than out.
+   - **The result:** one step ("Undo Auto Whites"), confirmed with "Auto Whites".
+   - **The code:** `renderer::auto_tone::auto_setting` finds one setting
+     (`ToneSetting`), and Auto is `auto_setting` for each in turn. Both run through
+     the engine's same sample (`Engine::auto_setting`, IPC `auto_setting`).
+6. **Tests:**
    - **Statistics:** percentiles, shares and colourfulness of a known image.
    - **The solver, through the CPU renderer:**
      - a dark scene is brightened into the band;
@@ -67,9 +79,14 @@ Lightroom's Auto is the reference most photographers know: one click, one undo s
      - every setting is in range, whole, and the same each time;
      - a scene whose median is already mid-band keeps Exposure, Contrast and Shadows
        at zero, only its clipped top recovered.
-   - **Engine:** the edit's own tone sliders don't change the result.
+   - **Engine:** the edit's own tone sliders don't change the result; Auto for
+     Exposure alone matches Auto's.
+   - **Per setting:** one setting alone is what Auto finds for it first, and it
+     follows the rest of the edit (Whites raised on a dim photo, pulled in once
+     Exposure clips it).
    - **Release self-test** (`autoTone`): on the Nikon Z 6, Auto takes 19 ms through
-     IPC, the photo with it has its median in the band, and the button is there.
+     IPC, the photo with it has its median in the band, the button is there, and
+     Auto for Exposure alone matches.
 
 ## Consequences
 
@@ -77,6 +94,5 @@ Lightroom's Auto is the reference most photographers know: one click, one undo s
   little; dark, flat and clipped ones change most.
 - **Cost:** about 15–60 renders of a 512 px sample, 13–100 ms (PERFORMANCE §51).
 - **Not done:**
-  - Auto per setting (double-clicking a slider's label, as in Lightroom);
   - auto white balance (the design's Auto doesn't set it);
   - subject-aware weighting (faces, sky). The bands treat every pixel alike.

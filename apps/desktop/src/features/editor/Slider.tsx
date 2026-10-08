@@ -3,7 +3,9 @@ import { sliderTrack } from "./sliderTrack";
 
 /**
  * One adjustment slider as in the design: label, value (which reads “Reset” on hover
- * once edited), and a track filled from the neutral point. Double-click resets.
+ * once edited), and a track filled from the neutral point. Double-click resets; with
+ * `onAuto`, Shift-double-click on the name or track sets it automatically, as in
+ * Lightroom (ADR 0071).
  */
 export function Slider({
   id,
@@ -14,6 +16,7 @@ export function Slider({
   onChange,
   track,
   zeroMark = true,
+  onAuto,
 }: {
   id: string;
   spec: AdjustmentSpec;
@@ -24,14 +27,28 @@ export function Slider({
   /** A custom track (white balance colours) replaces the fill and the zero mark. */
   track?: string;
   zeroMark?: boolean;
+  /** Auto for this setting alone. */
+  onAuto?: () => void;
 }) {
+  const autoOn = (e: { shiftKey: boolean; preventDefault(): void }) => {
+    if (!onAuto || !e.shiftKey || disabled) return false;
+    e.preventDefault();
+    onAuto();
+    return true;
+  };
   const edited = value !== spec.default;
   const fill = sliderTrack(value, spec.min, spec.max);
   const zero = track === undefined && zeroMark ? fill.zeroPercent : null;
   return (
     <div className={edited ? "slider edited" : "slider"}>
       <div className="slider-head">
-        <label htmlFor={id}>{spec.label}</label>
+        <label
+          htmlFor={id}
+          title={onAuto ? `Shift-double-click for Auto ${spec.label}` : undefined}
+          onDoubleClick={(e) => void autoOn(e)}
+        >
+          {spec.label}
+        </label>
         {edited ? (
           <button
             className="slider-value"
@@ -59,7 +76,7 @@ export function Slider({
           value={value}
           disabled={disabled}
           style={{ background: track ?? fill.background }}
-          onDoubleClick={() => onChange(spec.default)}
+          onDoubleClick={(e) => autoOn(e) || onChange(spec.default)}
           onChange={(e) => onChange(Number(e.currentTarget.value))}
         />
       </div>

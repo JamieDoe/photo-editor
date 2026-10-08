@@ -6,6 +6,7 @@ import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { Look } from "../../ipc/generated/Look";
 import type { MixerSpec } from "../../ipc/generated/MixerSpec";
 import type { TemperatureScale } from "../../ipc/generated/TemperatureScale";
+import type { ToneSetting } from "../../ipc/generated/ToneSetting";
 import { PanelSection } from "./PanelSection";
 import { ColourMixerControls } from "./ColourMixerControls";
 import { isAdjustmentKey, mixerEdited, mixerOf } from "./recipe";
@@ -29,7 +30,12 @@ interface Props {
   curveRegions: AdjustmentSpec[];
   /** Shows Temperature in kelvin; null when the photo's as-shot light is unknown. */
   temperatureScale: TemperatureScale | null;
+  /** Auto for one setting (ADR 0071): Shift-double-click on its slider. */
+  onAuto?: (setting: ToneSetting) => void;
 }
+
+/** The sliders Auto can set one at a time. */
+const AUTO_SETTINGS: ReadonlySet<string> = new Set<ToneSetting>(["exposure", "contrast", "highlights", "shadows", "whites", "blacks", "vibrance"]);
 
 const LOOKS: ReadonlyArray<{ id: Look; label: string; hint: string }> = [
   { id: "standard", label: "Standard", hint: "Camera-like brightness and contrast (the default)" },
@@ -47,7 +53,7 @@ const GROUP_ICONS: Record<string, ReactNode> = {
  * An edited value can be reset by clicking it (it reads “Reset” on hover) or by
  * double-clicking the slider.
  */
-export function AdjustmentPanel({ specs, mixerSpec, curveRegions, histogram, recipe, onChange, disabled, temperatureScale }: Props) {
+export function AdjustmentPanel({ specs, mixerSpec, curveRegions, histogram, recipe, onChange, disabled, temperatureScale, onAuto }: Props) {
   const groups = [...new Set(specs.map((s) => s.group))];
   // A white balance set as a light (ADR 0051) shows on Temperature and Tint as the
   // shift it amounts to for this photo; moving either turns it into that shift.
@@ -130,6 +136,7 @@ export function AdjustmentPanel({ specs, mixerSpec, curveRegions, histogram, rec
               format={format}
               extra={mixer ?? curve ?? finishing}
               disabled={disabled}
+              onAuto={onAuto}
               onChange={(key, v) => {
                 if (!isAdjustmentKey(key)) return;
                 const base = key === "temperature" || key === "tint" ? withRelativeWhiteBalance(recipe, temperatureScale) : recipe;
@@ -156,6 +163,7 @@ export function GroupSliders({
   after,
   disabled,
   onChange,
+  onAuto,
 }: {
   specs: AdjustmentSpec[];
   valueOf: (s: AdjustmentSpec) => number;
@@ -167,6 +175,8 @@ export function GroupSliders({
   after?: { content: ReactNode; edited: boolean };
   disabled: boolean;
   onChange: (key: string, v: number) => void;
+  /** Auto for one setting, offered on those Auto sets (ADR 0071). */
+  onAuto?: (setting: ToneSetting) => void;
 }) {
   const basic = specs.filter((s) => !s.more);
   const more = specs.filter((s) => s.more);
@@ -185,6 +195,7 @@ export function GroupSliders({
       track={WHITE_BALANCE_TRACKS[spec.key]}
       disabled={disabled}
       onChange={(v) => onChange(spec.key, v)}
+      onAuto={onAuto && AUTO_SETTINGS.has(spec.key) ? () => onAuto(spec.key as ToneSetting) : undefined}
     />
   );
   return (

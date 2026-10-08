@@ -873,3 +873,25 @@ fn auto_tone_finds_the_tone_sliders_afresh_from_a_small_sample() {
         assert!((-100.0..=100.0).contains(&v), "{normal:?}");
     }
 }
+
+#[test]
+fn auto_for_one_setting_matches_auto_for_its_first_one() {
+    let dir = fixtures::TempDir::new("engine-auto-setting");
+    let path = write(
+        dir.path(),
+        "chart.jpg",
+        fixtures::chart_jpeg(1600, 1000, 90),
+    );
+    let engine = engine();
+    let id = engine.open(&path).wait().unwrap().id;
+    let all = engine.auto_tone(id, &EditRecipe::default()).wait().unwrap();
+    let exposure = engine
+        .auto_setting(
+            id,
+            &EditRecipe::default(),
+            renderer::auto_tone::ToneSetting::Exposure,
+        )
+        .wait()
+        .unwrap();
+    assert_eq!(exposure, all.exposure);
+}

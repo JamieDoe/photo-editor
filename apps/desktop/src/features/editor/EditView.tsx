@@ -10,6 +10,7 @@ import type { LibraryApi } from "../library/useLibrary";
 import * as ipc from "../../ipc/client";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { EditSavingDto } from "../../ipc/generated/EditSavingDto";
+import type { ToneSetting } from "../../ipc/generated/ToneSetting";
 import type { SaveState } from "./autosave";
 import { geometryEdited, isIdentity } from "./recipe";
 import { AdjustmentPanel } from "./AdjustmentPanel";
@@ -252,6 +253,21 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
       setAutoBusy(false);
     }
   };
+  /** Auto for one setting (Shift-double-click on its slider), as one step. */
+  const runAutoSetting = async (setting: ToneSetting) => {
+    if (!image || !recipe) return;
+    const label = info?.adjustments.find((a) => a.key === setting)?.label ?? setting;
+    try {
+      const value = await ipc.autoSetting(image.id, recipe, setting);
+      const latest = recipeRef.current;
+      if (latest && editor.image?.id === image.id) {
+        editor.setRecipe({ ...latest, [setting]: value }, `Auto ${label}`);
+        notify(`Auto ${label}`);
+      }
+    } catch (e) {
+      if (!ipc.isCancellation(e)) editor.reportError(e);
+    }
+  };
   const autoRef = useRef(runAuto);
   autoRef.current = runAuto;
 
@@ -443,6 +459,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
               onChange={editor.setRecipe}
               disabled={!image}
               temperatureScale={image?.temperatureScale ?? null}
+              onAuto={(setting) => void runAutoSetting(setting)}
             />
           )}
           {info && recipe && (

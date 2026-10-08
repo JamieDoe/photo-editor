@@ -161,3 +161,26 @@ fn every_setting_is_in_range_and_the_same_each_time() {
         );
     }
 }
+
+#[test]
+fn one_setting_alone_is_what_auto_finds_for_it_first() {
+    let img = scene(|x, y| 0.004 + 0.03 * x * (0.5 + y));
+    let base = EditRecipe::default();
+    let exposure = auto_setting(&base, ToneSetting::Exposure, measure(&img)).unwrap();
+    assert_eq!(exposure, auto_tone(&base, measure(&img)).unwrap().exposure);
+}
+
+#[test]
+fn one_setting_follows_the_rest_of_the_edit() {
+    // A flat, dim photo: its white end falls short, so Auto Whites raises it; with
+    // Exposure already pushed until it clips, Auto Whites pulls it in instead.
+    let img = scene(|x, _| 0.05 + 0.08 * x);
+    let plain = auto_setting(&EditRecipe::default(), ToneSetting::Whites, measure(&img)).unwrap();
+    assert!(plain > 0.0, "{plain}");
+    let bright = EditRecipe {
+        exposure: 3.0,
+        ..Default::default()
+    };
+    let clipped = auto_setting(&bright, ToneSetting::Whites, measure(&img)).unwrap();
+    assert!(clipped < 0.0, "{clipped}");
+}
