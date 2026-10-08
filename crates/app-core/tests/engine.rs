@@ -875,7 +875,7 @@ fn auto_tone_finds_the_tone_sliders_afresh_from_a_small_sample() {
 }
 
 #[test]
-fn auto_for_one_setting_matches_auto_for_its_first_one() {
+fn auto_for_one_setting_follows_the_rest_of_the_edit() {
     let dir = fixtures::TempDir::new("engine-auto-setting");
     let path = write(
         dir.path(),
@@ -884,14 +884,21 @@ fn auto_for_one_setting_matches_auto_for_its_first_one() {
     );
     let engine = engine();
     let id = engine.open(&path).wait().unwrap().id;
-    let all = engine.auto_tone(id, &EditRecipe::default()).wait().unwrap();
-    let exposure = engine
-        .auto_setting(
-            id,
-            &EditRecipe::default(),
-            renderer::auto_tone::ToneSetting::Exposure,
-        )
-        .wait()
-        .unwrap();
-    assert_eq!(exposure, all.exposure);
+    let whites = |exposure: f32| {
+        engine
+            .auto_setting(
+                id,
+                &EditRecipe {
+                    exposure,
+                    ..Default::default()
+                },
+                renderer::auto_tone::ToneSetting::Whites,
+            )
+            .wait()
+            .unwrap()
+    };
+    // The chart's whites are pure white: Whites pulls them in. Darkened two stops,
+    // they fall short of white: Whites raises them instead.
+    let (plain, darkened) = (whites(0.0), whites(-2.0));
+    assert!(plain < 0.0 && darkened > plain, "{plain} vs {darkened}");
 }

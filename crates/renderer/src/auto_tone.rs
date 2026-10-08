@@ -171,14 +171,33 @@ fn settle<E>(
     mut f: impl FnMut(f32) -> Result<f32, E>,
 ) -> Result<f32, E> {
     let now = f(0.0)?;
-    if now < low {
-        solve(0.0, hi, low, &mut f)
+    let v = if now < low {
+        solve(0.0, hi, low, &mut f)?
     } else if now > high {
-        solve(lo, 0.0, high, &mut f)
+        solve(lo, 0.0, high, &mut f)?
     } else {
-        Ok(0.0)
+        return Ok(0.0);
+    };
+    // A setting that can't bring the photo into its band, and hardly changes it on
+    // the way, stays at zero rather than going to its limit for nothing: Whites, say,
+    // acts on tones near the sensor's white, and a photo with none there can't be
+    // brightened by it.
+    let reached = f(v)?;
+    let short = reached < low - REACHED || reached > high + REACHED;
+    if short && (reached - now).abs() < MIN_EFFECT * now.abs().max(0.1) {
+        return Ok(0.0);
     }
+    Ok(v)
 }
+
+/// How near its band a measure must come to count as reached.
+const REACHED: f32 = 0.005;
+
+/// The least change worth moving a setting for, as a share of the measure (luma, a
+/// spread, or a share of the photo; at least a tenth): Whites moving a white end of
+/// 0.85 by 0.001 does nothing, Contrast widening a flat photo's 0.05 spread by 0.01
+/// does plenty.
+const MIN_EFFECT: f32 = 0.02;
 
 /// One of the settings Auto sets: Auto per setting (Shift-double-click on its slider,
 /// as in Lightroom) finds just that one.
@@ -223,43 +242,91 @@ impl ToneSetting {
     }
 }
 
+/// How a setting is found: kept within its band (Auto, gentle on a photo that needs
+/// little) or aimed at its target (Auto for that setting alone, asked for by name).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Aim {
+    Band,
+    Target,
+}
+
+/// What Auto for one setting aims at, on the rendered luma: the median mid-band, the
+/// middle half's spread, at most 1 % near white and 2 % near black (Highlights only
+/// recovers and Shadows only opens, as in the bands), and the tonal range's ends just
+/// short of white and black.
+pub const MEDIAN_TARGET: f32 = 0.46;
+pub const SPREAD_TARGET: f32 = 0.36;
+pub const BRIGHT_TARGET: f32 = 0.01;
+pub const DARK_TARGET: f32 = 0.02;
+pub const WHITE_TARGET: f32 = 0.975;
+pub const BLACK_TARGET: f32 = 0.02;
+
 /// The value of `setting` for the photo `measure` renders, the rest of `recipe` as it
-/// is: zero while the photo is within the setting's band, else the band's nearer edge
-/// (see the module's notes). Vibrance follows from the photo's colourfulness.
+/// is: Auto for that setting alone (Shift-double-click on its slider), aimed at its
+/// target. Vibrance follows from the photo's colourfulness.
 pub fn auto_setting<E>(
     recipe: &EditRecipe,
     setting: ToneSetting,
+    measure: impl FnMut(&EditRecipe) -> Result<ToneStats, E>,
+) -> Result<f32, E> {
+    find(recipe, setting, Aim::Target, measure)
+}
+
+/// `setting` found by `aim`: within its band, zero while the photo is there and else
+/// the band's nearer edge (see the module's notes); or at its target.
+fn find<E>(
+    recipe: &EditRecipe,
+    setting: ToneSetting,
+    aim: Aim,
     mut measure: impl FnMut(&EditRecipe) -> Result<ToneStats, E>,
 ) -> Result<f32, E> {
     let mut at =
         |v: f32, read: fn(&ToneStats) -> f32| measure(&setting.with(recipe, v)).map(|s| read(&s));
+    // The band or the target, as one band (a target is a band of one value).
+    let band = |band: (f32, f32), target: f32| match aim {
+        Aim::Band => band,
+        Aim::Target => (target, target),
+    };
     Ok(match setting {
         ToneSetting::Exposure => {
             let (lo, hi) = EXPOSURE_RANGE;
-            round_to(
-                settle(lo, hi, MEDIAN, |v| at(v, |s| s.percentile(0.5)))?,
-                0.05,
-            )
+            let b = band(MEDIAN, MEDIAN_TARGET);
+            round_to(settle(lo, hi, b, |v| at(v, |s| s.percentile(0.5)))?, 0.05)
         }
-        ToneSetting::Contrast => settle(0.0, 30.0, (MIN_SPREAD, f32::INFINITY), |v| {
-            at(v, |s| s.percentile(0.75) - s.percentile(0.25))
-        })?
-        .round(),
+        ToneSetting::Contrast => {
+            // Asked for, Contrast may also lessen a harsh photo's.
+            let (lo, b) = match aim {
+                Aim::Band => (0.0, (MIN_SPREAD, f32::INFINITY)),
+                Aim::Target => (-15.0, (SPREAD_TARGET, SPREAD_TARGET)),
+            };
+            settle(lo, 30.0, b, |v| {
+                at(v, |s| s.percentile(0.75) - s.percentile(0.25))
+            })?
+            .round()
+        }
         // More Highlights means less near white: recover down to the share allowed.
-        ToneSetting::Highlights => settle(-70.0, 0.0, (f32::NEG_INFINITY, BRIGHT_SHARE), |v| {
-            at(v, |s| s.share_above(BRIGHT))
-        })?
-        .round(),
+        ToneSetting::Highlights => {
+            let b = band((f32::NEG_INFINITY, BRIGHT_SHARE), BRIGHT_TARGET);
+            settle(-70.0, 0.0, (f32::NEG_INFINITY, b.1), |v| {
+                at(v, |s| s.share_above(BRIGHT))
+            })?
+            .round()
+        }
         // More Shadows means less near black: open up to the share allowed.
-        ToneSetting::Shadows => settle(0.0, 60.0, (-DARK_SHARE, f32::INFINITY), |v| {
-            at(v, |s| -s.share_below(DARK))
-        })?
-        .round(),
+        ToneSetting::Shadows => {
+            let b = band((DARK_SHARE, f32::INFINITY), DARK_TARGET);
+            settle(0.0, 60.0, (-b.0, f32::INFINITY), |v| {
+                at(v, |s| -s.share_below(DARK))
+            })?
+            .round()
+        }
         ToneSetting::Whites => {
-            settle(-40.0, 40.0, WHITE_POINT, |v| at(v, |s| s.percentile(0.995)))?.round()
+            let b = band(WHITE_POINT, WHITE_TARGET);
+            settle(-40.0, 40.0, b, |v| at(v, |s| s.percentile(0.995)))?.round()
         }
         ToneSetting::Blacks => {
-            settle(-40.0, 30.0, BLACK_POINT, |v| at(v, |s| s.percentile(0.005)))?.round()
+            let b = band(BLACK_POINT, BLACK_TARGET);
+            settle(-40.0, 30.0, b, |v| at(v, |s| s.percentile(0.005)))?.round()
         }
         // Muted photos gain colour, already colourful ones hardly any.
         ToneSetting::Vibrance => {
@@ -286,7 +353,7 @@ pub fn auto_tone<E>(
         ..recipe.clone()
     };
     for setting in ToneSetting::ALL {
-        let v = auto_setting(&r, setting, &mut measure)?;
+        let v = find(&r, setting, Aim::Band, &mut measure)?;
         r = setting.with(&r, v);
     }
     Ok(AutoTone {

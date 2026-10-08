@@ -62,10 +62,33 @@ Lightroom's Auto is the reference most photographers know: one click, one undo s
      double-click still resets.
    - **Which:** Exposure, Contrast, Highlights, Shadows, Whites, Blacks and Vibrance.
      Their names say so on hover ("Shift-double-click for Auto Whites").
-   - **What it finds:** that setting alone, the rest of the edit as it is, by its
-     band as above. With Exposure pushed until the photo clips, Auto Whites pulls the
-     white end in rather than out.
-   - **The result:** one step ("Undo Auto Whites"), confirmed with "Auto Whites".
+   - **What it finds:** that setting alone, the rest of the edit as it is, aimed at
+     a **target** rather than kept in its band. A first version used the bands, and
+     on a photo already within them every Shift-double-click left the slider where it
+     was ("toast shows but doesn't move the slider").
+
+     | Setting | Target (rendered luma) | Range |
+     |---|---|---|
+     | Exposure | median 0.46 | as Auto |
+     | Contrast | middle-half spread 0.36 | −15 to +30 |
+     | Highlights | 1 % above 0.92 (only recovers) | −70 to 0 |
+     | Shadows | 2 % below 0.06 (only opens) | 0 to +60 |
+     | Whites | 99.5th percentile 0.975 | −40 to +40 |
+     | Blacks | 0.5th percentile 0.02 | −40 to +30 |
+
+   - **The rest of the edit counts:** with Exposure pushed until the photo clips,
+     Auto Whites pulls the white end in rather than out.
+   - **The result:** one step ("Undo Auto Whites"), confirmed with its value ("Auto
+     Whites +23"), or "Whites already suits this photo" when nothing changes.
+   - **Settings that can't help stay put** (Auto too): a setting that can't bring the
+     photo to its band or target, and changes it by less than 2 % of the measure on
+     the way, stays at zero rather than going to its limit.
+     - **Why:** Whites acts on tones within about 1.5 stops of the sensor's white
+       (ADR 0023). On a photo with nothing that bright (the Z 6 indoor scene, white
+       end 0.85), ±40 Whites moved it by 0.001, yet Auto had set +40.
+     - **Measured:** on synthetic scenes, Whites ±40 moves the white end by nothing
+       when the brightest tones are 1.7 or more stops below white, and by about 0.02
+       when within a stop.
    - **The code:** `renderer::auto_tone::auto_setting` finds one setting
      (`ToneSetting`), and Auto is `auto_setting` for each in turn. Both run through
      the engine's same sample (`Engine::auto_setting`, IPC `auto_setting`).
@@ -79,14 +102,18 @@ Lightroom's Auto is the reference most photographers know: one click, one undo s
      - every setting is in range, whole, and the same each time;
      - a scene whose median is already mid-band keeps Exposure, Contrast and Shadows
        at zero, only its clipped top recovered.
-   - **Engine:** the edit's own tone sliders don't change the result; Auto for
-     Exposure alone matches Auto's.
-   - **Per setting:** one setting alone is what Auto finds for it first, and it
-     follows the rest of the edit (Whites raised on a dim photo, pulled in once
-     Exposure clips it).
+   - **Engine:** the edit's own tone sliders don't change Auto's result. Auto Whites
+     on the chart (pure whites) pulls in; darkened two stops, it raises.
+   - **Per setting:**
+     - on a photo Auto leaves alone, Exposure still moves the median to its target;
+     - it follows the rest of the edit (Whites raised on a photo just short of
+       white, pulled in once Exposure clips it);
+     - a setting that can't change the photo (Whites, nothing near white) stays at
+       zero.
    - **Release self-test** (`autoTone`): on the Nikon Z 6, Auto takes 19 ms through
-     IPC, the photo with it has its median in the band, the button is there, and
-     Auto for Exposure alone matches.
+     IPC, the photo with it has its median in the band, and the button is there.
+     Blacks alone moves the black end towards its target, and Whites alone stays at
+     zero on that photo, which has nothing near white.
 
 ## Consequences
 
@@ -96,3 +123,7 @@ Lightroom's Auto is the reference most photographers know: one click, one undo s
 - **Not done:**
   - auto white balance (the design's Auto doesn't set it);
   - subject-aware weighting (faces, sky). The bands treat every pixel alike.
+- **Found along the way:** Whites only reaches tones near the sensor's white. On
+  photos with nothing that bright, the slider does nothing when dragged either. A
+  Whites that acts on the photo's own brightest tones (as Lightroom's does) is a
+  renderer question for its own ADR.

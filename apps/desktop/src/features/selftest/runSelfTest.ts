@@ -194,17 +194,39 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         median = luma.findIndex((n) => (seen += n) >= total / 2) / 255;
       }
       const atLimit = tone.exposure <= -2 || tone.exposure >= 2.5;
-      // Auto for one setting (Shift-double-click on its slider): Exposure alone is
-      // what Auto finds for it first.
+      // Auto for one setting (Shift-double-click on its slider): aimed at its target,
+      // so it moves even where Auto leaves the photo alone. Blacks brings the black end
+      // (0.5th percentile) nearer its target; Whites stays put on a photo with nothing
+      // near white (it can't change it).
       const exposureAlone = await ipc.autoSetting(image.id, a, "exposure");
+      const blacksAlone = await ipc.autoSetting(image.id, a, "blacks");
+      const whitesAlone = await ipc.autoSetting(image.id, a, "whites");
+      const blackEndOf = async (recipe: typeof a) => {
+        const frame = await ipc.renderPreview({ imageId: image.id, recipe, quality: "detail", targetLongEdge: 1600, slot: "compare" });
+        const l = frame.histogram?.luma;
+        if (!l) return null;
+        const total = l.reduce((x, y) => x + y, 0);
+        let seen = 0;
+        return l.findIndex((n) => (seen += n) >= total * 0.005) / 255;
+      };
+      const plainEnd = await blackEndOf(a);
+      const blackEnd = await blackEndOf({ ...a, blacks: blacksAlone });
       return {
         tone,
         ms,
         median,
         button: document.querySelector("button.auto-tone") !== null,
         exposureAlone,
+        blacksAlone,
+        whitesAlone,
+        blackEnd,
+        plainEnd,
         ok:
-          exposureAlone === tone.exposure && median !== null && (atLimit || Math.abs(median - 0.43) < 0.1) && ms < 3000 && document.querySelector("button.auto-tone") !== null,
+          Number.isFinite(exposureAlone) &&
+          blackEnd !== null &&
+          plainEnd !== null &&
+          blacksAlone !== 0 &&
+          Math.abs(blackEnd - 0.02) <= Math.abs(plainEnd - 0.02) && median !== null && (atLimit || Math.abs(median - 0.43) < 0.1) && ms < 3000 && document.querySelector("button.auto-tone") !== null,
       };
     })();
 

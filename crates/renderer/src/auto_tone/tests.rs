@@ -163,24 +163,48 @@ fn every_setting_is_in_range_and_the_same_each_time() {
 }
 
 #[test]
-fn one_setting_alone_is_what_auto_finds_for_it_first() {
-    let img = scene(|x, y| 0.004 + 0.03 * x * (0.5 + y));
+fn one_setting_alone_aims_at_its_target_even_on_a_fine_photo() {
+    // A photo Auto leaves alone (median within the band): Exposure asked for by name
+    // still moves it to the target.
+    let lit = |k: f32| scene(move |x, y| k * (-7.0 * (1.0 - (0.15 * y + 0.85 * x))).exp2());
+    let img = lit(0.5);
     let base = EditRecipe::default();
     let exposure = auto_setting(&base, ToneSetting::Exposure, measure(&img)).unwrap();
-    assert_eq!(exposure, auto_tone(&base, measure(&img)).unwrap().exposure);
+    let after = measure(&img)(&EditRecipe {
+        exposure,
+        ..base.clone()
+    })
+    .unwrap();
+    assert!(
+        (after.percentile(0.5) - MEDIAN_TARGET).abs() < 0.03,
+        "{exposure}: {}",
+        after.percentile(0.5)
+    );
 }
 
 #[test]
 fn one_setting_follows_the_rest_of_the_edit() {
-    // A flat, dim photo: its white end falls short, so Auto Whites raises it; with
-    // Exposure already pushed until it clips, Auto Whites pulls it in instead.
-    let img = scene(|x, _| 0.05 + 0.08 * x);
+    // Tones up to under a stop below white (where Whites acts): their end falls a
+    // little short of white, so Auto Whites raises it; with Exposure pushed until it
+    // clips, Auto Whites pulls it in instead.
+    let img = scene(|x, _| 0.06 + 0.6 * x);
     let plain = auto_setting(&EditRecipe::default(), ToneSetting::Whites, measure(&img)).unwrap();
     assert!(plain > 0.0, "{plain}");
     let bright = EditRecipe {
-        exposure: 3.0,
+        exposure: 0.6,
         ..Default::default()
     };
     let clipped = auto_setting(&bright, ToneSetting::Whites, measure(&img)).unwrap();
     assert!(clipped < 0.0, "{clipped}");
+}
+
+#[test]
+fn a_setting_that_cannot_change_the_photo_stays_at_zero() {
+    // Nothing within Whites' reach of white: however far it goes, the photo hardly
+    // changes, so it stays where it is rather than going to its limit.
+    let img = scene(|x, _| 0.01 + 0.05 * x);
+    assert_eq!(
+        auto_setting(&EditRecipe::default(), ToneSetting::Whites, measure(&img)).unwrap(),
+        0.0
+    );
 }

@@ -65,10 +65,22 @@ fn one(path: &Path, out: Option<&Path>) -> Value {
             .unwrap_or_default();
         std::fs::write(dir.join(format!("auto-{stem}.jpg")), bytes).expect("write");
     }
+    // Each setting alone (Shift-double-click on its slider), aimed at its target.
+    let alone: serde_json::Map<String, Value> = renderer::auto_tone::ToneSetting::ALL
+        .iter()
+        .map(|&s| {
+            let v = engine
+                .auto_setting(summary.id, &base, s)
+                .wait()
+                .expect("auto setting");
+            (format!("{s:?}").to_lowercase(), json!(v))
+        })
+        .collect();
     json!({
         "file": name,
         "ms": (times[1] * 10.0).round() / 10.0,
         "tone": tone,
+        "alone": alone,
     })
 }
 

@@ -1040,7 +1040,7 @@ editor runs it. Median of three runs, release build:
 |---|---|---|---|---|---|---|---|---|
 | Canon EOS R6 | 27 ms | +0.20 | 0 | 0 | 0 | 0 | 0 | +15 |
 | Fujifilm X-T3 | 84 ms | −0.25 | 0 | −18 | 0 | 0 | +12 | +5 |
-| Nikon Z 6 | 19 ms | 0 | 0 | 0 | 0 | +40 | 0 | +10 |
+| Nikon Z 6 | 19 ms | 0 | 0 | 0 | 0 | 0 (was +40, with no effect; ADR 0071 §5) | 0 | +10 |
 | Ricoh GR III | 13 ms | 0 | 0 | 0 | 0 | 0 | 0 | +15 |
 | Sony A7 III | 52 ms | −0.15 | 0 | 0 | 0 | −5 | −40 | +20 |
 | Sony A7R IV | 54 ms | +0.05 | 0 | −70 | +26 | 0 | 0 | +20 |
