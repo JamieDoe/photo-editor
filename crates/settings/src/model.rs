@@ -162,6 +162,8 @@ pub enum LibraryCollection {
     Recent,
     /// Recently edited (ADR 0079).
     Edited,
+    /// Five stars (ADR 0081).
+    Favourites,
     Picks,
     Rated,
     Rejected,

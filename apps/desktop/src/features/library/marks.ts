@@ -94,6 +94,9 @@ export function inCollection(marks: MarksDto, kind: CollectionKindDto): boolean 
       return marks.rating > 0;
     case "rejected":
       return marks.flag === "reject";
+    case "favourites":
+      // Five stars (ADR 0081).
+      return marks.rating === 5;
     case "recent":
     case "edited":
       // Not a mark: the catalogue chose them.
@@ -106,6 +109,7 @@ export const COLLECTION_NAMES: Record<CollectionKindDto, string> = {
   picks: "Picks",
   rated: "Rated",
   rejected: "Rejected",
+  favourites: "Favourites",
   recent: "Recently imported",
   edited: "Recently edited",
 };
