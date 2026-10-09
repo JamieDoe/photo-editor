@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
-import { AlbumIcon, CloseIcon, FolderIcon, SearchIcon, ImportIcon, MoreIcon, PhotosIcon, PickIcon, RatingStar, RefreshIcon, RejectIcon, StarIcon } from "../../components/icons";
+import { AlbumIcon, CloseIcon, FolderIcon, SearchIcon, ImportIcon, MoreIcon, PencilIcon, PhotosIcon, PickIcon, RatingStar, RefreshIcon, RejectIcon, StarIcon } from "../../components/icons";
 import type { CollectionKindDto } from "../../ipc/generated/CollectionKindDto";
 import * as ipc from "../../ipc/client";
 import { formatDateRange } from "../../lib/format";
@@ -9,7 +9,7 @@ import { AddToAlbum, AlbumSettings, AlbumsNav, photosText, setDraggedPaths } fro
 import { indexStatusText } from "./indexStatus";
 import { NavGroup } from "./NavGroup";
 import { LabelFilter } from "../../components/ColourLabels";
-import { COLLECTION_NAMES, FILTERS, LABELS, SORTS, markChangeForKey, type Label, type LibraryFilter, type LibrarySort } from "./marks";
+import { COLLECTION_NAMES, FILTERS, LABELS, SORTS, keepsOwnOrder, markChangeForKey, type Label, type LibraryFilter, type LibrarySort } from "./marks";
 import { PhotoGrid } from "./PhotoGrid";
 import { PhotoList } from "./PhotoList";
 import type { LibraryApi, LibraryLayout } from "./useLibrary";
@@ -171,6 +171,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
             <div className="nav-label">Library</div>
             {collectionRow("all", <PhotosIcon />, counts?.all)}
             {collectionRow("recent", <ImportIcon size={16} />, counts?.recent)}
+            {collectionRow("edited", <PencilIcon size={16} />, counts?.edited)}
             {collectionRow("picks", <PickIcon size={16} />, counts?.picks)}
             {collectionRow("rated", <RatingStar filled={false} />, counts?.rated)}
             {collectionRow("rejected", <RejectIcon size={16} />, counts?.rejected)}
@@ -336,19 +337,26 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                   onChange={library.setFilter}
                 />
                 <LabelFilter value={library.labelFilter} onChange={library.setLabelFilter} />
-                <select
-                  className="sort-select"
-                  aria-label="Sort by"
-                  title="Sort by"
-                  value={library.sort}
-                  onChange={(e) => library.setSort(e.target.value as LibrarySort)}
-                >
-                  {SORTS.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.label}
-                    </option>
-                  ))}
-                </select>
+                {keepsOwnOrder(library.shownCollection) ? (
+                  // Recently edited lists the latest edits first (ADR 0079).
+                  <select className="sort-select" aria-label="Sort by" title="The latest edits first" value="edited" disabled>
+                    <option value="edited">Last edited</option>
+                  </select>
+                ) : (
+                  <select
+                    className="sort-select"
+                    aria-label="Sort by"
+                    title="Sort by"
+                    value={library.sort}
+                    onChange={(e) => library.setSort(e.target.value as LibrarySort)}
+                  >
+                    {SORTS.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <Segmented
                   name="library-layout"
                   label="Layout"
@@ -446,6 +454,7 @@ function emptyMessage(total: number, filter: LibraryFilter, collection: Collecti
       rated: "Press 1–5 to rate the selected photo.",
       rejected: "Press X to reject the selected photo.",
       recent: `Photos added to the library in the last ${RECENT_DAYS} days show here.`,
+      edited: `Photos you edit show here for ${RECENT_DAYS} days, the latest first.`,
     };
     return total === 0 ? `Nothing here yet. ${how[collection]}` : "No photos match this filter.";
   }

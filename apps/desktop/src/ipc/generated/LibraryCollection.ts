@@ -3,4 +3,4 @@
 /**
  * The library-wide collections, as the sidebar lists them.
  */
-export type LibraryCollection = "all" | "recent" | "picks" | "rated" | "rejected";
+export type LibraryCollection = "all" | "recent" | "edited" | "picks" | "rated" | "rejected";

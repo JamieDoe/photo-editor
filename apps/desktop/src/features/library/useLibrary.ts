@@ -15,6 +15,7 @@ import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { LibraryStatusDto } from "../../ipc/generated/LibraryStatusDto";
 import {
+  keepsOwnOrder,
   applyChange,
   rangeToTick,
   sortPhotos,
@@ -94,6 +95,8 @@ export function useLibrary(remembered?: RememberedView) {
   const [thumbRevs, setThumbRevs] = useState<Record<string, number>>({});
   /** A library-wide collection being viewed instead of a folder. */
   const [collection, setCollection] = useState<CollectionListingDto | null>(null);
+  const collectionRef = useRef(collection);
+  collectionRef.current = collection;
   /** The albums (ADR 0055), and the one being viewed instead of a folder. */
   const [albums, setAlbums] = useState<AlbumDto[]>([]);
   const [album, setAlbum] = useState<AlbumListingDto | null>(null);
@@ -271,7 +274,8 @@ export function useLibrary(remembered?: RememberedView) {
   /** The photos of the current view (search, album, collection or folder), before
    *  filtering. */
   const unsorted: PhotoEntryDto[] = search?.photos ?? album?.photos ?? collection?.photos ?? listing?.photos ?? [];
-  const photos = useMemo(() => sortPhotos(unsorted, sort), [unsorted, sort]);
+  const ownOrder = !search && !album && keepsOwnOrder(collection?.kind ?? null);
+  const photos = useMemo(() => (ownOrder ? unsorted : sortPhotos(unsorted, sort)), [unsorted, sort, ownOrder]);
   const shownCollection = search || album ? null : (collection?.kind ?? null);
   const photosRef = useRef(photos);
   photosRef.current = photos;
@@ -329,7 +333,15 @@ export function useLibrary(remembered?: RememberedView) {
     setAlbum((a) => (a ? { ...a, photos: update(a.photos) } : a));
     setSearch((s) => (s ? { ...s, photos: update(s.photos) } : s));
     setThumbRevs((r) => ({ ...r, [path]: (r[path] ?? 0) + 1 }));
-  }, []);
+    // Recently edited (ADR 0079): its count, and its photos and order when shown.
+    refreshStatus();
+    if (collectionRef.current?.kind === "edited") {
+      ipc.libraryCollection("edited").then(
+        (c) => setCollection((now) => (now?.kind === "edited" ? c : now)),
+        () => undefined,
+      );
+    }
+  }, [refreshStatus]);
 
   /** Ticks or unticks a photo for batch editing. */
   const toggleBatch = useCallback((path: string) => {
@@ -381,6 +393,8 @@ export function useLibrary(remembered?: RememberedView) {
     selected,
     setSelected,
     collection,
+    /** The collection shown, unless a search or an album covers it. */
+    shownCollection,
     openCollection,
     albums,
     album,

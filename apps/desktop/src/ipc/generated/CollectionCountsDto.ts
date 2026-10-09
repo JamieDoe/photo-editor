@@ -4,4 +4,8 @@ export type CollectionCountsDto = {
 /**
  * Every present photo (All photos, ADR 0065).
  */
-all: number, picks: number, rated: number, rejected: number, recent: number, };
+all: number, picks: number, rated: number, rejected: number, recent: number, 
+/**
+ * Recently edited (ADR 0079).
+ */
+edited: number, };

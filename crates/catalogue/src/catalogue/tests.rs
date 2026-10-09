@@ -637,8 +637,59 @@ fn marks_follow_a_moved_photo_and_collections_skip_missing_files() {
             rated: 1,
             rejected: 0,
             // Both were indexed just now; the missing one is not counted.
-            recent: 1
+            recent: 1,
+            edited: 0,
         }
+    );
+}
+
+#[test]
+fn recently_edited_lists_the_latest_edits_first() {
+    let l = library("cat-recently-edited");
+    let photo = |name: &str| {
+        l.cat
+            .record_file(
+                l.folder,
+                &write(&l.root.join(name), &photo_bytes(name.len() as u8)),
+                ScanId(1),
+            )
+            .unwrap()
+            .0
+    };
+    let (a, b) = (photo("a.nef"), photo("bb.nef"));
+    // Never edited.
+    photo("ccc.nef");
+    let old = photo("dddd.nef");
+    for p in [a, b, old] {
+        l.cat.set_edit(p, Some((30, "{}"))).unwrap();
+    }
+    // When each was last edited: b before a; `old` six weeks ago.
+    let now = crate::catalogue::now_ms();
+    let day = 24 * 60 * 60 * 1000;
+    for (p, at) in [(a, now - 1000), (b, now - day), (old, now - 42 * day)] {
+        l.cat
+            .conn()
+            .execute(
+                "UPDATE edits SET updated_at_ms = ?2 WHERE photo_id = ?1",
+                params![p.0, at],
+            )
+            .unwrap();
+    }
+    let edited: Vec<PhotoId> = l
+        .cat
+        .collection(Collection::RecentlyEdited)
+        .unwrap()
+        .iter()
+        .map(|e| e.photo)
+        .collect();
+    // The latest first; the photo never edited and the one edited long ago are not in it.
+    assert_eq!(edited, [a, b]);
+    assert_eq!(l.cat.collection_counts().unwrap().edited, 2);
+    // Removing an edit takes the photo out.
+    l.cat.set_edit(a, None).unwrap();
+    assert_eq!(
+        l.cat.collection(Collection::RecentlyEdited).unwrap().len(),
+        1
     );
 }
 

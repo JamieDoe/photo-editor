@@ -160,6 +160,8 @@ pub enum LibraryPlace {
 pub enum LibraryCollection {
     All,
     Recent,
+    /// Recently edited (ADR 0079).
+    Edited,
     Picks,
     Rated,
     Rejected,
