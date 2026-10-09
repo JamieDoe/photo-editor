@@ -12,12 +12,19 @@
 //! The adjustments are applied where the global ones are: Exposure and Warmth as
 //! scene-linear gains after the white balance and exposure, Clarity in the detail
 //! stage.
+//!
+//! Generated masks (ADR 0074: Subject, People) are the exception to frame
+//! coordinates: they are made from the photo as decoded, so their coverage is in its
+//! coordinates, and the frame is mapped back to it (as the crop's resampling does).
+//! Their coverage is stored outside the recipe and given to the renderer with the
+//! plan ([`GeneratedMasks`]); the recipe only names it.
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::geometry::CropRect;
+use crate::geometry::{CropRect, Geometry, Mapping};
 
 pub mod brush;
 pub use brush::Stroke;
@@ -118,7 +125,27 @@ pub enum MaskShape {
     },
     /// Painted strokes (ADR 0042), in the order painted; see [`brush`].
     Brush { strokes: Vec<Stroke> },
+    /// A mask made from the photo (ADR 0074): `mask` names its stored coverage (a
+    /// content hash), made by the AI subsystem for `of`. Its coverage covers the photo
+    /// as decoded, so it stays on what it covers whatever the geometry.
+    Generated { of: GeneratedKind, mask: String },
 }
+
+/// What a generated mask covers (ADR 0074).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
+pub enum GeneratedKind {
+    Subject,
+    People,
+}
+
+/// The stored coverage of a render's generated masks, by name (ADR 0074), in the
+/// photo's coordinates as decoded. A name missing here covers nothing.
+pub type GeneratedMasks = HashMap<String, Arc<brush::CoverageMap>>;
+
+/// The longest a generated mask's name may be (a SHA-256 in hex).
+pub const MASK_NAME_LEN: usize = 64;
 
 /// What a mask changes where it covers the photo, as the global controls do.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Serialize, Deserialize)]
@@ -200,6 +227,24 @@ impl MaskShape {
                     .filter(|s| !s.points.is_empty())
                     .collect(),
             },
+            // The name becomes a file name in the store: hexadecimal digits only.
+            Self::Generated { of, mask } => Self::Generated {
+                of,
+                mask: mask
+                    .chars()
+                    .filter(char::is_ascii_hexdigit)
+                    .map(|c| c.to_ascii_lowercase())
+                    .take(MASK_NAME_LEN)
+                    .collect(),
+            },
+        }
+    }
+
+    /// The stored mask it names, if it is a generated one.
+    pub fn generated(&self) -> Option<&str> {
+        match self {
+            Self::Generated { mask, .. } => Some(mask),
+            _ => None,
         }
     }
 }
@@ -275,6 +320,9 @@ pub struct Frame {
     pub crop: CropRect,
     pub width: f32,
     pub height: f32,
+    /// How the frame came from the source, for generated masks (ADR 0074): the
+    /// geometry and the source's size. `None` when the frame is the source.
+    pub from_source: Option<(Geometry, f32, f32)>,
 }
 
 impl Frame {
@@ -284,6 +332,7 @@ impl Frame {
             crop: CropRect::FULL,
             width: w as f32,
             height: h as f32,
+            from_source: None,
         }
     }
 }
@@ -307,10 +356,18 @@ pub enum CompiledShape {
         map: Arc<brush::CoverageMap>,
         scale: [f32; 2],
     },
+    /// Coverage read from a generated mask in the source's coordinates (ADR 0074):
+    /// frame pixels are mapped to the source (`to_source`, the source's size) and then
+    /// to the map. `None` when the mask is missing: it covers nothing.
+    Generated {
+        map: Option<Arc<brush::CoverageMap>>,
+        frame: [f32; 2],
+        to_source: Option<(Mapping, [f32; 2])>,
+    },
 }
 
 impl CompiledShape {
-    pub fn new(shape: &MaskShape, frame: &Frame) -> Self {
+    pub fn new(shape: &MaskShape, frame: &Frame, generated: &GeneratedMasks) -> Self {
         match shape.clone().sanitized() {
             MaskShape::Linear { start, end } => {
                 let s = [start[0] * frame.width, start[1] * frame.height];
@@ -345,6 +402,13 @@ impl CompiledShape {
                     scale: [mw as f32 / frame.width, mh as f32 / frame.height],
                 }
             }
+            MaskShape::Generated { mask, .. } => Self::Generated {
+                map: generated.get(&mask).cloned(),
+                frame: [frame.width, frame.height],
+                to_source: frame
+                    .from_source
+                    .map(|(g, w, h)| (Mapping::new(&g, w, h), [w, h])),
+            },
         }
     }
 
@@ -373,6 +437,28 @@ impl CompiledShape {
                 1.0 - t * t * (3.0 - 2.0 * t)
             }
             Self::Brush { ref map, scale } => map.sample(x * scale[0], y * scale[1]),
+            Self::Generated {
+                ref map,
+                frame,
+                ref to_source,
+            } => {
+                let Some(map) = map else { return 0.0 };
+                // The point as fractions of the source, then of the map (which covers
+                // the whole source).
+                let (u, v) = (x / frame[0], y / frame[1]);
+                let (u, v) = match to_source {
+                    None => (u, v),
+                    Some((mapping, [w, h])) => {
+                        let (sx, sy) = mapping.source(u, v);
+                        (sx / w, sy / h)
+                    }
+                };
+                if !(0.0..=1.0).contains(&u) || !(0.0..=1.0).contains(&v) {
+                    return 0.0;
+                }
+                let (mw, mh) = map.size();
+                map.sample(u * mw as f32, v * mh as f32)
+            }
         }
     }
 }
@@ -437,17 +523,17 @@ impl LocalField {
         c * m.density
     }
 
-    pub fn new(masks: &[LocalMask], frame: Frame) -> Self {
+    pub fn new(masks: &[LocalMask], frame: Frame, generated: &GeneratedMasks) -> Self {
         Self {
             masks: masks
                 .iter()
                 .map(|m| {
                     let shapes = CompiledMask {
-                        first: CompiledShape::new(&m.shape, &frame),
+                        first: CompiledShape::new(&m.shape, &frame, generated),
                         parts: m
                             .parts
                             .iter()
-                            .map(|p| (p.mode, CompiledShape::new(&p.shape, &frame)))
+                            .map(|p| (p.mode, CompiledShape::new(&p.shape, &frame, generated)))
                             .collect(),
                     };
                     (shapes, m.clone())
@@ -532,7 +618,11 @@ mod tests {
     fn a_linear_gradient_fades_from_start_to_end() {
         let frame = Frame::whole(400, 200);
         // Full at the top, nothing from the middle down.
-        let s = CompiledShape::new(&linear([0.5, 0.0], [0.5, 0.5]), &frame);
+        let s = CompiledShape::new(
+            &linear([0.5, 0.0], [0.5, 0.5]),
+            &frame,
+            &GeneratedMasks::new(),
+        );
         assert_eq!(s.coverage(10.0, 0.0), 1.0);
         assert_eq!(s.coverage(390.0, 150.0), 0.0);
         assert!((s.coverage(200.0, 50.0) - 0.5).abs() < 1e-6);
@@ -546,7 +636,11 @@ mod tests {
         // A diagonal in fractions of a wide frame: the lines are perpendicular in
         // pixels, so a point on the start line's pixel perpendicular is fully on.
         let frame = Frame::whole(400, 100);
-        let s = CompiledShape::new(&linear([0.0, 0.0], [1.0, 1.0]), &frame);
+        let s = CompiledShape::new(
+            &linear([0.0, 0.0], [1.0, 1.0]),
+            &frame,
+            &GeneratedMasks::new(),
+        );
         // start → end is (400, 100) px; (-100, 400) px is perpendicular to it.
         assert!((s.coverage(-100.0, 400.0) - 1.0).abs() < 1e-6);
         assert!((s.coverage(200.0, 50.0) - 0.5).abs() < 1e-6);
@@ -576,14 +670,16 @@ mod tests {
                 crop,
                 width: 400.0,
                 height: 200.0,
+                from_source: None,
             },
+            &GeneratedMasks::new(),
         );
         assert_eq!(field.stops(10, 0, 400, 100), 0.0);
-        let whole = LocalField::new(&masks, Frame::whole(400, 200));
+        let whole = LocalField::new(&masks, Frame::whole(400, 200), &GeneratedMasks::new());
         assert!((whole.stops(10, 0, 400, 200) - 1.0).abs() < 1e-3);
         assert!((whole.clarity(10, 0, 400, 200) - 20.0).abs() < 0.01);
         // Rendered at another size, the same place gets the same value.
-        let small = LocalField::new(&masks, Frame::whole(100, 50));
+        let small = LocalField::new(&masks, Frame::whole(100, 50), &GeneratedMasks::new());
         // Pixel centres: 41.5 / 200 and 10.5 / 50 of the height, 0.0025 apart (half a
         // large pixel; the gradient changes about 0.01 stops per large pixel there).
         assert!((whole.stops(202, 41, 400, 200) - small.stops(50, 10, 100, 50)).abs() < 0.01);
@@ -619,7 +715,11 @@ mod tests {
     fn a_radial_gradient_covers_its_ellipse_and_fades_at_the_edge() {
         // 300 x 400 frame: diagonal 500 px. Radii 100 px and 50 px.
         let frame = Frame::whole(300, 400);
-        let s = CompiledShape::new(&radial([0.5, 0.5], [0.2, 0.1], 0.0, 50.0), &frame);
+        let s = CompiledShape::new(
+            &radial([0.5, 0.5], [0.2, 0.1], 0.0, 50.0),
+            &frame,
+            &GeneratedMasks::new(),
+        );
         assert_eq!(s.coverage(150.0, 200.0), 1.0);
         // Inside the unfeathered half of the radius: full; past the edge: none.
         assert_eq!(s.coverage(150.0 + 49.0, 200.0), 1.0);
@@ -629,11 +729,19 @@ mod tests {
         assert!((s.coverage(150.0 + 75.0, 200.0) - 0.5).abs() < 1e-5);
         assert!((s.coverage(150.0, 200.0 + 37.5) - 0.5).abs() < 1e-5);
         // Turned a quarter: the long axis is vertical.
-        let turned = CompiledShape::new(&radial([0.5, 0.5], [0.2, 0.1], 90.0, 50.0), &frame);
+        let turned = CompiledShape::new(
+            &radial([0.5, 0.5], [0.2, 0.1], 90.0, 50.0),
+            &frame,
+            &GeneratedMasks::new(),
+        );
         assert!(turned.coverage(150.0, 200.0 + 90.0) > 0.0);
         assert_eq!(turned.coverage(150.0 + 60.0, 200.0), 0.0);
         // No feather: a hard edge.
-        let hard = CompiledShape::new(&radial([0.5, 0.5], [0.2, 0.2], 0.0, 0.0), &frame);
+        let hard = CompiledShape::new(
+            &radial([0.5, 0.5], [0.2, 0.2], 0.0, 0.0),
+            &frame,
+            &GeneratedMasks::new(),
+        );
         assert_eq!(hard.coverage(150.0 + 99.0, 200.0), 1.0);
         assert_eq!(hard.coverage(150.0 + 101.0, 200.0), 0.0);
     }
@@ -649,8 +757,16 @@ mod tests {
             warmth: [0.0; 3],
             clarity: 0.0,
         };
-        let inside = LocalField::new(&[mask(false)], Frame::whole(300, 400));
-        let outside = LocalField::new(&[mask(true)], Frame::whole(300, 400));
+        let inside = LocalField::new(
+            &[mask(false)],
+            Frame::whole(300, 400),
+            &GeneratedMasks::new(),
+        );
+        let outside = LocalField::new(
+            &[mask(true)],
+            Frame::whole(300, 400),
+            &GeneratedMasks::new(),
+        );
         assert_eq!(
             (
                 inside.stops(150, 200, 300, 400),
@@ -717,7 +833,7 @@ mod tests {
             warmth: [0.0; 3],
             clarity: 0.0,
         };
-        let field = LocalField::new(&[m], Frame::whole(400, 400));
+        let field = LocalField::new(&[m], Frame::whole(400, 400), &GeneratedMasks::new());
         let (shapes, m) = &field.masks[0];
         LocalField::cover(shapes, m, x, y)
     }
@@ -840,5 +956,77 @@ mod tests {
             .density
         };
         assert_eq!((d(150.0), d(-5.0), d(f32::NAN)), (100.0, 0.0, 100.0));
+    }
+
+    /// A generated mask covering the source's left half, stored as `name`.
+    fn left_half(name: &str) -> GeneratedMasks {
+        let (w, h) = (40usize, 20usize);
+        let data: Vec<u8> = (0..w * h)
+            .map(|i| if i % w < w / 2 { 255 } else { 0 })
+            .collect();
+        GeneratedMasks::from([(
+            name.to_owned(),
+            Arc::new(brush::CoverageMap::from_u8(w, h, &data).unwrap()),
+        )])
+    }
+
+    fn generated(name: &str) -> MaskShape {
+        MaskShape::Generated {
+            of: GeneratedKind::Subject,
+            mask: name.to_owned(),
+        }
+    }
+
+    #[test]
+    fn a_generated_mask_covers_what_it_was_made_on() {
+        let masks = left_half("ab12");
+        let frame = Frame::whole(400, 200);
+        let s = CompiledShape::new(&generated("ab12"), &frame, &masks);
+        assert_eq!(s.coverage(50.0, 100.0), 1.0);
+        assert_eq!(s.coverage(350.0, 100.0), 0.0);
+        // Missing from the store: it covers nothing.
+        let missing = CompiledShape::new(&generated("cd34"), &frame, &masks);
+        assert_eq!(missing.coverage(50.0, 100.0), 0.0);
+    }
+
+    #[test]
+    fn a_generated_mask_stays_on_the_photo_when_it_is_turned() {
+        // A quarter turn clockwise: the source's left half becomes the frame's top.
+        let masks = left_half("ab12");
+        let g = Geometry {
+            rotation: 1,
+            ..Geometry::default()
+        };
+        let frame = Frame {
+            crop: CropRect::FULL,
+            width: 200.0,
+            height: 400.0,
+            from_source: Some((g, 400.0, 200.0)),
+        };
+        let s = CompiledShape::new(&generated("ab12"), &frame, &masks);
+        assert!(
+            s.coverage(100.0, 50.0) > 0.99,
+            "{}",
+            s.coverage(100.0, 50.0)
+        );
+        assert!(
+            s.coverage(100.0, 350.0) < 0.01,
+            "{}",
+            s.coverage(100.0, 350.0)
+        );
+    }
+
+    #[test]
+    fn a_generated_masks_name_is_only_ever_hexadecimal() {
+        let MaskShape::Generated { mask, .. } = generated("../../etc/PASSWD-AB12").sanitized()
+        else {
+            unreachable!()
+        };
+        assert_eq!(mask, "ecadab12", "no slashes or dots, only its hex digits");
+        let long = "f".repeat(100);
+        let MaskShape::Generated { mask, .. } = generated(&long).sanitized() else {
+            unreachable!()
+        };
+        assert_eq!(mask.len(), MASK_NAME_LEN);
     }
 }

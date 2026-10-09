@@ -67,10 +67,20 @@ fn main() {
             } else {
                 app.path().app_cache_dir()?.join("thumbnails")
             };
+            // Generated masks (ADR 0074) are part of edits: kept with the library's data,
+            // except in self-tests.
+            let mask_dir = if self_test.is_some() {
+                let dir = std::env::temp_dir().join("photo-editor-self-test-masks");
+                let _ = std::fs::remove_dir_all(&dir);
+                dir
+            } else {
+                app.path().app_data_dir()?.join("masks")
+            };
             app.manage(AppState::new(
                 settings_path,
                 catalogue_path,
                 thumbnail_dir,
+                mask_dir,
                 backups_dir,
                 self_test.clone(),
             ));
@@ -125,6 +135,9 @@ fn main() {
             commands::images::prepare_fill,
             commands::images::auto_tone,
             commands::images::auto_setting,
+            commands::images::generate_mask,
+            commands::images::missing_masks,
+            commands::images::mask_view,
             commands::images::auto_level,
             commands::images::new_spot,
             commands::images::find_dust,

@@ -95,6 +95,7 @@ dependencies = [
  "image-core",
  "jobs",
  "log",
+ "platform",
  "png 0.18.1",
  "quick-xml",
  "raw",

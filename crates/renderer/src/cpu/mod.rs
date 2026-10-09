@@ -121,6 +121,7 @@ impl CpuRenderer {
             crop: g.effective_crop(sw as f32, sh as f32),
             width: fw,
             height: fh,
+            from_source: Some((g, sw as f32, sh as f32)),
         };
         let framed = kernels::cached_frame(source, &g, plan.chromatic_aberration.as_ref());
         self.render_frame(plan, &framed, where_in_frame, rows, out, cancel)

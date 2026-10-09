@@ -3,7 +3,8 @@ import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { LocalAdjustments } from "../../ipc/generated/LocalAdjustments";
 import type { MaskTool } from "./MaskTool";
 import type { Combine } from "../../ipc/generated/Combine";
-import { ADDABLE_KINDS, COMBINE_MODES, MASK_KINDS, brushSizeFromSlider, maskName, sliderFromBrushSize } from "./masks";
+import { COMBINE_MODES, FINDING, MASK_KINDS, brushSizeFromSlider, lookOf, maskName, sliderFromBrushSize } from "./masks";
+import type { MaskShape } from "../../ipc/generated/MaskShape";
 import { Slider } from "./Slider";
 import { formatSliderValue } from "./sliderTrack";
 import { WHITE_BALANCE_TRACKS } from "./whiteBalance";
@@ -23,9 +24,13 @@ const MODES: readonly Combine[] = ["add", "subtract", "intersect"];
 /**
  * The panel's Selective section (ADR 0040), as in the design: the masks (picking one
  * edits it on the photo), the active mask's Exposure, Warmth and Clarity, and the
- * masks to add. Only built kinds are offered. The card also holds the mask's Density
- * and its shapes (ADR 0043): more can be added to it or subtracted from it.
+ * masks to add. Only built kinds are offered, and Subject and People (ADR 0074) only
+ * where this computer can make them. The card also holds the mask's Density and its
+ * shapes (ADR 0043): more can be added to it or subtracted from it.
  */
+
+/** A shape's kind in lists; generated ones say so, as in the design. */
+const kindLabel = (shape: MaskShape) => MASK_KINDS[lookOf(shape)].label + (shape.kind === "generated" ? " · detected" : "");
 export function SelectiveControls({
   tool,
   specs,
@@ -52,12 +57,12 @@ export function SelectiveControls({
             <div key={m.id} className={`mask-row${on ? " active" : ""}${m.hidden ? " hidden" : ""}`}>
               <button className="mask-row-pick" aria-pressed={on} disabled={disabled} onClick={() => tool.pick(m.id)}>
                 <span className="mask-swatch">
-                  <span className="mask-dot" style={{ background: MASK_KINDS[m.shape.kind].dot }} />
+                  <span className="mask-dot" style={{ background: MASK_KINDS[lookOf(m.shape)].dot }} />
                 </span>
                 <span className="mask-row-text">
                   <span className="mask-row-name">{maskName(tool.masks, m)}</span>
                   <span className="mask-row-kind">
-                    {MASK_KINDS[m.shape.kind].label}
+                    {kindLabel(m.shape)}
                     {m.parts?.length ? ` + ${m.parts.length} more` : ""}
                   </span>
                 </span>
@@ -80,8 +85,8 @@ export function SelectiveControls({
         })}
         {tool.masks.length === 0 && (
           <div className="mask-empty">
-            Adjust just part of the photo: paint with a brush, darken a sky with a linear gradient, or lift a face with a
-            radial one.
+            Adjust just part of the photo: {tool.addable.includes("subject") && "pick out the subject, "}paint with a brush,
+            darken a sky with a linear gradient, or lift a face with a radial one.
           </div>
         )}
       </div>
@@ -122,13 +127,13 @@ export function SelectiveControls({
                   return (
                     <div key={i} className={on ? "mask-shape-row active" : "mask-shape-row"}>
                       <button className="mask-shape-pick" aria-pressed={on} disabled={disabled} onClick={() => tool.pickShape(i)}>
-                        <span className="mask-dot" style={{ background: MASK_KINDS[s.kind].dot }} />
-                        {MASK_KINDS[s.kind].label}
+                        <span className="mask-dot" style={{ background: MASK_KINDS[lookOf(s)].dot }} />
+                        {MASK_KINDS[lookOf(s)].label}
                       </button>
                       {mode && (
                         <select
                           className="mask-shape-mode"
-                          aria-label={`How the ${MASK_KINDS[s.kind].label.toLowerCase()} combines`}
+                          aria-label={`How the ${MASK_KINDS[lookOf(s)].label.toLowerCase()} combines`}
                           title={COMBINE_MODES[mode].hint}
                           value={mode}
                           disabled={disabled}
@@ -156,14 +161,14 @@ export function SelectiveControls({
               </div>
             )}
             {(["add", "subtract"] as const).map((mode) => (
-              <div key={mode} className="mask-combine" role="group" aria-label={`${COMBINE_MODES[mode].label} a shape`}>
+              <div key={mode} className={tool.addable.length > 3 ? "mask-combine many" : "mask-combine"} role="group" aria-label={`${COMBINE_MODES[mode].label} a shape`}>
                 <span className="mask-combine-label">{COMBINE_MODES[mode].label}</span>
-                {ADDABLE_KINDS.map((k) => (
+                {tool.addable.map((k) => (
                   <button
                     key={k}
                     className="ghost small"
                     title={`${COMBINE_MODES[mode].hint}: ${MASK_KINDS[k].hint.toLowerCase()}`}
-                    disabled={disabled}
+                    disabled={disabled || tool.finding !== null}
                     onClick={() => tool.addShape(mode, k)}
                   >
                     {MASK_KINDS[k].add}
@@ -259,10 +264,17 @@ export function SelectiveControls({
         </div>
       )}
       <div className="mask-add-grid">
-        {ADDABLE_KINDS.map((k) => (
-          <button key={k} className="chip mask-add-tile" title={MASK_KINDS[k].hint} disabled={disabled} onClick={() => tool.add(k)}>
+        {tool.addable.map((k) => (
+          <button
+            key={k}
+            className="chip mask-add-tile"
+            title={tool.finding === k ? FINDING[k] : MASK_KINDS[k].hint}
+            disabled={disabled || tool.finding !== null}
+            aria-busy={tool.finding === k}
+            onClick={() => tool.add(k)}
+          >
             <PlusIcon size={14} />
-            {MASK_KINDS[k].add}
+            {tool.finding === k ? "Finding…" : MASK_KINDS[k].add}
           </button>
         ))}
       </div>

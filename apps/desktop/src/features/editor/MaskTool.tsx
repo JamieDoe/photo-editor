@@ -3,23 +3,33 @@ import { EyeIcon } from "../../components/icons";
 import type { Combine } from "../../ipc/generated/Combine";
 import type { CropRect } from "../../ipc/generated/CropRect";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
+import type { GeneratedKind } from "../../ipc/generated/GeneratedKind";
 import type { LocalAdjustments } from "../../ipc/generated/LocalAdjustments";
 import type { Mask } from "../../ipc/generated/Mask";
 import type { MaskShape } from "../../ipc/generated/MaskShape";
 import type { Stroke } from "../../ipc/generated/Stroke";
 import { BrushGuides } from "./BrushOverlay";
 import { MaskTintCanvas } from "./MaskTintCanvas";
+import { errorMessage, generateMask, isCancellation, missingMasks } from "../../ipc/client";
 import { isTextEntry } from "../../lib/keyboard";
 import {
-  ADDABLE_KINDS,
   DEFAULT_BRUSH,
+  FINDING,
   FULL_CROP,
   MASK_KINDS,
+  NONE_FOUND,
   addShape,
+  addableKinds,
+  generatedIn,
+  generatedShape,
+  isGenerated,
+  lookOf,
   maskName,
+  maskOf,
   masksOf,
   newMask,
   newShape,
+  renameGenerated,
   normaliseAngle,
   removeShape,
   setAdjustment,
@@ -30,8 +40,8 @@ import {
   withMasks,
   withShapeAt,
   type BrushSettings,
-  type MaskKind,
   type Point,
+  type ShapeLook,
 } from "./masks";
 
 type Radial = Extract<MaskShape, { kind: "radial" }>;
@@ -45,9 +55,12 @@ type Linear = Extract<MaskShape, { kind: "linear" }>;
 export function useMaskTool(opts: {
   recipe: EditRecipe | null;
   imageId: number | null;
-  onChange: (r: EditRecipe) => void;
+  onChange: (r: EditRecipe, label?: string) => void;
+  /** The masks this computer can make from a photo (ADR 0074). */
+  generatable: readonly GeneratedKind[];
+  notify: (message: string) => void;
 }) {
-  const { recipe, imageId, onChange } = opts;
+  const { recipe, imageId, onChange, generatable, notify } = opts;
   const [open, setOpen] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [shapeAt, setShapeAt] = useState(0);
@@ -60,6 +73,11 @@ export function useMaskTool(opts: {
   const shapeIndex = Math.max(0, Math.min(shapeAt, shapes.length - 1));
   const shape = shapes[shapeIndex]?.shape ?? null;
   const crop: CropRect = recipe?.geometry?.crop ?? FULL_CROP;
+  // The generated mask being made (ADR 0074), which takes a second or so.
+  const [finding, setFinding] = useState<GeneratedKind | null>(null);
+  // The latest recipe and photo, for edits that finish after an await.
+  const latest = useRef({ recipe, imageId });
+  latest.current = { recipe, imageId };
 
   // Another photo: leave mask mode.
   useEffect(() => {
@@ -89,12 +107,37 @@ export function useMaskTool(opts: {
     setActiveId(id);
   };
 
+  /** A `kind` mask of this photo, made now; null (and said why) when there is none. */
+  const generate = async (kind: GeneratedKind): Promise<MaskShape | null> => {
+    if (imageId === null || finding) return null;
+    setFinding(kind);
+    try {
+      const made = await generateMask(imageId, kind);
+      if (latest.current.imageId !== imageId) return null;
+      if (!made) notify(NONE_FOUND[kind]);
+      return made ? generatedShape(kind, made.name) : null;
+    } catch (e) {
+      if (!isCancellation(e)) notify(`The ${MASK_KINDS[kind].label.toLowerCase()} mask could not be made: ${errorMessage(e)}`);
+      return null;
+    } finally {
+      setFinding(null);
+    }
+  };
+  /** A new shape of `kind`: drawn ones at once, generated ones once made. */
+  const shapeOf = async (kind: ShapeLook): Promise<MaskShape | null> =>
+    isGenerated(kind) ? generate(kind) : newShape(kind, crop);
+
+  useUpdateMasks({ recipe, imageId, generatable, latest, onChange, notify });
+
   return {
     open,
     masks,
     active,
     overlay,
     crop,
+    /** The photo, and the frame its masks are drawn in, for generated masks' tints. */
+    imageId,
+    geometry: recipe?.geometry ?? null,
     enter: () => {
       setOpen(true);
       if (activeId === null) setActiveId(masks[0]?.id ?? null);
@@ -104,11 +147,27 @@ export function useMaskTool(opts: {
       pickMask(id);
       setOpen(true);
     },
-    add: (kind: MaskKind) => {
-      const m = newMask(kind, masks, crop);
-      commit([...masks, m]);
-      pickMask(m.id);
-      setOpen(true);
+    /** The kinds that can be added here (ADR 0074: generated ones where this
+     *  computer makes them), and the one being made. */
+    addable: addableKinds(generatable),
+    finding,
+    add: (kind: ShapeLook) => {
+      if (!isGenerated(kind)) {
+        const m = newMask(kind, masks, crop);
+        commit([...masks, m]);
+        pickMask(m.id);
+        setOpen(true);
+        return;
+      }
+      void generate(kind).then((shape) => {
+        const r = latest.current.recipe;
+        if (!shape || !r) return;
+        const now = masksOf(r);
+        const m = maskOf(shape, now);
+        onChange(withMasks(r, [...now, m]));
+        pickMask(m.id);
+        setOpen(true);
+      });
     },
     remove: (id: number) => commit(masks.filter((m) => m.id !== id)),
     /** The active mask's shapes (ADR 0043), and which is being edited. */
@@ -120,11 +179,17 @@ export function useMaskTool(opts: {
       setOpen(true);
     },
     /** Another shape of `kind` in the active mask, combined as `mode`; edited next. */
-    addShape: (mode: Combine, kind: MaskKind) => {
+    addShape: (mode: Combine, kind: ShapeLook) => {
       if (!active) return;
-      changeActive((m) => addShape(m, mode, newShape(kind, crop)));
-      setShapeAt(shapes.length);
-      setOpen(true);
+      const id = active.id;
+      void shapeOf(kind).then((shape) => {
+        const r = latest.current.recipe;
+        const m = r && masksOf(r).find((x) => x.id === id);
+        if (!shape || !r || !m) return;
+        onChange(withMasks(r, updateMask(masksOf(r), id, (x) => addShape(x, mode, shape))));
+        setShapeAt(shapesOf(m).length);
+        setOpen(true);
+      });
     },
     removeShape: (i: number) => {
       changeActive((m) => removeShape(m, i));
@@ -154,6 +219,73 @@ export function useMaskTool(opts: {
 }
 
 export type MaskTool = ReturnType<typeof useMaskTool>;
+
+/**
+ * "Update masks" (ADR 0074): the generated masks an edit names that this photo can't
+ * use (made on another computer, their files gone, or made from another photo, as a
+ * pasted edit's are) are made again from this photo, and the edit renamed to them.
+ * Checked when the photo opens and whenever the edit names other generated masks;
+ * each set of names once per photo.
+ */
+function useUpdateMasks(opts: {
+  recipe: EditRecipe | null;
+  imageId: number | null;
+  generatable: readonly GeneratedKind[];
+  latest: RefObject<{ recipe: EditRecipe | null; imageId: number | null }>;
+  onChange: (r: EditRecipe, label?: string) => void;
+  notify: (message: string) => void;
+}) {
+  const { recipe, imageId, generatable, latest, onChange, notify } = opts;
+  const named = recipe ? generatedIn(recipe) : [];
+  const key = imageId === null ? "" : `${imageId}:${named.map((n) => n.name).join(",")}`;
+  const checked = useRef(new Set<string>());
+  useEffect(() => {
+    checked.current.clear();
+  }, [imageId]);
+  useEffect(() => {
+    if (imageId === null || !recipe || named.length === 0 || checked.current.has(key)) return;
+    checked.current.add(key);
+    let stale = false;
+    void (async () => {
+      const missing = new Set(await missingMasks(imageId, recipe).catch(() => [] as string[]));
+      const toMake = named.filter((n) => missing.has(n.name));
+      if (toMake.length === 0 || stale) return;
+      const renamed = new Map<string, string>();
+      const notes: string[] = [];
+      for (const kind of new Set(toMake.map((n) => n.kind))) {
+        const label = MASK_KINDS[kind].label;
+        if (!generatable.includes(kind)) {
+          notes.push(`${label} masks can't be made on this computer; that mask adjusts nothing`);
+          continue;
+        }
+        const made = await generateMask(imageId, kind).catch(() => null);
+        if (stale || latest.current?.imageId !== imageId) return;
+        if (!made) {
+          notes.push(`${NONE_FOUND[kind]}; its ${label.toLowerCase()} mask adjusts nothing`);
+          continue;
+        }
+        for (const n of toMake) if (n.kind === kind) renamed.set(n.name, made.name);
+      }
+      const now = latest.current?.recipe;
+      if (renamed.size > 0 && now) {
+        // A mask made again the same (its file was gone) keeps its name: no edit.
+        const changed = new Map([...renamed].filter(([from, to]) => from !== to));
+        if (changed.size > 0) {
+          const next = renameGenerated(now, changed);
+          // Its new names are this photo's: checked already.
+          checked.current.add(`${imageId}:${generatedIn(next).map((n) => n.name).join(",")}`);
+          onChange(next, "Update masks");
+        }
+        notes.unshift(renamed.size === 1 ? "Mask updated for this photo" : `${renamed.size} masks updated for this photo`);
+      }
+      if (notes.length > 0) notify(notes.join(". "));
+    })();
+    return () => {
+      stale = true;
+    };
+    // `named` follows `key`; the recipe is read when the names change.
+  }, [key, imageId]);
+}
 
 /** Where the overlay draws: the shown picture's pixels, and the frame's diagonal in
  *  them (radial radii are fractions of it). */
@@ -186,14 +318,16 @@ export function MaskOverlay({ tool, size }: { tool: MaskTool; size: { width: num
   const key = `${mask.id}:${tool.shapeIndex}`;
   return (
     <div className="mask-overlay" ref={boxRef}>
-      {tool.overlay && !mask.hidden && <MaskTintCanvas mask={mask} crop={crop} boxRef={boxRef} />}
+      {tool.overlay && !mask.hidden && (
+        <MaskTintCanvas mask={mask} crop={crop} boxRef={boxRef} imageId={tool.imageId} geometry={tool.geometry} />
+      )}
       {shape.kind === "linear" ? (
         <LinearGuides key={key} {...props} shape={shape} />
       ) : shape.kind === "radial" ? (
         <RadialGuides key={key} {...props} shape={shape} />
-      ) : (
+      ) : shape.kind === "brush" ? (
         <BrushGuides key={key} {...props} shape={shape} />
-      )}
+      ) : null}
     </div>
   );
 }
@@ -389,15 +523,22 @@ export function MaskToolbar({ tool, zoom }: { tool: MaskTool; zoom?: ReactNode }
           title={m.hidden ? "Hidden" : undefined}
           onClick={() => tool.pick(m.id)}
         >
-          <span className="mask-dot" style={{ background: MASK_KINDS[m.shape.kind].dot }} />
+          <span className="mask-dot" style={{ background: MASK_KINDS[lookOf(m.shape)].dot }} />
           {maskName(tool.masks, m)}
         </button>
       ))}
       {tool.masks.length > 0 && <span className="toolbar-divider" />}
       <span className="mask-add-label">Add</span>
-      {ADDABLE_KINDS.map((k) => (
-        <button key={k} className="mask-add" title={MASK_KINDS[k].hint} onClick={() => tool.add(k)}>
-          {MASK_KINDS[k].add}
+      {tool.addable.map((k) => (
+        <button
+          key={k}
+          className="mask-add"
+          title={MASK_KINDS[k].hint}
+          disabled={tool.finding !== null}
+          aria-busy={tool.finding === k}
+          onClick={() => tool.add(k)}
+        >
+          {tool.finding === k ? FINDING[k] : MASK_KINDS[k].add}
         </button>
       ))}
       <span className="toolbar-divider" />

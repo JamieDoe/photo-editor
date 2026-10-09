@@ -21,6 +21,9 @@ pub struct EngineConfig {
     pub thumbnail_cache_dir: Option<PathBuf>,
     /// Byte budget of the thumbnail cache on disk.
     pub thumbnail_cache_bytes: u64,
+    /// Where generated masks are kept (ADR 0074). `None` keeps them in memory only, for
+    /// as long as the engine runs.
+    pub mask_dir: Option<PathBuf>,
     pub jobs: JobSystemConfig,
 }
 
@@ -35,6 +38,7 @@ impl Default for EngineConfig {
             thumbnail_cache_dir: None,
             // ~20,000 thumbnails at ~50 KB each.
             thumbnail_cache_bytes: 1024 * 1024 * 1024,
+            mask_dir: None,
             jobs: JobSystemConfig::default(),
         }
     }

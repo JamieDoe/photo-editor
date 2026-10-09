@@ -11,6 +11,7 @@ mod engine;
 mod error;
 mod library;
 mod lightroom;
+mod mask_store;
 mod presets;
 mod previews;
 mod session;
@@ -28,7 +29,7 @@ pub use catalogue::{
 pub use catalogue::{SCHEMA_VERSION, schema_version_of};
 pub use config::EngineConfig;
 pub use edits::{SavedEdit, load_edit, paste_onto, save_edit};
-pub use engine::{Engine, judgements};
+pub use engine::{Engine, generated_kind, judgements, mask_kind};
 pub use error::{EngineError, ErrorKind};
 pub use library::{IndexProgress, IndexStage, IndexSummary};
 pub use presets::{

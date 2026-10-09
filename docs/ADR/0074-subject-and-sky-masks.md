@@ -194,6 +194,63 @@ Not yet verified: People on a photo with people. None of the fixtures has any, a
 downloading photos is deferred like the models. The first mask after launch takes
 about 4 s more while macOS loads the model.
 
+## Phase 1, part 2: masks in edits (2026-10-09)
+
+Built:
+- **The mask kind:** `MaskShape::Generated { of: Subject | People, mask }`. The
+  recipe names the mask; the coverage is in the mask store. Shapes combine with
+  Add, Subtract and Intersect like any other, and Density and Invert apply. The
+  name is sanitised to hexadecimal digits, so a recipe can't name a path. Recipe
+  version 27; older recipes have no generated masks and read unchanged.
+- **Coordinates:** the coverage is in the photo's own coordinates (as decoded,
+  oriented). The renderer maps each frame pixel back through the geometry
+  (`Mapping::source`), so crops, turns, straightening and perspective move the mask
+  with the photo. A turn leaves the recipe's shape alone.
+- **The mask store:** one 8-bit greyscale PNG per mask in the app's data folder
+  (`masks/`), at the size it was made (about 3000 px on the Z 6, 100–130 KB), written
+  atomically. The 8 most recent are held decoded. Self-tests use a temporary folder.
+- **Names belong to a photo.** A name is the photo's content fingerprint (ADR 0012),
+  then a 128-bit hash of the generator and the pixels: 48 hexadecimal digits. A
+  mask whose name doesn't start with the photo's fingerprint is treated as missing.
+  So a pasted edit, a preset or a synced edit never uses another photo's subject.
+- **Update masks.** When a photo opens, and whenever the edit names other generated
+  masks (a paste, a preset, undo), the editor asks which the photo can't use
+  (`missing_masks`). It makes those again from this photo, renames them in the edit
+  (one undo step, "Update masks") and says so: "Mask updated for this photo". It also
+  says when the photo has no subject or nobody, or this computer can't make that kind.
+  Until then a missing mask adjusts nothing.
+- **Exports** of a photo that was never opened with the edit (a batch paste) make
+  missing masks from the photo as it exports, at the same size, under the edit's
+  names.
+- **The UI:** Subject and People first among the Add buttons (toolbar, Selective tiles,
+  and the card's Add and Subtract rows), only where this computer makes them. A button
+  says "Finding the subject…" while it works, and a toast says when there's none. The
+  tint comes from the engine (`mask_view`): the stored mask mapped over the shown
+  crop at up to 2048 px, as the renderer maps it, then scaled for zoom and pan. There
+  are no handles: a generated mask is edited by combining it with other shapes.
+- **Tests:**
+  - **Engine:** a stored mask adjusts what it covers, and nothing else.
+  - **Missing masks:** an unknown mask is reported and renders as if absent.
+  - **Pasted masks:** a mask from another photo is missing there, is made again for
+    it, and is made during an export.
+  - **Store:** round trip, a fresh store reads from disk, bad names, ownership.
+  - **Self-test:** a Subject mask on the Z 6, its effect against its view, and a
+    foreign mask reported missing.
+
+Differences from the proposal:
+- **Where masks are stored:** files beside the catalogue's data, not inside it. This
+  is how Lightroom stores them. It also keeps megabytes of pixels out of SQLite and its
+  backups.
+- **Key:** the photo's fingerprint plus a content hash, not the photo's identity plus
+  the generator and its version. The generator is part of the hash, and a content name
+  makes identical masks share one file.
+- **Size:** stored at the size it was made, not capped at 2048 px. Fast compression is
+  126 KB on the Z 6, against 106 KB for the best (3 ms to write, against 40 ms).
+
+Golden images with a fixed stored mask are still to come. The engine tests use
+Vision's masks of a synthetic subject, so they depend on the OS model. They skip on
+systems without one.
+
 ## Consequences (if accepted as proposed)
 
 - Subject and People arrive on macOS without adding a model, a runtime or a licence

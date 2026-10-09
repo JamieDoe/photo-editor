@@ -1,5 +1,6 @@
 import type { CropRect } from "../../ipc/generated/CropRect";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
+import type { GeneratedKind } from "../../ipc/generated/GeneratedKind";
 import type { Combine } from "../../ipc/generated/Combine";
 import type { LocalAdjustments } from "../../ipc/generated/LocalAdjustments";
 import type { Mask } from "../../ipc/generated/Mask";
@@ -12,17 +13,41 @@ import type { MaskShape } from "../../ipc/generated/MaskShape";
  */
 
 export type MaskKind = MaskShape["kind"];
+/** The shapes drawn on the photo. */
+export type DrawnKind = Exclude<MaskKind, "generated">;
+/** What a shape is to the photographer: one drawn, or what a generated mask covers
+ *  (ADR 0074). */
+export type ShapeLook = DrawnKind | GeneratedKind;
 export type Point = [number, number];
 
+export const lookOf = (shape: MaskShape): ShapeLook => (shape.kind === "generated" ? shape.of : shape.kind);
+export const isGenerated = (k: ShapeLook): k is GeneratedKind => k === "subject" || k === "people";
+
 /** How the design names each kind, and its colour dot. */
-export const MASK_KINDS: Record<MaskKind, { label: string; dot: string; add: string; hint: string }> = {
+export const MASK_KINDS: Record<ShapeLook, { label: string; dot: string; add: string; hint: string }> = {
+  subject: { label: "Subject", dot: "var(--mask-subject)", add: "Subject", hint: "Detect the main subject" },
+  people: { label: "People", dot: "var(--mask-people)", add: "People", hint: "Detect the people" },
   linear: { label: "Linear gradient", dot: "var(--mask-linear)", add: "Linear", hint: "Graduated filter" },
   radial: { label: "Radial gradient", dot: "var(--mask-radial)", add: "Radial", hint: "Radial filter" },
   brush: { label: "Brush", dot: "var(--mask-brush)", add: "Brush", hint: "Paint an area" },
 };
 
-/** The kinds that can be added, in the design's order. */
-export const ADDABLE_KINDS: readonly MaskKind[] = ["brush", "linear", "radial"];
+/** The kinds that can be added, in the design's order (Sky waits for ADR 0074's
+ *  phase 2). */
+export const ADDABLE_KINDS: readonly ShapeLook[] = ["subject", "people", "brush", "linear", "radial"];
+
+/** The kinds this computer can add: generated ones only where it can make them. */
+export function addableKinds(generated: readonly GeneratedKind[]): ShapeLook[] {
+  return ADDABLE_KINDS.filter((k) => !isGenerated(k) || generated.includes(k));
+}
+
+/** While a generated mask is being made: "Finding the subject…". */
+export const FINDING: Record<GeneratedKind, string> = { subject: "Finding the subject…", people: "Finding people…" };
+/** When the photo has none: "No subject found". */
+export const NONE_FOUND: Record<GeneratedKind, string> = {
+  subject: "No subject found in this photo",
+  people: "No people found in this photo",
+};
 
 /** The brush the next stroke is painted with (ADR 0042): its radius as a fraction of
  *  the frame's diagonal, its soft edge and flow (0..100), and whether it erases. */
@@ -53,8 +78,9 @@ export function withMasks(r: EditRecipe, masks: Mask[]): EditRecipe {
 
 /** The mask's name in lists: its kind, numbered when there are several of it. */
 export function maskName(masks: readonly Mask[], mask: Mask): string {
-  const same = masks.filter((m) => m.shape.kind === mask.shape.kind);
-  const label = MASK_KINDS[mask.shape.kind].label;
+  const look = lookOf(mask.shape);
+  const same = masks.filter((m) => lookOf(m.shape) === look);
+  const label = MASK_KINDS[look].label;
   return same.length > 1 ? `${label} ${same.indexOf(mask) + 1}` : label;
 }
 
@@ -77,7 +103,7 @@ const NO_ADJUSTMENTS: LocalAdjustments = { exposure: 0, warmth: 0, clarity: 0 };
  *  - radial: a circle in the middle, a little under half the short side across,
  *    fading over half its radius;
  *  - brush: nothing painted yet. */
-export function newShape(kind: MaskKind, crop: CropRect): MaskShape {
+export function newShape(kind: DrawnKind, crop: CropRect): MaskShape {
   switch (kind) {
     case "linear":
       return { kind: "linear", start: fromShown([0.5, 0.1], crop), end: fromShown([0.5, 0.55], crop) };
@@ -90,8 +116,39 @@ export function newShape(kind: MaskKind, crop: CropRect): MaskShape {
   }
 }
 
-export function newMask(kind: MaskKind, masks: readonly Mask[], crop: CropRect): Mask {
-  return { id: nextId(masks), shape: newShape(kind, crop), adjustments: { ...NO_ADJUSTMENTS } };
+export function newMask(kind: DrawnKind, masks: readonly Mask[], crop: CropRect): Mask {
+  return maskOf(newShape(kind, crop), masks);
+}
+
+/** A new mask of `shape`, adjusting nothing yet. */
+export function maskOf(shape: MaskShape, masks: readonly Mask[]): Mask {
+  return { id: nextId(masks), shape, adjustments: { ...NO_ADJUSTMENTS } };
+}
+
+/** A generated mask's shape (ADR 0074): `kind`, stored as `name`. */
+export const generatedShape = (kind: GeneratedKind, name: string): MaskShape => ({ kind: "generated", of: kind, mask: name });
+
+/** The generated masks `r` names, once each, with what each covers. */
+export function generatedIn(r: EditRecipe): Array<{ name: string; kind: GeneratedKind }> {
+  const found = new Map<string, GeneratedKind>();
+  for (const m of masksOf(r)) {
+    for (const { shape } of shapesOf(m)) if (shape.kind === "generated" && shape.mask) found.set(shape.mask, shape.of);
+  }
+  return [...found].map(([name, kind]) => ({ name, kind }));
+}
+
+/** `r` with generated masks renamed as `names` says (old name to new). */
+export function renameGenerated(r: EditRecipe, names: ReadonlyMap<string, string>): EditRecipe {
+  const rename = (shape: MaskShape): MaskShape =>
+    shape.kind === "generated" && names.has(shape.mask) ? { ...shape, mask: names.get(shape.mask)! } : shape;
+  return withMasks(
+    r,
+    masksOf(r).map((m) => ({
+      ...m,
+      shape: rename(m.shape),
+      ...(m.parts ? { parts: m.parts.map((p) => ({ ...p, shape: rename(p.shape) })) } : {}),
+    })),
+  );
 }
 
 /** How each way of combining a shape is named, and what it does. */
@@ -155,6 +212,9 @@ function mapShape(shape: MaskShape, f: (p: Point) => Point, turn: (angle: number
     case "brush":
       // Sizes are fractions of the diagonal, which turns leave alone.
       return { ...shape, strokes: shape.strokes.map((s) => ({ ...s, points: s.points.map(f) })) };
+    case "generated":
+      // Made in the photo's own coordinates (ADR 0074), so it turns with the photo.
+      return shape;
   }
 }
 

@@ -17,6 +17,8 @@ image-core.workspace = true
 raw = { path = "../raw", default-features = false }
 renderer.workspace = true
 ai.workspace = true
+platform.workspace = true
+png.workspace = true
 cache.workspace = true
 catalogue.workspace = true
 folders.workspace = true

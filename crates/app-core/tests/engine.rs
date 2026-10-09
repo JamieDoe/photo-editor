@@ -925,3 +925,158 @@ fn a_subject_mask_covers_the_subject() {
     assert!((0.04..0.2).contains(&c.share()), "share {}", c.share());
     assert!(mask.generator.contains("subject"), "{}", mask.generator);
 }
+
+#[test]
+fn a_generated_mask_adjusts_what_it_covers_and_a_missing_one_nothing() {
+    use renderer::masks::{GeneratedKind, LocalAdjustments, Mask, MaskShape};
+    let dir = fixtures::TempDir::new("engine-generated-mask");
+    let path = write(dir.path(), "subject.jpg", fixtures::subject_jpeg(900, 600));
+    let engine = Engine::new(EngineConfig {
+        preview_source_min_edge: 300,
+        mask_dir: Some(dir.path().join("masks")),
+        ..EngineConfig::default()
+    });
+    if !engine.mask_kinds().contains(&app_core::MaskKind::Subject) {
+        eprintln!("skipped: this computer makes no subject masks");
+        return;
+    }
+    let id = engine.open(&path).wait().unwrap().id;
+    let made = engine
+        .segment(id, app_core::MaskKind::Subject)
+        .wait()
+        .unwrap()
+        .expect("a subject");
+    let with_mask = |name: &str| EditRecipe {
+        masks: vec![Mask::new(
+            1,
+            MaskShape::Generated {
+                of: GeneratedKind::Subject,
+                mask: name.to_owned(),
+            },
+            LocalAdjustments {
+                exposure: 1.0,
+                ..Default::default()
+            },
+        )],
+        ..Default::default()
+    };
+    let luma_at = |f: &app_core::PreviewFrame, x: f32, y: f32| {
+        let (w, h) = (f.image.width() as usize, f.image.height() as usize);
+        let i = ((y * h as f32) as usize * w + (x * w as f32) as usize) * 4;
+        f.image.data()[i..i + 3]
+            .iter()
+            .map(|&v| u32::from(v))
+            .sum::<u32>()
+    };
+    let plain = preview(&engine, id, EditRecipe::default(), PreviewQuality::Detail);
+    let masked = preview(&engine, id, with_mask(&made.name), PreviewQuality::Detail);
+    assert!(engine.missing_masks(id, &with_mask(&made.name)).is_empty());
+    // Brighter on the subject, the same on the ground.
+    assert!(luma_at(&masked, 0.5, 0.5) > luma_at(&plain, 0.5, 0.5) + 30);
+    assert_eq!(luma_at(&masked, 0.05, 0.05), luma_at(&plain, 0.05, 0.05));
+    // A mask the store doesn't have: reported, and it changes nothing.
+    let unknown = "0123456789abcdef0123456789abcdef";
+    assert_eq!(
+        engine.missing_masks(id, &with_mask(unknown)),
+        vec![unknown.to_owned()]
+    );
+    let missing = preview(&engine, id, with_mask(unknown), PreviewQuality::Detail);
+    assert_eq!(missing.image.data(), plain.image.data());
+}
+
+#[test]
+fn a_mask_made_from_another_photo_is_made_again_for_this_one() {
+    use renderer::masks::{GeneratedKind, LocalAdjustments, Mask, MaskShape};
+    let dir = fixtures::TempDir::new("engine-pasted-mask");
+    let first = write(dir.path(), "first.jpg", fixtures::subject_jpeg(900, 600));
+    // The same subject, smaller, in another photo.
+    let second = write(dir.path(), "second.jpg", fixtures::subject_jpeg(600, 900));
+    let engine = Engine::new(EngineConfig {
+        preview_source_min_edge: 300,
+        mask_dir: Some(dir.path().join("masks")),
+        ..EngineConfig::default()
+    });
+    if !engine.mask_kinds().contains(&app_core::MaskKind::Subject) {
+        eprintln!("skipped: this computer makes no subject masks");
+        return;
+    }
+    let a = engine.open(&first).wait().unwrap().id;
+    let made = engine
+        .segment(a, app_core::MaskKind::Subject)
+        .wait()
+        .unwrap()
+        .expect("a subject");
+    // The first photo's edit pasted onto the second.
+    let pasted = EditRecipe {
+        masks: vec![Mask::new(
+            1,
+            MaskShape::Generated {
+                of: GeneratedKind::Subject,
+                mask: made.name.clone(),
+            },
+            LocalAdjustments {
+                exposure: 1.0,
+                ..Default::default()
+            },
+        )],
+        ..Default::default()
+    };
+    // In the viewer: missing, so it's remade, and it changes nothing until then.
+    let b = engine.open(&second).wait().unwrap().id;
+    assert_eq!(engine.missing_masks(b, &pasted), vec![made.name.clone()]);
+    let plain = preview(&engine, b, EditRecipe::default(), PreviewQuality::Detail);
+    let before = preview(&engine, b, pasted.clone(), PreviewQuality::Detail);
+    assert_eq!(before.image.data(), plain.image.data());
+    let remade = engine
+        .segment(b, app_core::MaskKind::Subject)
+        .wait()
+        .unwrap()
+        .expect("a subject");
+    assert_ne!(remade.name, made.name);
+    // Exported without being opened in the viewer: made from the photo as it exports.
+    let export = |recipe: EditRecipe, name: &str| {
+        let destination = dir.path().join(name);
+        engine
+            .export_file(
+                FileExport {
+                    source: second.clone(),
+                    recipe,
+                    destination: destination.clone(),
+                    format: ExportFormat::Png,
+                    sharpening: app_core::OutputSharpening::None,
+                    colour_space: app_core::ExportColourSpace::Srgb,
+                    metadata: app_core::MetadataChoice::All,
+                    judgements: Default::default(),
+                    watermark: None,
+                    long_edge: None,
+                },
+                |_| {},
+            )
+            .wait()
+            .unwrap();
+        let mut reader = png::Decoder::new(std::io::BufReader::new(
+            std::fs::File::open(destination).unwrap(),
+        ))
+        .read_info()
+        .unwrap();
+        let mut data = vec![0; reader.output_buffer_size().unwrap()];
+        let info = reader.next_frame(&mut data).unwrap();
+        let channels = info.color_type.samples();
+        move |x: f32, y: f32| {
+            let (w, h) = (info.width as usize, info.height as usize);
+            let i = ((y * h as f32) as usize * w + (x * w as f32) as usize) * channels;
+            data[i..i + 3].iter().map(|&v| u32::from(v)).sum::<u32>()
+        }
+    };
+    let plain = export(EditRecipe::default(), "plain.png");
+    let masked = export(pasted, "masked.png");
+    assert!(
+        masked(0.5, 0.5) > plain(0.5, 0.5) + 30,
+        "the subject brighter"
+    );
+    assert_eq!(
+        masked(0.05, 0.05),
+        plain(0.05, 0.05),
+        "the ground unchanged"
+    );
+}

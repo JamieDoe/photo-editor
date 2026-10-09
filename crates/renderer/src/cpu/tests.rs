@@ -37,6 +37,7 @@ fn reference(plan: &RenderPlan, img: &LinearImage) -> Vec<u8> {
         Stage::Local { masks } => Some(crate::masks::LocalField::new(
             masks,
             crate::masks::Frame::whole(w as u32, h as u32),
+            &plan.generated_masks,
         )),
         _ => None,
     });

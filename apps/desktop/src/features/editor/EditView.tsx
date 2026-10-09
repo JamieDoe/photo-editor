@@ -35,6 +35,10 @@ import type { Editor } from "./useEditor";
 import { Viewer } from "./Viewer";
 import { useZoom } from "./useZoom";
 import { zoomPercent } from "./zoom";
+import type { GeneratedKind } from "../../ipc/generated/GeneratedKind";
+
+/** Before the engine says which masks it can make: none. */
+const NO_KINDS: readonly GeneratedKind[] = [];
 
 interface Props {
   editor: Editor;
@@ -76,7 +80,13 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
     onChange: editor.setRecipe,
     setViewTransform: editor.setViewTransform,
   });
-  const masks = useMaskTool({ recipe, imageId: image?.id ?? null, onChange: editor.setRecipe });
+  const masks = useMaskTool({
+    recipe,
+    imageId: image?.id ?? null,
+    onChange: editor.setRecipe,
+    generatable: info?.maskKinds ?? NO_KINDS,
+    notify,
+  });
   const compare = useCompare();
   // The Retouch section open puts the photo in retouch mode (ADR 0054), unless
   // another tool takes it.

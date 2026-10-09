@@ -1091,3 +1091,16 @@ The first mask after launch takes about 4 s more while macOS loads its model (th
 engine test's 3.8–4.1 s). The times include rendering the picture. A level of at
 least 1536 px is the half-size base on some cameras (3032 px for the Z 6), so a smaller
 level would be quicker if Vision's masks prove no worse from it.
+
+Masks in edits (part 2), Nikon Z 6, release build, on the noisy machine:
+
+| Step | Time | Notes |
+|---|---|---|
+| Subject mask, model loaded | 65 ms | made again, to be stored |
+| Storing it (PNG, fast compression) | 3 ms | 126 KB (106 KB at the best compression, 40 ms) |
+| `mask_view` for the tint, 2048×1365 | 21 ms | the stored mask mapped through the geometry; once per mask, then scaled |
+| Self-test, Subject end to end | 438 ms | through IPC, including the render at 1536 px or more |
+| Render with the mask, +1 EV | 8.5 ms | the viewer's frame; same as without a mask, within noise |
+
+The self-test's +1 EV through the mask brightens covered areas by 40 levels on average
+and changes uncovered ones by 0.
