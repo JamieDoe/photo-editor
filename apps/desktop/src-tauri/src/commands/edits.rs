@@ -107,7 +107,9 @@ pub async fn paste_edits_to(
                 None => Err("It isn’t in a library folder.".to_owned()),
                 Some((file, root)) => library_photo(&catalogue, &file, &root)
                     .map_err(app_core::EngineError::from)
-                    .and_then(|photo| app_core::paste_onto(&catalogue, photo, &source, &groups))
+                    .and_then(|photo| {
+                        app_core::paste_onto(&catalogue, photo, &file, &source, &groups)
+                    })
                     .map_err(|e| {
                         log::warn!("paste onto {}: {}", file.display(), e.detail);
                         e.message

@@ -96,6 +96,37 @@ pub(crate) fn downsample_2x(src: &Rgb8) -> Rgb8 {
     }
 }
 
+/// `data` (three values a pixel, `w` × `h`) turned by a dcraw/LibRaw `flip` value (see
+/// [`orient_to_rgba`]): the pixels and their new size.
+pub(crate) fn orient<T: Copy + Send + Sync>(
+    data: &[T],
+    w: usize,
+    h: usize,
+    flip: i32,
+) -> (Vec<T>, usize, usize) {
+    use rayon::prelude::*;
+    if flip == 0 {
+        return (data.to_vec(), w, h);
+    }
+    let transpose = flip & 4 != 0;
+    let (ow, oh) = if transpose { (h, w) } else { (w, h) };
+    let mut out = data.to_vec();
+    out.par_chunks_mut(ow * 3).enumerate().for_each(|(r, row)| {
+        for (c, px) in row.as_chunks_mut::<3>().0.iter_mut().enumerate() {
+            let (mut sr, mut sc) = if transpose { (c, r) } else { (r, c) };
+            if flip & 2 != 0 {
+                sr = h - 1 - sr;
+            }
+            if flip & 1 != 0 {
+                sc = w - 1 - sc;
+            }
+            let s = (sr * w + sc) * 3;
+            *px = [data[s], data[s + 1], data[s + 2]];
+        }
+    });
+    (out, ow, oh)
+}
+
 /// Applies a dcraw/LibRaw `flip` value (bit 2: transpose, bit 1: flip rows, bit 0:
 /// flip columns; 3 = 180°, 5 = 90° CCW, 6 = 90° CW) and converts to opaque RGBA8.
 pub(crate) fn orient_to_rgba(src: &Rgb8, flip: i32) -> OutputImage {

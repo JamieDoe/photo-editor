@@ -29,7 +29,7 @@ pub use catalogue::{
 };
 pub use catalogue::{SCHEMA_VERSION, schema_version_of};
 pub use config::EngineConfig;
-pub use edits::{SavedEdit, load_edit, paste_onto, save_edit};
+pub use edits::{SavedEdit, load_edit, paste_onto, save_edit, upright_of};
 pub use engine::{Engine, generated_kind, judgements, mask_kind};
 pub use error::{EngineError, ErrorKind};
 pub use library::{IndexProgress, IndexStage, IndexSummary};

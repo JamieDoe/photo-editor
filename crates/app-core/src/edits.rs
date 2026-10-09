@@ -56,16 +56,30 @@ pub fn load_edit(catalogue: &Catalogue, photo: PhotoId) -> Result<SavedEdit, Eng
     Ok(SavedEdit::from_stored(catalogue.edit_of(photo)?.as_ref()))
 }
 
-/// Sets the settings of `groups` from `source` on `photo`'s saved edit (ADR 0049):
-/// pasting or syncing onto a photo that is not open. Returns whether the photo is now
-/// edited. A photo edited in a newer version is left alone.
+/// How the file at `path` is turned upright: its EXIF orientation (ADR 0078), read
+/// from its headers. Camera raw files are turned by their decoder and say so.
+pub fn upright_of(path: &std::path::Path) -> renderer::geometry::Turn {
+    raw::DecoderRegistry::default()
+        .read_metadata(path)
+        .map_or_else(
+            |_| Default::default(),
+            |m| renderer::geometry::Turn::from_exif(m.orientation),
+        )
+}
+
+/// Sets the settings of `groups` from `source` on the saved edit of `photo` (the file
+/// at `file`; ADR 0049): pasting or syncing onto a photo that is not open. Returns
+/// whether the photo is now edited. A photo edited in a newer version is left alone.
 pub fn paste_onto(
     catalogue: &Catalogue,
     photo: PhotoId,
+    file: &std::path::Path,
     source: &EditRecipe,
     groups: &[String],
 ) -> Result<bool, EngineError> {
     let base = match load_edit(catalogue, photo)? {
+        // An edit made on the file as stored, adapted to it upright first (ADR 0078).
+        SavedEdit::Recipe(r) if r.unoriented => r.on_upright(upright_of(file)),
         SavedEdit::Recipe(r) => *r,
         SavedEdit::None => EditRecipe::default(),
         SavedEdit::TooNew { version } => {
@@ -196,18 +210,43 @@ mod tests {
             ..Default::default()
         };
         let groups: Vec<String> = ["exposure", "light"].map(String::from).to_vec();
-        assert!(paste_onto(&cat, edited, &source, &groups).unwrap());
+        assert!(
+            paste_onto(
+                &cat,
+                edited,
+                std::path::Path::new("/p/a.nef"),
+                &source,
+                &groups
+            )
+            .unwrap()
+        );
         let got = load_edit(&cat, edited).unwrap().recipe().unwrap();
         assert_eq!((got.contrast, got.exposure), (30.0, 1.0));
         assert_eq!(got.geometry, own.geometry);
         // An unedited photo takes the pasted settings on the default look.
-        assert!(paste_onto(&cat, plain, &source, &groups).unwrap());
+        assert!(
+            paste_onto(
+                &cat,
+                plain,
+                std::path::Path::new("/p/b.nef"),
+                &source,
+                &groups
+            )
+            .unwrap()
+        );
         assert_eq!(
             load_edit(&cat, plain).unwrap().recipe().unwrap().contrast,
             30.0
         );
         // A photo edited in a newer version is left as it was.
-        let e = paste_onto(&cat, newer, &source, &groups).unwrap_err();
+        let e = paste_onto(
+            &cat,
+            newer,
+            std::path::Path::new("/p/c.nef"),
+            &source,
+            &groups,
+        )
+        .unwrap_err();
         assert_eq!(e.kind, ErrorKind::Unsupported);
         assert_eq!(
             cat.edit_of(newer).unwrap().unwrap().recipe_version,

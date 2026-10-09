@@ -1165,6 +1165,78 @@ fn photos_in_adobe_rgb_and_display_p3_keep_their_colours() {
     assert!(stored_difference > 3.0, "{stored_difference}");
 }
 
+/// `jpeg` with an EXIF APP1 segment recording Orientation `o`.
+fn with_orientation(jpeg: Vec<u8>, o: u16) -> Vec<u8> {
+    let mut tiff = b"II*\0".to_vec();
+    tiff.extend(8u32.to_le_bytes());
+    tiff.extend(1u16.to_le_bytes());
+    tiff.extend(0x0112u16.to_le_bytes());
+    tiff.extend(3u16.to_le_bytes());
+    tiff.extend(1u32.to_le_bytes());
+    tiff.extend(o.to_le_bytes());
+    tiff.extend([0, 0]);
+    tiff.extend(0u32.to_le_bytes());
+    let payload = [b"Exif\0\0".to_vec(), tiff].concat();
+    let mut out = jpeg[..2].to_vec();
+    out.extend([0xFF, 0xE1]);
+    out.extend(((payload.len() + 2) as u16).to_be_bytes());
+    out.extend(payload);
+    out.extend(&jpeg[2..]);
+    out
+}
+
+#[test]
+fn photos_open_upright_and_old_edits_keep_their_crop() {
+    let dir = fixtures::TempDir::new("engine-orientation");
+    // Stored 300 x 200, to be shown turned a quarter clockwise.
+    let path = write(
+        dir.path(),
+        "turned.jpg",
+        with_orientation(fixtures::chart_jpeg(300, 200, 95), 6),
+    );
+    let engine = engine();
+    let summary = engine.open(&path).wait().unwrap();
+    assert_eq!((summary.full_width, summary.full_height), (200, 300));
+    assert_eq!(
+        summary.upright,
+        renderer::geometry::Turn {
+            rotation: 1,
+            flip: false
+        }
+    );
+    // An edit from before version 30, made on the file as stored: its left half.
+    let old = EditRecipe::from_json(
+        r#"{"version":29,"exposure":0.3,"geometry":{"crop":{"x":0.0,"y":0.0,"w":0.5,"h":1.0}}}"#,
+    )
+    .unwrap();
+    assert!(old.unoriented);
+    let exported = engine
+        .export_file(
+            FileExport {
+                source: path.clone(),
+                recipe: old.clone(),
+                destination: dir.path().join("half.jpg"),
+                format: ExportFormat::Jpeg { quality: 90 },
+                sharpening: app_core::OutputSharpening::None,
+                colour_space: app_core::ExportColourSpace::Srgb,
+                metadata: app_core::MetadataChoice::All,
+                judgements: Default::default(),
+                watermark: None,
+                long_edge: None,
+            },
+            |_| {},
+        )
+        .wait()
+        .unwrap();
+    // The stored file's left half, as the edit was made: 150 x 200.
+    assert_eq!((exported.width, exported.height), (150, 200));
+    // In the editor it is adapted once, and is then a current recipe.
+    let adapted = old.on_upright(summary.upright);
+    assert!(!adapted.unoriented);
+    let view = preview(&engine, summary.id, adapted, PreviewQuality::Detail);
+    assert_eq!(view.image.width() * 4, view.image.height() * 3);
+}
+
 #[test]
 fn every_computer_finds_the_sky() {
     let dir = fixtures::TempDir::new("engine-sky");

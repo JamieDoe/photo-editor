@@ -100,6 +100,10 @@ pub struct SourceInfo {
     /// RAW). White balance adjustments are relative to it. Rendered images have none:
     /// their white is the display's (D65).
     pub as_shot_white: Option<image_core::Chromaticity>,
+    /// The EXIF Orientation (1 to 8) this decode turned the file upright by (ADR
+    /// 0078); 1 when it is shown as stored. Camera raw files are turned by LibRaw and
+    /// say 1.
+    pub orientation: u16,
 }
 
 #[derive(Debug, Clone)]

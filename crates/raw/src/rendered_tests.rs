@@ -364,3 +364,114 @@ fn the_registry_offers_png_and_tiff() {
         Some("tiff")
     );
 }
+
+/// EXIF (a little-endian TIFF) recording Orientation `o`.
+fn exif_orientation(o: u16) -> Vec<u8> {
+    let mut t = b"II*\0".to_vec();
+    t.extend(8u32.to_le_bytes());
+    t.extend(1u16.to_le_bytes());
+    t.extend(0x0112u16.to_le_bytes());
+    t.extend(3u16.to_le_bytes());
+    t.extend(1u32.to_le_bytes());
+    t.extend(o.to_le_bytes());
+    t.extend([0, 0]);
+    t.extend(0u32.to_le_bytes());
+    t
+}
+
+/// A 3 × 2 RGB PNG of distinct greys (10, 20, ..., 60 by rows), recording Orientation
+/// `o` in an `eXIf` chunk.
+fn oriented_png(o: u16) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut encoder = png::Encoder::new(&mut out, 3, 2);
+    encoder.set_color(png::ColorType::Rgb);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().unwrap();
+    writer
+        .write_chunk(png::chunk::ChunkType(*b"eXIf"), &exif_orientation(o))
+        .unwrap();
+    let data: Vec<u8> = (1..=6u8).flat_map(|v| [v * 10; 3]).collect();
+    writer.write_image_data(&data).unwrap();
+    writer.finish().unwrap();
+    out
+}
+
+/// Where a pixel of the upright picture comes from in the stored one, for each EXIF
+/// Orientation, as the EXIF standard defines them (`w`, `h`: the stored size).
+fn exif_source(o: u16, x: usize, y: usize, w: usize, h: usize) -> (usize, usize) {
+    match o {
+        2 => (w - 1 - x, y),
+        3 => (w - 1 - x, h - 1 - y),
+        4 => (x, h - 1 - y),
+        5 => (y, x),
+        6 => (y, h - 1 - x),
+        7 => (w - 1 - y, h - 1 - x),
+        8 => (w - 1 - y, x),
+        _ => (x, y),
+    }
+}
+
+#[test]
+fn every_exif_orientation_is_turned_upright() {
+    let dir = fixtures::TempDir::new("orientation");
+    let (w, h) = (3usize, 2usize);
+    for o in 1..=8u16 {
+        let path = write(dir.path(), &format!("o{o}.png"), &oriented_png(o));
+        let meta = PngDecoder.read_metadata(&path).unwrap();
+        assert_eq!(meta.orientation, o);
+        let d = PngDecoder.decode(&path, full(), &NeverCancel).unwrap();
+        let (dw, dh) = if o >= 5 { (h, w) } else { (w, h) };
+        assert_eq!(
+            (d.image.width() as usize, d.image.height() as usize),
+            (dw, dh),
+            "orientation {o}"
+        );
+        assert_eq!(
+            (d.info.full_width as usize, d.info.full_height as usize),
+            (dw, dh)
+        );
+        assert_eq!(d.info.orientation, o);
+        // The library's size agrees.
+        assert_eq!(
+            (meta.width, meta.height),
+            (Some(dw as u32), Some(dh as u32))
+        );
+        for y in 0..dh {
+            for x in 0..dw {
+                let (sx, sy) = exif_source(o, x, y, w, h);
+                let stored = ((sy * w + sx + 1) * 10) as u8;
+                assert_eq!(
+                    d.image.data()[(y * dw + x) * 3],
+                    linear8(stored),
+                    "orientation {o} at {x}, {y}"
+                );
+            }
+        }
+        // The thumbnail likewise.
+        let preview = PngDecoder
+            .display_preview(&path, 1, &NeverCancel)
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (
+                preview.embedded_width as usize,
+                preview.embedded_height as usize
+            ),
+            (dw, dh)
+        );
+    }
+    // Without an orientation: as stored.
+    let plain = write(
+        dir.path(),
+        "plain.png",
+        &png(3, 2, png::ColorType::Rgb, png::BitDepth::Eight, &[0; 18]),
+    );
+    assert_eq!(
+        PngDecoder
+            .decode(&plain, full(), &NeverCancel)
+            .unwrap()
+            .info
+            .orientation,
+        1
+    );
+}

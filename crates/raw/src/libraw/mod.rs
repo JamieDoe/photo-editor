@@ -81,6 +81,8 @@ impl Decoder for LibRawDecoder {
             width: (m.width > 0).then_some(m.width),
             height: (m.height > 0).then_some(m.height),
             rotation: rotation_from_flip(m.flip),
+            // LibRaw turns raw files itself; nothing for the decoder to turn.
+            orientation: 0,
             gps: (m.has_gps != 0 && (m.latitude != 0.0 || m.longitude != 0.0))
                 .then_some((m.latitude, m.longitude)),
         })
@@ -171,6 +173,7 @@ impl Decoder for LibRawDecoder {
                 aperture: positive(info.aperture),
                 focal_length_mm: positive(info.focal_length),
                 as_shot_white: image_core::Chromaticity::from_linear_srgb(info.as_shot_white),
+                orientation: 1,
             },
         })
     }

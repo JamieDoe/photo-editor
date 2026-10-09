@@ -19,6 +19,8 @@ pub(crate) struct OpenedImage {
     pub scene_ev: Option<f32>,
     /// The lens corrections the file records (ADR 0075), and the lens's name.
     pub lens: Option<(renderer::lens::LensCorrection, String)>,
+    /// How the decoder turned the file upright, from its EXIF orientation (ADR 0078).
+    pub upright: renderer::geometry::Turn,
     pub pyramid: Pyramid,
     /// The as-shot light, which white balance adjustments are relative to.
     pub as_shot_white: Option<image_core::Chromaticity>,
