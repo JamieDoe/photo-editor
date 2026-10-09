@@ -16,8 +16,8 @@ use crate::previews::PreviewCache;
 use crate::session::{OpenImages, OpenedImage};
 use crate::{
     EditRecipe, EmbeddedFrame, EngineConfig, EngineError, EngineInfo, ExportEstimate, ExportFormat,
-    ExportProgress, ExportRequest, ExportStage, ExportSummary, FileExport, ImageId, ImageSummary,
-    PreviewFrame, PreviewRequest, PreviewSlot, SourceIdentity,
+    ExportProgress, ExportRequest, ExportStage, ExportSummary, FileExport, GeneratedMask, ImageId,
+    ImageSummary, PreviewFrame, PreviewRequest, PreviewSlot, SourceIdentity,
 };
 
 /// Supersede key for the main viewer's preview renders: a new request cancels the
@@ -32,6 +32,9 @@ const RGBA_FORMAT_TAG: u8 = 0;
 /// Window renders (ADR 0070) are keyed apart from whole previews.
 const RGBA_WINDOW_FORMAT_TAG: u8 = 7;
 const INTERACTIVE_UNDERSAMPLE_PERCENT: u32 = 85;
+/// Generated masks (ADR 0074) are made from a picture about this many pixels long:
+/// Vision's models work at a lower size anyway, and soft edges are upscaled smoothly.
+pub const SEGMENT_LONG_EDGE: u32 = 1536;
 /// Auto tone's sample (ADR 0071): about this many pixels on its long side.
 pub const AUTO_TONE_SAMPLE_EDGE: u32 = 512;
 
@@ -53,6 +56,8 @@ pub(crate) struct Shared {
     images: Mutex<OpenImages>,
     previews: Mutex<PreviewCache>,
     next_image_id: AtomicU64,
+    /// The platform's mask generator (ADR 0074), if it has one.
+    segmenter: Option<Box<dyn ai::Segmenter>>,
 }
 
 impl Engine {
@@ -74,6 +79,7 @@ impl Engine {
             decoders,
             renderer: CpuRenderer,
             next_image_id: AtomicU64::new(1),
+            segmenter: ai::platform_segmenter(),
         });
         Self { shared, jobs }
     }
@@ -546,6 +552,92 @@ impl Engine {
             );
             *open.fill.lock().expect("fill lock") = Some((removals, Arc::new(fill)));
             Ok(())
+        })
+    }
+
+    /// The kinds of mask this computer can make from a photo (ADR 0074).
+    pub fn mask_kinds(&self) -> Vec<ai::MaskKind> {
+        let Some(segmenter) = &self.shared.segmenter else {
+            return Vec::new();
+        };
+        [ai::MaskKind::Subject, ai::MaskKind::People]
+            .into_iter()
+            .filter(|&k| segmenter.supports(k))
+            .collect()
+    }
+
+    /// A `kind` mask of the open photo (ADR 0074), or `None` when it has nothing of
+    /// the kind. Made from the photo as decoded (oriented, no edit, no crop) at about
+    /// [`SEGMENT_LONG_EDGE`] px, on the background lane: the system's model takes a
+    /// second or so. A newer request for the photo replaces one still running.
+    pub fn segment(
+        &self,
+        image: ImageId,
+        kind: ai::MaskKind,
+    ) -> JobHandle<Option<GeneratedMask>, EngineError> {
+        let Some(open) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        if self
+            .shared
+            .segmenter
+            .as_ref()
+            .is_none_or(|s| !s.supports(kind))
+        {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(
+                    ai::AiError::Unsupported(kind).into(),
+                )),
+            );
+        }
+        let level =
+            Arc::clone(&open.pyramid.levels()[open.pyramid.select_index(SEGMENT_LONG_EDGE)]);
+        let as_shot_white = open.as_shot_white;
+        let shared = Arc::clone(&self.shared);
+        let spec = JobSpec::new(Lane::Background, Priority::VisiblePreview, "segment")
+            .superseding(format!("segment-{}-{kind:?}", image.0));
+        self.jobs.submit(spec, move |token| {
+            let segmenter = shared
+                .segmenter
+                .as_ref()
+                .ok_or(ai::AiError::Unsupported(kind))?;
+            let t0 = Instant::now();
+            // The photo as it looks unedited: what the model was made for.
+            let plan = RenderPlan::from_recipe(&EditRecipe::default(), as_shot_white);
+            let picture = shared
+                .renderer
+                .render(&plan, &level, PixelFormat::Rgba8, token)?;
+            if token.is_cancelled() {
+                return Err(EngineError::cancelled());
+            }
+            let coverage = segmenter.segment(
+                ai::Picture {
+                    width: picture.width(),
+                    height: picture.height(),
+                    rgba: picture.data(),
+                },
+                kind,
+            )?;
+            let ms = ms(t0);
+            log::info!(
+                "{kind:?} mask of a {}x{} picture in {ms:.0} ms: {}",
+                picture.width(),
+                picture.height(),
+                coverage.as_ref().map_or("none".to_owned(), |c| format!(
+                    "{:.1} % covered",
+                    c.share() * 100.0
+                ))
+            );
+            Ok(coverage.map(|c| GeneratedMask {
+                kind,
+                generator: segmenter.generator(kind),
+                coverage: Arc::new(c),
+                ms,
+            }))
         })
     }
 

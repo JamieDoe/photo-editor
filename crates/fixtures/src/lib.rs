@@ -42,6 +42,26 @@ pub fn chart_jpeg(width: u16, height: u16, quality: u8) -> Vec<u8> {
     encode_jpeg(&rgb, width, height, quality)
 }
 
+/// A plain subject (a red disc, a third of the height across) on a grey ground, as an
+/// sRGB JPEG: for generated masks (ADR 0074).
+pub fn subject_jpeg(width: u16, height: u16) -> Vec<u8> {
+    let (w, h) = (f32::from(width), f32::from(height));
+    let data: Vec<u8> = (0..usize::from(width) * usize::from(height))
+        .flat_map(|i| {
+            let (x, y) = (
+                (i % usize::from(width)) as f32,
+                (i / usize::from(width)) as f32,
+            );
+            if (x - w / 2.0).hypot(y - h / 2.0) < h / 4.0 {
+                [230, 60, 40]
+            } else {
+                [128, 128, 128]
+            }
+        })
+        .collect();
+    encode_jpeg(&data, width, height, 95)
+}
+
 /// A single-colour sRGB JPEG.
 pub fn solid_jpeg(width: u16, height: u16, rgb: [u8; 3]) -> Vec<u8> {
     let data: Vec<u8> = (0..usize::from(width) * usize::from(height))

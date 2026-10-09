@@ -16,6 +16,7 @@ turbojpeg = ["raw/turbojpeg", "export/turbojpeg"]
 image-core.workspace = true
 raw = { path = "../raw", default-features = false }
 renderer.workspace = true
+ai.workspace = true
 cache.workspace = true
 catalogue.workspace = true
 folders.workspace = true

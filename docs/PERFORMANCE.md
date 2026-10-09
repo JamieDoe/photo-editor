@@ -1071,3 +1071,23 @@ white), measured on the half-size preview and the full resolution:
 
 It's measured on about 262,000 grid samples, and cached per source and gains, so
 dragging Whites or anything after it doesn't measure again.
+
+## 53. Generated masks (ADR 0074)
+
+`bench --segment`: Apple Vision on each camera file, as the engine makes the masks (the
+photo rendered unedited at the pyramid level of at least 1536 px, then segmented).
+The second run of each, the model already loaded:
+
+| File | Picture | Subject | People |
+|---|---|---|---|
+| Canon EOS R6 | 2748×1835 | 77 ms | none found |
+| Fujifilm X-T3 | 1561×1042 | 46 ms | none found |
+| Nikon Z 6 | 3032×2020 | 79 ms | none found |
+| Ricoh GR III | — | none found | none found |
+| Sony A7 III | — | none found | none found |
+| Sony A7R IV | — | none found | none found |
+
+The first mask after launch takes about 4 s more while macOS loads its model (the
+engine test's 3.8–4.1 s). The times include rendering the picture. A level of at
+least 1536 px is the half-size base on some cameras (3032 px for the Z 6), so a smaller
+level would be quicker if Vision's masks prove no worse from it.

@@ -16,6 +16,7 @@ mod look;
 mod measure;
 mod remove_bench;
 mod report;
+mod segment_bench;
 mod thumb_bench;
 
 use std::path::{Path, PathBuf};
@@ -50,6 +51,15 @@ fn main() {
             "--index-links" => index_links = it.next().and_then(|v| v.parse().ok()),
             "--thumbnails" => thumbnails = true,
             "--look" => look = true,
+            "--segment" => {
+                let out = it.next().map(PathBuf::from);
+                let result = segment_bench::run(&camera_files(), out.as_deref());
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&result).expect("serialisable result")
+                );
+                return;
+            }
             "--auto" => {
                 let out = it.next().map(PathBuf::from);
                 let result = auto_bench::run(&camera_files(), out.as_deref());

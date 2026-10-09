@@ -18,6 +18,7 @@ pub mod sidecars;
 mod thumbnails;
 mod types;
 
+pub use ai::{Coverage, MaskKind};
 pub use albums::{MAX_ALBUM_NAME, album_not_found, clean_album_name};
 pub use catalogue::{
     Album, AlbumId, BackupInfo, BackupKind, BackupStore, Catalogue, CatalogueError, Collection,
@@ -40,7 +41,8 @@ pub use thumbnails::{
 };
 pub use types::{
     EmbeddedFrame, EngineInfo, ExportEstimate, ExportProgress, ExportRequest, ExportStage,
-    ExportSummary, FileExport, ImageId, ImageSummary, PreviewFrame, PreviewRequest, PreviewSlot,
+    ExportSummary, FileExport, GeneratedMask, ImageId, ImageSummary, PreviewFrame, PreviewRequest,
+    PreviewSlot,
 };
 
 // Re-exported so shells depend on one crate for the engine API.

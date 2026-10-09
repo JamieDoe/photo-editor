@@ -902,3 +902,26 @@ fn auto_for_one_setting_follows_the_rest_of_the_edit() {
     let (plain, darkened) = (whites(0.0), whites(-2.0));
     assert!(plain < 0.0 && darkened > plain, "{plain} vs {darkened}");
 }
+
+#[test]
+fn a_subject_mask_covers_the_subject() {
+    let dir = fixtures::TempDir::new("engine-segment");
+    let path = write(dir.path(), "subject.jpg", fixtures::subject_jpeg(900, 600));
+    let engine = engine();
+    if !engine.mask_kinds().contains(&app_core::MaskKind::Subject) {
+        eprintln!("skipped: this computer makes no subject masks");
+        return;
+    }
+    let id = engine.open(&path).wait().unwrap().id;
+    let mask = engine
+        .segment(id, app_core::MaskKind::Subject)
+        .wait()
+        .unwrap()
+        .expect("a subject");
+    let c = &mask.coverage;
+    assert!(c.at(0.5, 0.5) > 0.5, "centre {}", c.at(0.5, 0.5));
+    assert!(c.at(0.05, 0.05) < 0.5, "corner {}", c.at(0.05, 0.05));
+    // The disc is a third of the height across: about 9 % of the picture.
+    assert!((0.04..0.2).contains(&c.share()), "share {}", c.share());
+    assert!(mask.generator.contains("subject"), "{}", mask.generator);
+}
