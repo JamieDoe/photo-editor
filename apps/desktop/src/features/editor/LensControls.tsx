@@ -5,6 +5,42 @@ import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 
 const SUBTITLE = "Cleans colour fringing on edges";
 
+/**
+ * The design's "Lens correction" switch (ADR 0075): the lens's own corrections,
+ * distortion and vignetting, from the profile the camera recorded in the file. On
+ * unless turned off; without a profile there is nothing to apply.
+ */
+export function LensCorrectionToggle({
+  recipe,
+  lens,
+  onChange,
+  disabled,
+}: {
+  recipe: EditRecipe;
+  /** The lens whose profile the photo's file has; null without one. */
+  lens: string | null;
+  onChange: (r: EditRecipe) => void;
+  disabled: boolean;
+}) {
+  const on = lens !== null && recipe.profileCorrections !== false;
+  return (
+    <button
+      className="lens-toggle"
+      aria-pressed={on}
+      disabled={disabled || lens === null}
+      onClick={() => onChange({ ...recipe, profileCorrections: on ? false : undefined })}
+    >
+      <span className="lens-toggle-text">
+        <span className="lens-toggle-label">Lens correction</span>
+        <span className="lens-toggle-sub">{lens === null ? "No lens profile in this photo’s file" : `${lens} · auto`}</span>
+      </span>
+      <span className="switch" aria-hidden="true">
+        <span className="switch-knob" />
+      </span>
+    </button>
+  );
+}
+
 /** How far red or blue moves at the corners of a `w` x `h` photo, in pixels. */
 export function largestShift(ca: ChromaticAberration, w: number, h: number): number {
   const r = 0.5 * Math.hypot(w, h);

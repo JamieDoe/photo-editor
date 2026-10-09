@@ -9,6 +9,7 @@ mod config;
 mod edits;
 mod engine;
 mod error;
+mod lens;
 mod library;
 mod lightroom;
 mod mask_store;

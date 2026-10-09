@@ -246,7 +246,7 @@ mockIPC((cmd, payload) => {
       return {
         path: openedPath,
         savedRecipe: mockEdits.get(openedPath) ?? null,
-        editSaving: cmd === "open_image_path" ? "library" : "notInLibrary", id: 1, fileName: "mock.nef", decoder: "libraw", cameraRaw: true, camera: "Mock Camera", iso: 100, aperture: 6.7, shutterSeconds: 1, focalLengthMm: 52, temperatureScale: { asShotKelvin: 5200, asShotTint: 6, miredPerUnit: 1.2, minKelvin: 1667, maxKelvin: 25000 }, fullWidth: 6000, fullHeight: 4000, levels: [[3000, 2000], [1500, 1000], [750, 500], [375, 250]], pyramidBytes: 0, identityMs: 0.5, decodeMs: 380, pyramidMs: 2, embeddedPreviewMs: 12 };
+        editSaving: cmd === "open_image_path" ? "library" : "notInLibrary", id: 1, fileName: "mock.nef", decoder: "libraw", cameraRaw: true, camera: "Mock Camera", iso: 100, aperture: 6.7, shutterSeconds: 1, focalLengthMm: 52, temperatureScale: { asShotKelvin: 5200, asShotTint: 6, miredPerUnit: 1.2, minKelvin: 1667, maxKelvin: 25000 }, fullWidth: 6000, fullHeight: 4000, levels: [[3000, 2000], [1500, 1000], [750, 500], [375, 250]], pyramidBytes: 0, identityMs: 0.5, decodeMs: 380, pyramidMs: 2, embeddedPreviewMs: 12, lensProfile: cmd === "open_image_path" ? "FE 24-70mm F4 ZA OSS" : null };
     case "render_preview": {
       const { request } = payload as { request: { window?: [number, number, number, number] } };
       const window = request.window;
@@ -336,7 +336,7 @@ mockIPC((cmd, payload) => {
     }
     case "mask_view": {
       // An upright soft ellipse in the middle of the frame.
-      const { crop, width, height } = payload as { crop: { x: number; y: number; w: number; h: number }; width: number; height: number };
+      const { crop, width, height } = (payload as { view: { crop: { x: number; y: number; w: number; h: number }; width: number; height: number } }).view;
       const out = new Uint8Array(width * height);
       for (let j = 0; j < height; j++) {
         for (let i = 0; i < width; i++) {

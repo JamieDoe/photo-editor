@@ -1734,7 +1734,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const plain = await show(base, "frame without the subject mask");
       const masked = await show(lit(made.name), "subject mask frame", plain);
       const n = 48;
-      const view = await ipc.maskView(id, null, made.name, { x: 0, y: 0, w: 1, h: 1 }, n, n).catch(() => new Uint8Array());
+      const view = await ipc.maskView(id, { name: made.name, geometry: null, profileCorrections: true, crop: { x: 0, y: 0, w: 1, h: 1 }, width: n, height: n }).catch(() => new Uint8Array());
       const missing = await ipc.missingMasks(id, lit(made.name)).catch(() => null);
       const foreign = await ipc.missingMasks(id, lit("0".repeat(48))).catch(() => null);
       // The Z 6 is a still life indoors: no sky, however white its curtain.

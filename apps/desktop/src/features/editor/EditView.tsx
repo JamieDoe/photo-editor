@@ -17,7 +17,7 @@ import { formatSliderValue } from "./sliderTrack";
 import { AdjustmentPanel } from "./AdjustmentPanel";
 import { CompareOverlay, useCompare } from "./Compare";
 import { CropOverlay, CropToolbar, GeometryControls, useCropTool } from "./CropTool";
-import { ChromaticAberrationToggle } from "./LensControls";
+import { ChromaticAberrationToggle, LensCorrectionToggle } from "./LensControls";
 import { Histogram } from "./Histogram";
 import { MaskOverlay, MaskToolbar, useMaskTool } from "./MaskTool";
 import { RetouchControls, RetouchOverlay, useRetouchTool } from "./RetouchTool";
@@ -496,15 +496,23 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
                 straighten={info.straighten}
                 perspective={info.perspective}
                 lens={{
-                  edited: recipe.chromaticAberration !== undefined,
+                  edited: recipe.chromaticAberration !== undefined || recipe.profileCorrections === false,
                   content: (
-                    <ChromaticAberrationToggle
-                      recipe={recipe}
-                      imageId={image?.id ?? null}
-                      size={fullSize}
-                      onChange={editor.setRecipe}
-                      disabled={!image}
-                    />
+                    <>
+                      <LensCorrectionToggle
+                        recipe={recipe}
+                        lens={image?.lensProfile ?? null}
+                        onChange={editor.setRecipe}
+                        disabled={!image}
+                      />
+                      <ChromaticAberrationToggle
+                        recipe={recipe}
+                        imageId={image?.id ?? null}
+                        size={fullSize}
+                        onChange={editor.setRecipe}
+                        disabled={!image}
+                      />
+                    </>
                   ),
                 }}
                 disabled={!image}

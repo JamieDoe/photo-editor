@@ -321,9 +321,26 @@ pub struct Frame {
     pub crop: CropRect,
     pub width: f32,
     pub height: f32,
-    /// How the frame came from the source, for generated masks (ADR 0074): the
-    /// geometry and the source's size. `None` when the frame is the source.
-    pub from_source: Option<(Geometry, f32, f32)>,
+    /// How the frame came from the source, for generated masks (ADR 0074) and lens
+    /// vignetting (ADR 0075). `None` when the frame is the source.
+    pub from_source: Option<SourceFrame>,
+}
+
+/// How a frame came from the source: its geometry, the source's size, and the lens
+/// correction (ADR 0075).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SourceFrame {
+    pub geometry: Geometry,
+    pub width: f32,
+    pub height: f32,
+    pub lens: Option<crate::lens::LensCorrection>,
+}
+
+impl SourceFrame {
+    /// Where frame points (fractions of the turned photo) come from in the source.
+    pub fn mapping(&self) -> Mapping {
+        Mapping::new(&self.geometry, self.width, self.height).with_lens(self.lens)
+    }
 }
 
 impl Frame {
@@ -363,7 +380,7 @@ pub enum CompiledShape {
     Generated {
         map: Option<Arc<brush::CoverageMap>>,
         frame: [f32; 2],
-        to_source: Option<(Mapping, [f32; 2])>,
+        to_source: Option<Box<(Mapping, [f32; 2])>>,
     },
 }
 
@@ -408,7 +425,7 @@ impl CompiledShape {
                 frame: [frame.width, frame.height],
                 to_source: frame
                     .from_source
-                    .map(|(g, w, h)| (Mapping::new(&g, w, h), [w, h])),
+                    .map(|s| Box::new((s.mapping(), [s.width, s.height]))),
             },
         }
     }
@@ -447,7 +464,7 @@ impl CompiledShape {
                 // The point as fractions of the source, then of the map (which covers
                 // the whole source).
                 let (u, v) = (x / frame[0], y / frame[1]);
-                let (u, v) = match to_source {
+                let (u, v) = match to_source.as_deref() {
                     None => (u, v),
                     Some((mapping, [w, h])) => {
                         let (sx, sy) = mapping.source(u, v);
@@ -1002,7 +1019,12 @@ mod tests {
             crop: CropRect::FULL,
             width: 200.0,
             height: 400.0,
-            from_source: Some((g, 400.0, 200.0)),
+            from_source: Some(SourceFrame {
+                geometry: g,
+                width: 400.0,
+                height: 200.0,
+                lens: None,
+            }),
         };
         let s = CompiledShape::new(&generated("ab12"), &frame, &masks);
         assert!(

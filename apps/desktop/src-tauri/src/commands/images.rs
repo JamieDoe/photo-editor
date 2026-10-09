@@ -238,27 +238,25 @@ pub fn missing_masks(
     state.engine.missing_masks(ImageId(image_id), &recipe)
 }
 
-/// Stored mask `name` over the shown part of the open photo (ADR 0074): `width` ×
-/// `height` bytes of coverage over `crop` of the frame `geometry` makes, for drawing
-/// its tint; empty when the mask isn't kept.
+/// A stored mask over the shown part of the open photo (ADR 0074): `width` ×
+/// `height` bytes of coverage over `crop` of the frame the request describes, for
+/// drawing its tint; empty when the mask isn't kept.
 #[tauri::command]
 pub async fn mask_view(
     state: State<'_, AppState>,
     image_id: u64,
-    geometry: Option<renderer::Geometry>,
-    name: String,
-    crop: renderer::CropRect,
-    width: u32,
-    height: u32,
+    view: crate::ipc::MaskViewRequestDto,
 ) -> IpcResult<Response> {
-    let view =
-        wait(
-            state
-                .engine
-                .mask_view(ImageId(image_id), geometry, &name, crop, (width, height)),
-        )
-        .await?;
-    Ok(Response::new(view.unwrap_or_default()))
+    let bytes = wait(state.engine.mask_view(
+        ImageId(image_id),
+        view.geometry,
+        view.profile_corrections,
+        &view.name,
+        view.crop,
+        (view.width, view.height),
+    ))
+    .await?;
+    Ok(Response::new(bytes.unwrap_or_default()))
 }
 
 /// Auto tone (ADR 0071): the open photo's tone sliders as a starting point, for the

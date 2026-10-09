@@ -37,6 +37,9 @@ pub struct ImageSummary {
     pub pyramid_ms: f64,
     /// Time to extract the embedded preview, if the file had one.
     pub embedded_preview_ms: Option<f64>,
+    /// The lens whose corrections the file has (ADR 0075), "FE 24-70mm F4 ZA OSS";
+    /// `None` without any.
+    pub lens_profile: Option<String>,
 }
 
 /// Camera-rendered preview extracted from the file before decoding (RGBA8, sRGB).

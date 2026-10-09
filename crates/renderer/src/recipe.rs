@@ -55,7 +55,14 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 27: adds generated masks (ADR 0074): Subject and People, named in the recipe and
 ///   kept in the mask store.
 /// - 28: adds Sky to generated masks (ADR 0074).
-pub const RECIPE_VERSION: u32 = 28;
+/// - 29: lens corrections from the photo's own profile (ADR 0075), on unless
+///   `profileCorrections` is false. Older recipes have them off, so they render as
+///   they did.
+pub const RECIPE_VERSION: u32 = 29;
+
+fn is_true(v: &bool) -> bool {
+    *v
+}
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -129,6 +136,11 @@ pub struct EditRecipe {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     pub chromatic_aberration: Option<crate::chromatic::ChromaticAberration>,
+    /// Lens corrections from the photo's own profile (ADR 0075), when it has one:
+    /// distortion and vignetting. On for new edits; written only when off.
+    #[serde(skip_serializing_if = "is_true")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
+    pub profile_corrections: bool,
     /// The tone curve's points, `[input, output]` display tones. `None` (and omitted
     /// from the JSON) while it is the diagonal.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -203,6 +215,7 @@ impl Default for EditRecipe {
             mixer: None,
             geometry: None,
             chromatic_aberration: None,
+            profile_corrections: true,
             point_curve: None,
             parametric_curve: None,
             colour_grading: None,
@@ -244,43 +257,46 @@ impl EditRecipe {
     pub fn from_json(json: &str) -> Result<Self, RecipeError> {
         let recipe: Self =
             serde_json::from_str(json).map_err(|e| RecipeError::Invalid(e.to_string()))?;
-        match recipe.version {
+        let read_as = recipe.version;
+        let migrated = match read_as {
             // Version 0 never shipped; treat a zero version as the first schema. Version
             // 1 had no tone curve: keep that look so old edits render as they did.
-            0 | 1 => Ok(Self {
-                version: RECIPE_VERSION,
+            0 | 1 => Self {
                 look: Look::Flat,
                 sharpening: 0.0,
                 ..recipe
-            }
-            .sanitized()),
+            },
             // Later fields are missing from older versions. They read as 0, which is
             // exact, except sharpening: its default is 40, so it is set to the 0 these
             // recipes rendered with.
-            2..=6 => Ok(Self {
-                version: RECIPE_VERSION,
+            2..=6 => Self {
                 sharpening: 0.0,
                 whites_from_sensor: recipe.whites != 0.0,
                 ..recipe
-            }
-            .sanitized()),
+            },
             // Whites (from version 3) acted near the sensor's white until version 26:
             // recipes that set it keep that (ADR 0073).
-            7..=25 => Ok(Self {
-                version: RECIPE_VERSION,
+            7..=25 => Self {
                 whites_from_sensor: recipe.whites != 0.0,
                 ..recipe
-            }
-            .sanitized()),
+            },
             // Generated masks (version 27) and Sky (28) are new; nothing older changes.
-            26 | 27 => Ok(Self {
-                version: RECIPE_VERSION,
-                ..recipe
-            }
-            .sanitized()),
-            28 => Ok(recipe.sanitized()),
-            v => Err(RecipeError::UnsupportedVersion(v)),
+            26..=RECIPE_VERSION => recipe,
+            v => return Err(RecipeError::UnsupportedVersion(v)),
+        };
+        let current = Self {
+            version: RECIPE_VERSION,
+            ..migrated
+        };
+        // Lens profiles (version 29) were not applied before: older edits keep that,
+        // unless they change nothing (no edit, like a photo never edited, which now
+        // has them).
+        let keeps_without = read_as < 29 && !current.is_identity();
+        Ok(Self {
+            profile_corrections: current.profile_corrections && !keeps_without,
+            ..current
         }
+        .sanitized())
     }
 
     pub fn to_json(&self) -> String {
@@ -318,6 +334,7 @@ impl EditRecipe {
                 .filter(|g| !g.is_identity()),
             // Kept while on, even if nothing was measured: the toggle stays on.
             chromatic_aberration: self.chromatic_aberration.map(|c| c.sanitized()),
+            profile_corrections: self.profile_corrections,
             point_curve: self.point_curve.filter(|c| !c.is_identity()),
             parametric_curve: self
                 .parametric_curve
@@ -400,6 +417,7 @@ impl EditRecipe {
             && s.mixer.is_none()
             && s.geometry.is_none()
             && s.chromatic_aberration.is_none()
+            && s.profile_corrections
             && s.point_curve.is_none()
             && s.parametric_curve.is_none()
             && s.colour_grading.is_none()
@@ -477,7 +495,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":28,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":29,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -498,14 +516,46 @@ mod tests {
     }
 
     #[test]
+    fn lens_profiles_apply_to_new_edits_and_not_to_older_ones() {
+        // An edit from before version 29 keeps rendering without them, and says so.
+        let old = EditRecipe::from_json(r#"{"version":28,"exposure":0.3}"#).unwrap();
+        assert!(!old.profile_corrections);
+        assert!(old.to_json().contains(r#""profileCorrections":false"#));
+        assert!(
+            !EditRecipe::from_json(&old.to_json())
+                .unwrap()
+                .profile_corrections
+        );
+        // New ones have them, unwritten.
+        // An older one that changes nothing is no edit, as a photo never edited.
+        assert!(
+            EditRecipe::from_json(r#"{"version":28}"#)
+                .unwrap()
+                .is_identity()
+        );
+        let new = EditRecipe::from_json(r#"{"version":29,"exposure":0.3}"#).unwrap();
+        assert!(new.profile_corrections && !new.to_json().contains("profileCorrections"));
+        assert!(EditRecipe::default().profile_corrections);
+        assert!(EditRecipe::default().is_identity());
+        assert!(
+            !EditRecipe {
+                profile_corrections: false,
+                ..Default::default()
+            }
+            .is_identity()
+        );
+    }
+
+    #[test]
     fn missing_fields_take_defaults() {
         let r = EditRecipe::from_json(r#"{"version":2,"exposure":1.0}"#).unwrap();
         assert_eq!(
             r,
             EditRecipe {
                 exposure: 1.0,
-                // Version 2 had no sharpening, and keeps none.
+                // Version 2 had no sharpening, and keeps none; nor lens profiles.
                 sharpening: 0.0,
+                profile_corrections: false,
                 ..Default::default()
             }
         );

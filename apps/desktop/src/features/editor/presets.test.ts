@@ -28,6 +28,12 @@ describe("presets", () => {
     expect("geometry" in r).toBe(false);
   });
 
+  it("keeps the photo's lens corrections, which belong to its lens", () => {
+    const off = applyPreset({ ...photo, profileCorrections: false }, { ...mono, recipe: { ...mono.recipe, profileCorrections: true } });
+    expect(off.profileCorrections).toBe(false);
+    expect("profileCorrections" in applyPreset(photo, mono)).toBe(false);
+  });
+
   it("knows when a photo has a preset's look", () => {
     const r = applyPreset(photo, mono);
     expect(hasLook(r, mono)).toBe(true);

@@ -91,7 +91,7 @@ export function isIdentity(r: EditRecipe): boolean {
 /** Whether the photo is cropped, straightened, perspective- or lens-corrected. */
 export function geometryEdited(r: EditRecipe): boolean {
   const g = r.geometry;
-  if (r.chromaticAberration !== undefined) return true;
+  if (r.chromaticAberration !== undefined || r.profileCorrections === false) return true;
   if (!g) return false;
   const { crop } = g;
   return (

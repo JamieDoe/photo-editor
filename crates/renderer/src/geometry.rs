@@ -10,6 +10,7 @@
 //! A crop is always kept inside the rotated photo ([`Geometry::effective_crop`]), so
 //! no empty corners can appear.
 
+use crate::lens::{LensAt, LensCorrection};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -238,6 +239,8 @@ pub struct Mapping {
     /// Camera rotation, row-major, and where it takes the centre; `None` without
     /// perspective.
     rotation_matrix: Option<([f32; 9], (f32, f32))>,
+    /// The lens's distortion, undone last (ADR 0075).
+    lens: Option<LensAt>,
 }
 
 impl Mapping {
@@ -267,6 +270,18 @@ impl Mapping {
             sin,
             focal: w.max(h),
             rotation_matrix: rotation,
+            lens: None,
+        }
+    }
+
+    /// The mapping, also undoing `lens`'s distortion (ADR 0075): source points are
+    /// where the lens put them on the sensor.
+    pub fn with_lens(self, lens: Option<LensCorrection>) -> Self {
+        Self {
+            lens: lens
+                .filter(LensCorrection::has_distortion)
+                .map(|l| l.at(self.w, self.h)),
+            ..self
         }
     }
 
@@ -286,7 +301,11 @@ impl Mapping {
                 ((x / z - cx) * self.focal, (y / z - cy) * self.focal)
             }
         };
-        self.unturned(self.vw / 2.0 + px, self.vh / 2.0 + py)
+        let (sx, sy) = self.unturned(self.vw / 2.0 + px, self.vh / 2.0 + py);
+        match &self.lens {
+            None => (sx, sy),
+            Some(lens) => lens.distorted(sx, sy),
+        }
     }
 
     /// A point of the turned photo in the source: each quarter turn clockwise undone
@@ -390,18 +409,25 @@ pub fn fit_crop(aspect: AspectRatio, straighten: f32, w: f32, h: f32) -> CropRec
 /// Without rotation, whole pixels are copied; with it, samples are bilinear, and
 /// points outside the photo (only possible within rounding of its edge) clamp to it.
 pub fn resample(source: &LinearImage, geometry: &Geometry) -> LinearImage {
-    resample_corrected(source, geometry, None)
+    resample_corrected(source, geometry, None, None)
 }
 
-/// [`resample`], also lining red and blue up with green where the lens spread them
-/// (ADR 0035). The scaling is about the source's centre (the lens's), before any
-/// crop, straighten or perspective.
+/// [`resample`], also undoing the lens's distortion (ADR 0075) and lining red and
+/// blue up with green where the lens spread them (ADR 0035). Both are about the
+/// source's centre (the lens's), before any crop, straighten or perspective.
 pub fn resample_corrected(
     source: &LinearImage,
     geometry: &Geometry,
     ca: Option<&ChromaticAberration>,
+    lens: Option<&LensCorrection>,
 ) -> LinearImage {
     let (w, h) = (source.width(), source.height());
+    let lens = lens.copied();
+    // Vignetting lifted here, divided by the headroom the plan multiplies back.
+    let vignetting = lens
+        .filter(LensCorrection::has_vignetting)
+        .map(|l| (l.at(w as f32, h as f32), 1.0 / l.headroom()));
+    let lens = lens.filter(LensCorrection::has_distortion);
     let (ow, oh) = geometry.output_size(w, h);
     let crop = geometry.effective_crop(w as f32, h as f32);
     let g = geometry.sanitized();
@@ -410,7 +436,13 @@ pub fn resample_corrected(
     let radial = ca
         .filter(|c| !c.is_identity())
         .map(|c| Radial::new(c, w as f32, h as f32));
-    if g.straighten == 0.0 && !g.has_perspective() && g.is_upright() && radial.is_none() {
+    if g.straighten == 0.0
+        && !g.has_perspective()
+        && g.is_upright()
+        && radial.is_none()
+        && lens.is_none()
+        && vignetting.is_none()
+    {
         let x0 = ((crop.x * w as f32).round() as u32).min(w - ow);
         let y0 = ((crop.y * h as f32).round() as u32).min(h - oh);
         data.par_chunks_mut(row_len)
@@ -420,7 +452,7 @@ pub fn resample_corrected(
                 out.copy_from_slice(&row[x0 as usize * 3..(x0 + ow) as usize * 3]);
             });
     } else {
-        let map = Mapping::new(&g, w as f32, h as f32);
+        let map = Mapping::new(&g, w as f32, h as f32).with_lens(lens);
         data.par_chunks_mut(row_len)
             .enumerate()
             .for_each(|(r, out)| {
@@ -439,6 +471,10 @@ pub fn resample_corrected(
                             ]
                         }
                     };
+                    if let Some((lens, scale)) = &vignetting {
+                        let g = lens.vignetting_gain(sx, sy) * scale;
+                        *px = px.map(|v| (f32::from(v) * g).round().min(65535.0) as u16);
+                    }
                 }
             });
     }
@@ -969,7 +1005,7 @@ mod tests {
             red: [0.004, 0.0],
             blue: [0.0, 0.0],
         };
-        let out = resample_corrected(&src, &Geometry::default(), Some(&ca));
+        let out = resample_corrected(&src, &Geometry::default(), Some(&ca), None);
         assert_eq!((out.width(), out.height()), (200, 100));
         let (o, s) = (out.data(), src.data());
         for i in (0..o.len()).step_by(3) {
@@ -985,6 +1021,7 @@ mod tests {
             &src,
             &Geometry::default(),
             Some(&ChromaticAberration::default()),
+            None,
         );
         assert_eq!(none.data(), src.data());
     }

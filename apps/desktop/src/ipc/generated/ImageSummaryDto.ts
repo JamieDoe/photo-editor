@@ -13,6 +13,10 @@ path: string, fileName: string, decoder: string, cameraRaw: boolean, camera: str
  */
 temperatureScale: TemperatureScale | null, fullWidth: number, fullHeight: number, levels: Array<[number, number]>, pyramidBytes: number, identityMs: number, decodeMs: number, pyramidMs: number, embeddedPreviewMs: number | null, 
 /**
+ * The lens whose corrections the file has (ADR 0075); null without any.
+ */
+lensProfile: string | null, 
+/**
  * The photo's saved edit, applied from the first render. Null if unedited.
  */
 savedRecipe: EditRecipe | null, 

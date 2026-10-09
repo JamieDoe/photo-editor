@@ -6,6 +6,7 @@
 
 mod error;
 mod jpeg;
+pub mod lens;
 #[cfg(feature = "libraw")]
 mod libraw;
 mod metadata;
