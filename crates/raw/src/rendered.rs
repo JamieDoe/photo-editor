@@ -1,14 +1,17 @@
-//! Rendered images other than JPEG (PNG, TIFF): their pixels as decoded, made into
-//! the linear image the renderer edits, or an 8-bit preview for thumbnails.
+//! Rendered images (JPEG, PNG, TIFF): their pixels as decoded, made into the linear
+//! image the renderer edits, or an 8-bit preview for thumbnails.
 //!
-//! Their values are display-encoded (assumed sRGB, as for JPEG), 8 or 16 bits a
-//! sample; 16-bit files keep their precision. Grey is made RGB and alpha is dropped
-//! (transparent areas show their colour, as the file stores it).
+//! Their values are display-encoded, 8 or 16 bits a sample; 16-bit files keep their
+//! precision. Grey is made RGB and alpha is dropped (transparent areas show their
+//! colour, as the file stores it). A file whose embedded ICC profile isn't sRGB
+//! (Adobe RGB, Display P3, ProPhoto) is converted from it (ADR 0077); without one,
+//! or with one that can't be read, it is taken as sRGB.
 
 use std::sync::OnceLock;
 
 use rayon::prelude::*;
 
+use image_core::icc::{self, Profile};
 use image_core::pyramid::downsample_2x;
 use image_core::{Cancellation, LinearImage, color};
 
@@ -31,6 +34,32 @@ pub(crate) struct Raster {
     pub height: u32,
     pub channels: usize,
     pub samples: Samples,
+    /// The profile its values are converted from; `None` for sRGB.
+    profile: Option<Profile>,
+}
+
+/// The profile in `icc` if pixels with `channels` samples should be converted from it:
+/// one that can be read, of their kind (RGB for colour, grey for grey), and not sRGB.
+pub(crate) fn profile_for(icc: Option<&[u8]>, channels: usize) -> Option<Profile> {
+    let profile = icc::parse(icc?).ok()?;
+    let matches = match profile.kind {
+        icc::Kind::Rgb => channels >= 3,
+        icc::Kind::Grey => channels < 3,
+    };
+    (matches && !profile.is_srgb()).then_some(profile)
+}
+
+/// `profile`'s curves as tables over `n` evenly spaced encoded values.
+fn curve_tables(profile: &Profile, n: usize) -> [Vec<f32>; 3] {
+    std::array::from_fn(|c| {
+        (0..n)
+            .map(|v| profile.linearise(c, v as f32 / (n - 1) as f32))
+            .collect()
+    })
+}
+
+fn quantise(rgb: [f32; 3]) -> [u16; 3] {
+    rgb.map(|v| (v.clamp(0.0, 1.0) * 65535.0).round() as u16)
 }
 
 /// 16-bit sRGB-encoded values to 16-bit linear ones.
@@ -66,7 +95,17 @@ impl Raster {
             height,
             channels,
             samples,
+            profile: None,
         })
+    }
+
+    /// The raster, converted from the profile in `icc` when it should be
+    /// ([`profile_for`]).
+    pub fn with_profile(self, icc: Option<&[u8]>) -> Self {
+        Self {
+            profile: profile_for(icc, self.channels),
+            ..self
+        }
     }
 
     /// Pixel `i`'s red, green and blue sample indices.
@@ -98,12 +137,26 @@ impl Raster {
 
     /// The linear image the renderer edits.
     pub fn to_linear(&self) -> Result<LinearImage, DecodeError> {
-        let data = match &self.samples {
-            Samples::U8(s) => {
+        let data = match (&self.samples, &self.profile) {
+            (Samples::U8(s), Some(p)) => {
+                let t = curve_tables(p, 256);
+                self.per_pixel(|i| {
+                    let [r, g, b] = self.rgb_of(i).map(|k| usize::from(s[k]));
+                    quantise(p.to_srgb([t[0][r], t[1][g], t[2][b]]))
+                })
+            }
+            (Samples::U16(s), Some(p)) => {
+                let t = curve_tables(p, 65536);
+                self.per_pixel(|i| {
+                    let [r, g, b] = self.rgb_of(i).map(|k| usize::from(s[k]));
+                    quantise(p.to_srgb([t[0][r], t[1][g], t[2][b]]))
+                })
+            }
+            (Samples::U8(s), None) => {
                 let table = color::srgb8_to_linear16_table();
                 self.per_pixel(|i| self.rgb_of(i).map(|k| table[usize::from(s[k])]))
             }
-            Samples::U16(s) => {
+            (Samples::U16(s), None) => {
                 let table = srgb16_to_linear16();
                 self.per_pixel(|i| self.rgb_of(i).map(|k| table[usize::from(s[k])]))
             }
@@ -167,9 +220,32 @@ pub(crate) fn preview_of(raster: &Raster, min_long_edge: u32) -> EmbeddedPreview
     while rgb.width.max(rgb.height) / 2 >= min_long_edge.max(1) {
         rgb = preview::downsample_2x(&rgb);
     }
+    if let Some(p) = &raster.profile {
+        to_srgb8(&mut rgb, p);
+    }
     EmbeddedPreview {
         image: preview::orient_to_rgba(&rgb, 0),
         embedded_width: raster.width,
         embedded_height: raster.height,
     }
+}
+
+/// An 8-bit preview in `profile`'s space made sRGB, as the editor shows it (reduced
+/// first, so this is cheap).
+pub(crate) fn to_srgb8(rgb: &mut Rgb8, profile: &Profile) {
+    const STEPS: usize = 4096;
+    static ENCODE: OnceLock<Vec<u8>> = OnceLock::new();
+    let encode = ENCODE.get_or_init(|| {
+        (0..=STEPS)
+            .map(|i| (color::linear_to_srgb(i as f32 / STEPS as f32) * 255.0).round() as u8)
+            .collect()
+    });
+    let t = curve_tables(profile, 256);
+    rgb.data.par_chunks_mut(3 * 1024).for_each(|chunk| {
+        for px in chunk.as_chunks_mut::<3>().0 {
+            let [r, g, b] = px.map(usize::from);
+            let s = profile.to_srgb([t[0][r], t[1][g], t[2][b]]);
+            *px = s.map(|v| encode[(v.clamp(0.0, 1.0) * STEPS as f32).round() as usize]);
+        }
+    });
 }

@@ -12,7 +12,8 @@ use crate::{DecodeError, DecodeOptions, DecodedImage, Decoder, EmbeddedPreview, 
 
 pub(crate) const EXTENSIONS: &[&str] = &["png"];
 
-/// Decodes PNG files (as sRGB, like JPEG; embedded colour profiles are not read yet).
+/// Decodes PNG files, converting from their embedded ICC profile (ADR 0077); without
+/// one they are taken as sRGB.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PngDecoder;
 
@@ -25,6 +26,11 @@ fn read(path: &Path) -> Result<Raster, DecodeError> {
     let mut decoder = png::Decoder::new(BufReader::new(File::open(path)?));
     decoder.set_transformations(png::Transformations::EXPAND);
     let mut reader = decoder.read_info().map_err(corrupt)?;
+    // An `sRGB` chunk says sRGB whatever else the file has.
+    let icc = match reader.info().srgb {
+        Some(_) => None,
+        None => reader.info().icc_profile.as_ref().map(|p| p.to_vec()),
+    };
     let size = reader
         .output_buffer_size()
         .ok_or_else(|| corrupt("image too large"))?;
@@ -42,7 +48,7 @@ fn read(path: &Path) -> Result<Raster, DecodeError> {
         ),
         _ => Samples::U8(buf),
     };
-    Raster::new(info.width, info.height, channels, samples)
+    Ok(Raster::new(info.width, info.height, channels, samples)?.with_profile(icc.as_deref()))
 }
 
 impl Decoder for PngDecoder {

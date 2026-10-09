@@ -1047,6 +1047,125 @@ fn tiff_and_png_exports_open_again() {
 }
 
 #[test]
+fn photos_in_adobe_rgb_and_display_p3_keep_their_colours() {
+    use app_core::ExportColourSpace;
+    let dir = fixtures::TempDir::new("engine-icc");
+    let source = write(dir.path(), "chart.jpg", fixtures::chart_jpeg(480, 320, 95));
+    let engine = engine();
+    let export = |format: ExportFormat, space: ExportColourSpace, name: &str| {
+        let destination = dir.path().join(name);
+        engine
+            .export_file(
+                FileExport {
+                    source: source.clone(),
+                    recipe: EditRecipe::default(),
+                    destination: destination.clone(),
+                    format,
+                    sharpening: app_core::OutputSharpening::None,
+                    colour_space: space,
+                    metadata: app_core::MetadataChoice::All,
+                    judgements: Default::default(),
+                    watermark: None,
+                    long_edge: None,
+                },
+                |_| {},
+            )
+            .wait()
+            .unwrap();
+        destination
+    };
+    let render = |path: &Path| {
+        let id = engine.open(path).wait().unwrap().id;
+        preview(&engine, id, EditRecipe::default(), PreviewQuality::Detail)
+    };
+    let mean_difference = |a: &app_core::PreviewFrame, b: &app_core::PreviewFrame| {
+        let (a, b) = (a.image.data(), b.image.data());
+        a.iter()
+            .zip(b)
+            .map(|(x, y)| f64::from(x.abs_diff(*y)))
+            .sum::<f64>()
+            / a.len() as f64
+    };
+    for (format, ext) in [
+        (ExportFormat::Jpeg { quality: 95 }, "jpg"),
+        (ExportFormat::Png, "png"),
+        (ExportFormat::Tiff, "tif"),
+    ] {
+        let srgb = render(&export(
+            format,
+            ExportColourSpace::Srgb,
+            &format!("srgb.{ext}"),
+        ));
+        for (space, name) in [
+            (ExportColourSpace::AdobeRgb, "adobe"),
+            (ExportColourSpace::DisplayP3, "p3"),
+        ] {
+            let path = export(format, space, &format!("{name}.{ext}"));
+            // Its stored values differ from the sRGB file's, but it opens with the
+            // same colours.
+            let wide = render(&path);
+            let difference = mean_difference(&wide, &srgb);
+            assert!(difference < 1.5, "{name}.{ext}: {difference:.2} levels off");
+        }
+    }
+    // Library thumbnails (made from the files themselves) agree too.
+    let thumbnail = |name: &str| {
+        let jpeg = engine
+            .thumbnail(dir.path().join(name).canonicalize().unwrap(), None)
+            .wait()
+            .unwrap()
+            .jpeg;
+        let path = write(dir.path(), &format!("thumb-{name}.jpg"), jpeg);
+        use raw::Decoder;
+        raw::JpegDecoder
+            .decode(
+                &path,
+                raw::DecodeOptions::new(raw::DecodeScale::Full),
+                &image_core::NeverCancel,
+            )
+            .unwrap()
+            .image
+    };
+    let reference = thumbnail("srgb.jpg");
+    for name in ["adobe.jpg", "p3.png", "adobe.tif"] {
+        let t = thumbnail(name);
+        let difference = t
+            .data()
+            .iter()
+            .zip(reference.data())
+            .map(|(x, y)| f64::from(x.abs_diff(*y)) / 257.0)
+            .sum::<f64>()
+            / t.data().len() as f64;
+        assert!(
+            difference < 2.0,
+            "thumbnail of {name}: {difference:.2} levels off"
+        );
+    }
+    // Read as sRGB instead, an Adobe RGB file's colours would be far off: the stored
+    // values themselves differ.
+    let stored = |path: &Path| {
+        let file = std::fs::File::open(path).unwrap();
+        let mut reader = png::Decoder::new(std::io::BufReader::new(file))
+            .read_info()
+            .unwrap();
+        let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+        reader.next_frame(&mut buf).unwrap();
+        buf
+    };
+    let (a, s) = (
+        stored(&dir.path().join("adobe.png")),
+        stored(&dir.path().join("srgb.png")),
+    );
+    let stored_difference = a
+        .iter()
+        .zip(&s)
+        .map(|(x, y)| f64::from(x.abs_diff(*y)))
+        .sum::<f64>()
+        / a.len() as f64;
+    assert!(stored_difference > 3.0, "{stored_difference}");
+}
+
+#[test]
 fn every_computer_finds_the_sky() {
     let dir = fixtures::TempDir::new("engine-sky");
     let sky = write(dir.path(), "sky.jpg", fixtures::sky_jpeg(900, 600));

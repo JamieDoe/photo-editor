@@ -1149,3 +1149,19 @@ TIFF metadata is read by seeking through its IFDs. The EXIF crate would read the
 file. Converting the samples to linear runs in parallel, which saves about 50 ms; the
 rest is decompression, on one thread. A thumbnail decodes the whole file.
 
+## 57. Embedded colour profiles (ADR 0077)
+
+A 6000×4000 colour chart exported by the app, release build, on the noisy machine
+(best of three):
+
+| File | Decode | Thumbnail (512 px) |
+|---|---|---|
+| TIFF 16-bit, sRGB | 201 ms | 231 ms |
+| TIFF 16-bit, Adobe RGB | 227 ms | 232 ms |
+| JPEG, sRGB | 45 ms | 18 ms |
+| JPEG, Display P3 | 75 ms | 18 ms |
+
+Conversion is per-channel tables and a matrix in parallel rows. A 16-bit file builds
+65,536-entry tables; an 8-bit one 256. Thumbnails convert the reduced preview, so
+they cost nothing measurable.
+

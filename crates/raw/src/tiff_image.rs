@@ -9,14 +9,15 @@ use std::path::Path;
 use image_core::Cancellation;
 use tiff::ColorType;
 use tiff::decoder::{Decoder as TiffReader, DecodingResult, Limits};
+use tiff::tags::Tag;
 
 use crate::rendered::{self, Raster, Samples};
 use crate::{DecodeError, DecodeOptions, DecodedImage, Decoder, EmbeddedPreview, PhotoMetadata};
 
 pub(crate) const EXTENSIONS: &[&str] = &["tif", "tiff"];
 
-/// Decodes TIFF images (as sRGB, like JPEG; embedded colour profiles are not read
-/// yet).
+/// Decodes TIFF images, converting from their embedded ICC profile (ADR 0077);
+/// without one they are taken as sRGB.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TiffDecoder;
 
@@ -44,12 +45,13 @@ fn read(path: &Path) -> Result<Raster, DecodeError> {
             )));
         }
     };
+    let icc = reader.get_tag_u8_vec(Tag::IccProfile).ok();
     let samples = match reader.read_image().map_err(corrupt)? {
         DecodingResult::U8(v) => Samples::U8(v),
         DecodingResult::U16(v) => Samples::U16(v),
         _ => return Err(DecodeError::Unsupported("TIFF sample format".into())),
     };
-    Raster::new(width, height, channels, samples)
+    Ok(Raster::new(width, height, channels, samples)?.with_profile(icc.as_deref()))
 }
 
 impl Decoder for TiffDecoder {

@@ -3,12 +3,13 @@
 use std::io::Cursor;
 use std::path::Path;
 
+use image_core::Cancellation;
 use image_core::pyramid::downsample_2x;
-use image_core::{Cancellation, LinearImage, color};
 use zune_jpeg::JpegDecoder as ZuneDecoder;
 use zune_jpeg::zune_core::colorspace::ColorSpace;
 use zune_jpeg::zune_core::options::DecoderOptions;
 
+use crate::rendered::{self, Raster, Samples};
 use crate::{
     DecodeError, DecodeOptions, DecodeScale, DecodedImage, Decoder, EmbeddedPreview, SourceInfo,
     SourceKind, preview,
@@ -16,10 +17,17 @@ use crate::{
 
 pub(crate) const EXTENSIONS: &[&str] = &["jpg", "jpeg"];
 
+/// The ICC profile a JPEG embeds, from its headers alone.
+fn embedded_profile(bytes: &[u8]) -> Option<Vec<u8>> {
+    let mut decoder = ZuneDecoder::new(Cursor::new(bytes));
+    decoder.decode_headers().ok()?;
+    decoder.icc_profile()
+}
+
 /// Decodes baseline/progressive JPEG and linearises its sRGB encoding.
 ///
-/// Limitations (Phase 0): EXIF orientation is ignored and embedded ICC profiles are
-/// assumed to be sRGB.
+/// Embedded ICC profiles that aren't sRGB are converted from (ADR 0077). EXIF
+/// orientation is ignored.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct JpegDecoder;
 
@@ -52,6 +60,9 @@ impl Decoder for JpegDecoder {
         let (mut rgb, (width, height)) = preview::decode_jpeg(&bytes, min_long_edge)?;
         while rgb.width.max(rgb.height) / 2 >= min_long_edge.max(1) {
             rgb = preview::downsample_2x(&rgb);
+        }
+        if let Some(profile) = rendered::profile_for(embedded_profile(&bytes).as_deref(), 3) {
+            rendered::to_srgb8(&mut rgb, &profile);
         }
         Ok(Some(EmbeddedPreview {
             image: preview::orient_to_rgba(&rgb, 0),
@@ -86,10 +97,11 @@ impl Decoder for JpegDecoder {
             return Err(DecodeError::Cancelled);
         }
 
-        let table = color::srgb8_to_linear16_table();
-        let linear: Vec<u16> = rgb8.iter().map(|&v| table[usize::from(v)]).collect();
-        let mut image = LinearImage::new(w, h, linear)
-            .map_err(|e| DecodeError::Corrupt(format!("unexpected JPEG buffer: {e}")))?;
+        // Through the embedded profile when it isn't sRGB (ADR 0077).
+        let icc = decoder.icc_profile();
+        let mut image = Raster::new(w, h, 3, Samples::U8(rgb8))?
+            .with_profile(icc.as_deref())
+            .to_linear()?;
 
         if let DecodeScale::AtLeast(min_edge) = options.scale {
             while image.long_edge() / 2 >= min_edge.max(1) {
