@@ -31,9 +31,9 @@ screenshots and exports.
      the colour the file stores.
    - **Not supported:** CMYK, palette and floating-point TIFFs. They are refused with
      a clear error.
-3. **Colour:** values are taken as sRGB, as for JPEG. Embedded ICC profiles are not
-   read yet, so an Adobe RGB or ProPhoto TIFF looks less saturated than it should.
-   Part 2 will read matrix/TRC profiles and convert from them, for JPEG too.
+3. **Colour:** values are taken as sRGB, as for JPEG, unless the file embeds another
+   profile. ADR 0077 converts from Adobe RGB, Display P3, ProPhoto and other
+   matrix/TRC profiles, for JPEG too.
 4. **Metadata** (camera, lens, ISO, aperture, shutter, focal length, capture time,
    orientation, GPS):
    - **TIFF:** read by seeking through its IFDs, a few kilobytes. The EXIF reader we
@@ -62,4 +62,5 @@ screenshots and exports.
   - **Thumbnails:** cost the same. That is acceptable in the background.
   - **Possible speed-ups:** using a TIFF's own embedded thumbnail, and decoding strips
     in parallel.
-- **Still to do:** ICC profiles (part 2); EXIF orientation, which JPEG ignores too.
+- **Still to do:** EXIF orientation, which JPEG ignores too. ICC profiles: done in ADR
+  0077.
