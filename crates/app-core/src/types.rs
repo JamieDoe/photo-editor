@@ -40,6 +40,9 @@ pub struct ImageSummary {
     /// The lens whose corrections the file has (ADR 0075), "FE 24-70mm F4 ZA OSS";
     /// `None` without any.
     pub lens_profile: Option<String>,
+    /// How the file was turned upright, from its EXIF orientation (ADR 0078): an edit
+    /// made on it as stored is adapted with it (`EditRecipe::on_upright`).
+    pub upright: renderer::geometry::Turn,
 }
 
 /// Camera-rendered preview extracted from the file before decoding (RGBA8, sRGB).

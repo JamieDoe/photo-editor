@@ -125,6 +125,12 @@ chromaticAberration?: ChromaticAberration,
  */
 profileCorrections?: boolean, 
 /**
+ * Made on the file as stored, before photos were shown upright by their EXIF
+ * orientation (recipes before version 30; ADR 0078). Written only when set;
+ * [`EditRecipe::on_upright`] adapts such a recipe and clears it.
+ */
+unoriented?: boolean, 
+/**
  * The tone curve's points, `[input, output]` display tones. `None` (and omitted
  * from the JSON) while it is the diagonal.
  */

@@ -24,6 +24,9 @@ pub struct PhotoMetadata {
     pub height: Option<u32>,
     /// Clockwise rotation needed to display the image upright: 0, 90, 180 or 270.
     pub rotation: u16,
+    /// The EXIF Orientation the file records (1 to 8; 0 when it records none):
+    /// rendered files are decoded turned upright by it (ADR 0078).
+    pub orientation: u16,
     /// Decimal degrees (north and east positive).
     pub gps: Option<(f64, f64)>,
 }
@@ -34,6 +37,20 @@ pub fn rotation_from_flip(flip: i32) -> u16 {
         3 => 180,
         5 => 270,
         6 => 90,
+        _ => 0,
+    }
+}
+
+/// The dcraw/LibRaw `flip` that turns a file upright for an EXIF Orientation value.
+pub fn flip_from_exif(orientation: u16) -> i32 {
+    match orientation {
+        2 => 1,
+        3 => 3,
+        4 => 2,
+        5 => 4,
+        6 => 6,
+        7 => 7,
+        8 => 5,
         _ => 0,
     }
 }
@@ -116,7 +133,8 @@ fn fill_from_exif(meta: &mut PhotoMetadata, exif: &exif::Exif) -> (Option<u32>, 
     meta.aperture = rational(Tag::FNumber);
     meta.shutter_seconds = rational(Tag::ExposureTime);
     meta.focal_length_mm = rational(Tag::FocalLength);
-    meta.rotation = uint(Tag::Orientation).map_or(0, rotation_from_exif);
+    meta.orientation = uint(Tag::Orientation).map_or(0, |o| o.min(8) as u16);
+    meta.rotation = rotation_from_exif(u32::from(meta.orientation));
     meta.gps = gps(exif);
     (uint(Tag::PixelXDimension), uint(Tag::PixelYDimension))
 }
@@ -167,7 +185,10 @@ pub(crate) fn read_tiff(path: &Path) -> Result<PhotoMetadata, DecodeError> {
             0x0101 => height = tiff.unsigned(&mut file, e),
             0x010f => meta.camera_make = tiff.text(&mut file, e),
             0x0110 => meta.camera_model = tiff.text(&mut file, e),
-            0x0112 => meta.rotation = tiff.unsigned(&mut file, e).map_or(0, rotation_from_exif),
+            0x0112 => {
+                meta.orientation = tiff.unsigned(&mut file, e).map_or(0, |o| o.min(8) as u16);
+                meta.rotation = rotation_from_exif(u32::from(meta.orientation));
+            }
             0x0132 => meta.captured_at = tiff.text(&mut file, e).and_then(|d| exif_date(&d)),
             0x8769 => exif_ifd = tiff.unsigned(&mut file, e),
             0x8825 => gps_ifd = tiff.unsigned(&mut file, e),

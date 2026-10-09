@@ -212,6 +212,87 @@ fn scaled_about_centre(c: &CropRect, s: f32) -> CropRect {
     }
 }
 
+/// A whole photo mirrored and turned, as [`Geometry`]'s `flip` and `rotation` do it:
+/// mirrored left to right first, then turned `rotation` quarter turns clockwise. EXIF
+/// orientations are turns too (ADR 0078).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Turn {
+    pub rotation: u8,
+    pub flip: bool,
+}
+
+impl Turn {
+    /// The turn that shows a file recording EXIF Orientation `orientation` (1 to 8)
+    /// upright.
+    pub fn from_exif(orientation: u16) -> Self {
+        let (rotation, flip) = match orientation {
+            2 => (0, true),
+            3 => (2, false),
+            4 => (2, true),
+            5 => (3, true),
+            6 => (1, false),
+            7 => (1, true),
+            8 => (3, false),
+            _ => (0, false),
+        };
+        Self { rotation, flip }
+    }
+
+    pub fn is_identity(self) -> bool {
+        self.rotation.is_multiple_of(4) && !self.flip
+    }
+
+    /// Its action on points about the centre (y down): a quarter turn clockwise takes
+    /// (x, y) to (-y, x), the mirror (x, y) to (-x, y).
+    fn matrix(self) -> [[i32; 2]; 2] {
+        let mut m = if self.flip {
+            [[-1, 0], [0, 1]]
+        } else {
+            [[1, 0], [0, 1]]
+        };
+        for _ in 0..self.rotation % 4 {
+            m = [[-m[1][0], -m[1][1]], [m[0][0], m[0][1]]];
+        }
+        m
+    }
+
+    fn from_matrix(m: [[i32; 2]; 2]) -> Self {
+        (0..8)
+            .map(|i| Self {
+                rotation: i % 4,
+                flip: i >= 4,
+            })
+            .find(|t| t.matrix() == m)
+            .expect("every 2x2 signed permutation is a turn")
+    }
+
+    /// This turn after `first`: the one turn doing both.
+    pub fn after(self, first: Self) -> Self {
+        let (a, b) = (self.matrix(), first.matrix());
+        Self::from_matrix(std::array::from_fn(|r| {
+            std::array::from_fn(|c| a[r][0] * b[0][c] + a[r][1] * b[1][c])
+        }))
+    }
+
+    /// The turn undoing it.
+    pub fn inverse(self) -> Self {
+        let m = self.matrix();
+        // A signed permutation's inverse is its transpose.
+        Self::from_matrix([[m[0][0], m[1][0]], [m[0][1], m[1][1]]])
+    }
+
+    /// Where point `p` (fractions of the photo's width and height) is once the photo
+    /// is turned.
+    pub fn point(self, p: [f32; 2]) -> [f32; 2] {
+        let m = self.matrix();
+        let (u, v) = (p[0] - 0.5, p[1] - 0.5);
+        [
+            0.5 + m[0][0] as f32 * u + m[0][1] as f32 * v,
+            0.5 + m[1][0] as f32 * u + m[1][1] as f32 * v,
+        ]
+    }
+}
+
 /// Perspective at ±100: the virtual camera turns this many degrees.
 const MAX_PERSPECTIVE_DEGREES: f32 = 20.0;
 

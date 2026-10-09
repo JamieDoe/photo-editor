@@ -179,7 +179,24 @@ impl Raster {
     }
 }
 
-/// `raster` decoded for editing, reduced towards the scale asked for.
+/// `image` turned upright by EXIF Orientation `orientation` (ADR 0078).
+pub(crate) fn upright(image: LinearImage, orientation: u16) -> Result<LinearImage, DecodeError> {
+    let flip = crate::metadata::flip_from_exif(orientation);
+    if flip == 0 {
+        return Ok(image);
+    }
+    let (data, w, h) = preview::orient(
+        image.data(),
+        image.width() as usize,
+        image.height() as usize,
+        flip,
+    );
+    LinearImage::new(w as u32, h as u32, data)
+        .map_err(|e| DecodeError::Internal(format!("turning upright: {e}")))
+}
+
+/// `raster` decoded for editing, turned upright by its EXIF orientation (ADR 0078) and
+/// reduced towards the scale asked for.
 pub(crate) fn decoded(
     raster: &Raster,
     decoder: &'static str,
@@ -187,7 +204,8 @@ pub(crate) fn decoded(
     options: DecodeOptions,
     cancel: &dyn Cancellation,
 ) -> Result<DecodedImage, DecodeError> {
-    let mut image = raster.to_linear()?;
+    let mut image = upright(raster.to_linear()?, metadata.orientation)?;
+    let (full_width, full_height) = (image.width(), image.height());
     if let DecodeScale::AtLeast(min_edge) = options.scale {
         while image.long_edge() / 2 >= min_edge.max(1) {
             if cancel.is_cancelled() {
@@ -203,19 +221,21 @@ pub(crate) fn decoded(
             kind: SourceKind::Rendered,
             make: metadata.camera_make.unwrap_or_default(),
             model: metadata.camera_model.unwrap_or_default(),
-            full_width: raster.width,
-            full_height: raster.height,
+            full_width,
+            full_height,
             iso: metadata.iso.map(|v| v as f32),
             shutter_seconds: metadata.shutter_seconds,
             aperture: metadata.aperture,
             focal_length_mm: metadata.focal_length_mm,
             as_shot_white: None,
+            orientation: metadata.orientation.max(1),
         },
     })
 }
 
-/// `raster` as a preview of about `min_long_edge`, for thumbnails.
-pub(crate) fn preview_of(raster: &Raster, min_long_edge: u32) -> EmbeddedPreview {
+/// `raster` as a preview of about `min_long_edge`, for thumbnails, turned upright by EXIF
+/// Orientation `orientation`.
+pub(crate) fn preview_of(raster: &Raster, min_long_edge: u32, orientation: u16) -> EmbeddedPreview {
     let mut rgb = raster.to_rgb8();
     while rgb.width.max(rgb.height) / 2 >= min_long_edge.max(1) {
         rgb = preview::downsample_2x(&rgb);
@@ -223,10 +243,16 @@ pub(crate) fn preview_of(raster: &Raster, min_long_edge: u32) -> EmbeddedPreview
     if let Some(p) = &raster.profile {
         to_srgb8(&mut rgb, p);
     }
+    let flip = crate::metadata::flip_from_exif(orientation);
+    let (width, height) = if flip & 4 != 0 {
+        (raster.height, raster.width)
+    } else {
+        (raster.width, raster.height)
+    };
     EmbeddedPreview {
-        image: preview::orient_to_rgba(&rgb, 0),
-        embedded_width: raster.width,
-        embedded_height: raster.height,
+        image: preview::orient_to_rgba(&rgb, flip),
+        embedded_width: width,
+        embedded_height: height,
     }
 }
 

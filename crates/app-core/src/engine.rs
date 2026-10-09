@@ -7,6 +7,7 @@ use cache::{CacheStats, RenderKey};
 use image_core::{OutputImage, PixelFormat, Pyramid};
 use jobs::{CancelToken, JobHandle, JobSpec, JobSystem, Lane, Priority};
 use raw::{DecodeOptions, DecodeScale, DecoderRegistry};
+use renderer::geometry::Turn;
 use renderer::{
     CpuRenderer, PreviewQuality, RECIPE_VERSION, RENDERER_VERSION, RenderBackend, RenderPlan,
     TemperatureScale,
@@ -1197,6 +1198,7 @@ impl Shared {
             pyramid_ms,
             embedded_preview_ms,
             lens_profile: lens.as_ref().map(|(_, name)| name.clone()),
+            upright: Turn::from_exif(info.orientation),
         };
         let opened = Arc::new(OpenedImage {
             id,
@@ -1205,6 +1207,7 @@ impl Shared {
             fingerprint: identity.fingerprint,
             scene_ev: ai::scene_ev(info.iso, info.aperture, info.shutter_seconds),
             lens,
+            upright: Turn::from_exif(info.orientation),
             pyramid,
             as_shot_white: info.as_shot_white,
             full_size: (info.full_width, info.full_height),
@@ -1272,14 +1275,17 @@ impl Shared {
             fraction: 0.6,
         });
         let t = Instant::now();
-        let lens = crate::lens::applied(&req.recipe, crate::lens::of(&req.source).map(|(l, _)| l));
-        let mut plan =
-            RenderPlan::from_recipe(&req.recipe, decoded.info.as_shot_white).with_lens(lens);
-        if !req.recipe.masks.is_empty() {
+        // An edit made on the file as stored, adapted to it upright (ADR 0078).
+        let recipe = req
+            .recipe
+            .on_upright(Turn::from_exif(decoded.info.orientation));
+        let lens = crate::lens::applied(&recipe, crate::lens::of(&req.source).map(|(l, _)| l));
+        let mut plan = RenderPlan::from_recipe(&recipe, decoded.info.as_shot_white).with_lens(lens);
+        if !recipe.masks.is_empty() {
             let photo = SourceIdentity::from_path(&req.source)
                 .map_err(raw::DecodeError::from)?
                 .fingerprint;
-            let (found, missing) = self.generated_masks(&req.recipe, photo);
+            let (found, missing) = self.generated_masks(&recipe, photo);
             let mut found = Arc::unwrap_or_clone(found);
             if missing > 0 {
                 // An edit pasted onto a photo not yet opened: its masks are made now.
@@ -1290,7 +1296,7 @@ impl Shared {
                     scene_ev: ai::scene_ev(info.iso, info.aperture, info.shutter_seconds),
                     photo,
                 };
-                self.remake_masks(&req.recipe, &source, &mut found, token)?;
+                self.remake_masks(&recipe, &source, &mut found, token)?;
             }
             plan.generated_masks = Arc::new(found);
         }
@@ -1474,6 +1480,8 @@ struct MaskSource<'a> {
 
 struct PlanExtras {
     fill: FillState,
+    /// How the photo was turned upright (ADR 0078).
+    upright: Turn,
     /// The photo's lens corrections, when the recipe applies them (ADR 0075).
     lens: Option<renderer::lens::LensCorrection>,
     generated: Arc<renderer::masks::GeneratedMasks>,
@@ -1493,6 +1501,7 @@ impl PlanExtras {
         let (generated, missing) = shared.generated_masks(recipe, open.fingerprint);
         Self {
             fill,
+            upright: open.upright,
             lens: crate::lens::applied(recipe, open.lens.as_ref().map(|(l, _)| *l)),
             generated,
             missing,
@@ -1517,6 +1526,15 @@ impl PlanExtras {
     }
 
     fn plan(&self, recipe: &EditRecipe, white: Option<image_core::Chromaticity>) -> RenderPlan {
+        // An edit made on the file as stored, adapted to it upright (ADR 0078); the
+        // editor has it adapted already.
+        let adapted;
+        let recipe = if recipe.unoriented {
+            adapted = recipe.on_upright(self.upright);
+            &adapted
+        } else {
+            recipe
+        };
         let mut plan = RenderPlan::from_recipe(recipe, white).with_lens(self.lens);
         if let FillState::Ready(fill) = &self.fill {
             plan.removal_fill = Some(Arc::clone(fill));

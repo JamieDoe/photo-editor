@@ -62,5 +62,5 @@ screenshots and exports.
   - **Thumbnails:** cost the same. That is acceptable in the background.
   - **Possible speed-ups:** using a TIFF's own embedded thumbnail, and decoding strips
     in parallel.
-- **Still to do:** EXIF orientation, which JPEG ignores too. ICC profiles: done in ADR
-  0077.
+- **Done since:** ICC profiles (ADR 0077) and EXIF orientation (ADR 0078), for JPEG
+  too.

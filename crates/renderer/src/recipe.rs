@@ -58,7 +58,10 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 29: lens corrections from the photo's own profile (ADR 0075), on unless
 ///   `profileCorrections` is false. Older recipes have them off, so they render as
 ///   they did.
-pub const RECIPE_VERSION: u32 = 29;
+/// - 30: JPEG, PNG and TIFF files are shown upright by their EXIF orientation (ADR
+///   0078). Older recipes that edit something are marked `unoriented`, made on the
+///   file as stored, and adapted when they meet the upright photo.
+pub const RECIPE_VERSION: u32 = 30;
 
 fn is_true(v: &bool) -> bool {
     *v
@@ -141,6 +144,12 @@ pub struct EditRecipe {
     #[serde(skip_serializing_if = "is_true")]
     #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
     pub profile_corrections: bool,
+    /// Made on the file as stored, before photos were shown upright by their EXIF
+    /// orientation (recipes before version 30; ADR 0078). Written only when set;
+    /// [`EditRecipe::on_upright`] adapts such a recipe and clears it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
+    pub unoriented: bool,
     /// The tone curve's points, `[input, output]` display tones. `None` (and omitted
     /// from the JSON) while it is the diagonal.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -216,6 +225,7 @@ impl Default for EditRecipe {
             geometry: None,
             chromatic_aberration: None,
             profile_corrections: true,
+            unoriented: false,
             point_curve: None,
             parametric_curve: None,
             colour_grading: None,
@@ -292,8 +302,12 @@ impl EditRecipe {
         // unless they change nothing (no edit, like a photo never edited, which now
         // has them).
         let keeps_without = read_as < 29 && !current.is_identity();
+        // Nor were rendered files turned upright (version 30): older edits were made on
+        // them as stored.
+        let unoriented = current.unoriented || (read_as < 30 && !current.is_identity());
         Ok(Self {
             profile_corrections: current.profile_corrections && !keeps_without,
+            unoriented,
             ..current
         }
         .sanitized())
@@ -335,6 +349,7 @@ impl EditRecipe {
             // Kept while on, even if nothing was measured: the toggle stays on.
             chromatic_aberration: self.chromatic_aberration.map(|c| c.sanitized()),
             profile_corrections: self.profile_corrections,
+            unoriented: self.unoriented,
             point_curve: self.point_curve.filter(|c| !c.is_identity()),
             parametric_curve: self
                 .parametric_curve
@@ -393,6 +408,60 @@ impl EditRecipe {
     /// Deterministic bytes identifying the rendered result of this recipe.
     pub fn canonical_bytes(&self) -> Vec<u8> {
         self.to_json().into_bytes()
+    }
+
+    /// This recipe for its photo shown upright by `turn`, the photo's EXIF orientation
+    /// (ADR 0078). A recipe made on the file as stored (`unoriented`) is adapted to
+    /// render as it did:
+    /// - the turn is undone in its geometry, so its crop, straighten, perspective and
+    ///   drawn masks keep their frame;
+    /// - its spots and removals, in the photo's own coordinates, move with it;
+    /// - its generated masks, made from the file as stored, are named missing, so they
+    ///   are made again from the upright photo (ADR 0074).
+    ///
+    /// Any other recipe is returned as it is.
+    pub fn on_upright(&self, turn: crate::geometry::Turn) -> EditRecipe {
+        use crate::masks::MaskShape;
+        if !self.unoriented {
+            return self.clone();
+        }
+        let mut r = EditRecipe {
+            unoriented: false,
+            ..self.clone()
+        };
+        if turn.is_identity() {
+            return r;
+        }
+        let g = r.geometry.unwrap_or_default();
+        let t = crate::geometry::Turn {
+            rotation: g.rotation,
+            flip: g.flip,
+        }
+        .after(turn.inverse());
+        r.geometry = Some(crate::geometry::Geometry {
+            rotation: t.rotation,
+            flip: t.flip,
+            ..g
+        });
+        for spot in &mut r.spots {
+            [spot.x, spot.y] = turn.point([spot.x, spot.y]);
+            [spot.source_x, spot.source_y] = turn.point([spot.source_x, spot.source_y]);
+        }
+        for stroke in r.removals.iter_mut().flat_map(|rm| rm.strokes.iter_mut()) {
+            for p in &mut stroke.points {
+                *p = turn.point(*p);
+            }
+        }
+        for m in &mut r.masks {
+            let parts = m.parts.iter_mut().map(|p| &mut p.shape);
+            for shape in std::iter::once(&mut m.shape).chain(parts) {
+                if let MaskShape::Generated { mask, .. } = shape {
+                    // No photo's mask has this name: made again on open.
+                    *mask = "0".to_owned();
+                }
+            }
+        }
+        r
     }
 
     /// Whether this is the default: no adjustments on the default look. A photo with an
@@ -495,7 +564,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":29,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":30,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -553,9 +622,11 @@ mod tests {
             r,
             EditRecipe {
                 exposure: 1.0,
-                // Version 2 had no sharpening, and keeps none; nor lens profiles.
+                // Version 2 had no sharpening, and keeps none; nor lens profiles; and
+                // it was made on files as stored.
                 sharpening: 0.0,
                 profile_corrections: false,
+                unoriented: true,
                 ..Default::default()
             }
         );

@@ -1280,3 +1280,113 @@ fn a_window_is_exactly_that_part_of_the_whole_render() {
         }
     }
 }
+
+/// Where a pixel of the upright picture comes from in the stored one, for each EXIF
+/// Orientation, as the EXIF standard defines them (`w`, `h`: the stored size).
+fn exif_source(o: u16, x: usize, y: usize, w: usize, h: usize) -> (usize, usize) {
+    match o {
+        2 => (w - 1 - x, y),
+        3 => (w - 1 - x, h - 1 - y),
+        4 => (x, h - 1 - y),
+        5 => (y, x),
+        6 => (y, h - 1 - x),
+        7 => (w - 1 - y, h - 1 - x),
+        8 => (w - 1 - y, x),
+        _ => (x, y),
+    }
+}
+
+/// `img` shown upright by EXIF Orientation `o`, as the decoders turn it.
+fn upright(img: &LinearImage, o: u16) -> LinearImage {
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let (dw, dh) = if o >= 5 { (h, w) } else { (w, h) };
+    let mut data = Vec::with_capacity(dw * dh * 3);
+    for y in 0..dh {
+        for x in 0..dw {
+            let (sx, sy) = exif_source(o, x, y, w, h);
+            data.extend_from_slice(&img.data()[(sy * w + sx) * 3..(sy * w + sx) * 3 + 3]);
+        }
+    }
+    LinearImage::new(dw as u32, dh as u32, data).unwrap()
+}
+
+#[test]
+fn turns_match_exif_orientations() {
+    use crate::geometry::Turn;
+    let (w, h) = (6usize, 4usize);
+    for o in 1..=8u16 {
+        let t = Turn::from_exif(o);
+        let (dw, dh) = if o >= 5 { (h, w) } else { (w, h) };
+        // The turn takes each stored pixel's centre to where EXIF puts it upright.
+        for y in 0..dh {
+            for x in 0..dw {
+                let (sx, sy) = exif_source(o, x, y, w, h);
+                let p = t.point([(sx as f32 + 0.5) / w as f32, (sy as f32 + 0.5) / h as f32]);
+                let expected = [(x as f32 + 0.5) / dw as f32, (y as f32 + 0.5) / dh as f32];
+                assert!(
+                    (p[0] - expected[0]).abs() < 1e-5 && (p[1] - expected[1]).abs() < 1e-5,
+                    "orientation {o}"
+                );
+            }
+        }
+        assert!(t.after(t.inverse()).is_identity() && t.inverse().after(t).is_identity());
+    }
+}
+
+#[test]
+fn an_edit_made_on_a_file_as_stored_renders_the_same_on_it_upright() {
+    use crate::geometry::{CropRect, Geometry, Turn};
+    let stored = chart();
+    // An edit from before version 30: turned, cropped, straightened, a gradient over
+    // the top and a heal spot, all on the file as stored.
+    let old = EditRecipe {
+        exposure: 0.2,
+        geometry: Some(Geometry {
+            rotation: 1,
+            straighten: 3.0,
+            crop: CropRect {
+                x: 0.1,
+                y: 0.05,
+                w: 0.8,
+                h: 0.85,
+            },
+            ..Default::default()
+        }),
+        masks: vec![linear_mask(1, [0.5, 0.0], [0.5, 0.6], -1.0, 0.0, 0.0)],
+        spots: vec![crate::retouch::Spot {
+            x: 0.3,
+            y: 0.4,
+            source_x: 0.6,
+            source_y: 0.4,
+            radius: 0.05,
+            ..Default::default()
+        }],
+        unoriented: true,
+        ..Default::default()
+    };
+    let before = render(&old, &stored);
+    for o in [3u16, 6, 7, 8] {
+        let adapted = old.on_upright(Turn::from_exif(o));
+        assert!(!adapted.unoriented);
+        let after = render(&adapted, &upright(&stored, o));
+        assert_eq!(
+            (after.width(), after.height()),
+            (before.width(), before.height()),
+            "orientation {o}"
+        );
+        let worst = after
+            .data()
+            .iter()
+            .zip(before.data())
+            .map(|(a, b)| a.abs_diff(*b))
+            .max()
+            .unwrap();
+        assert!(worst <= 2, "orientation {o}: off by {worst}");
+    }
+    // Recipes made on upright photos are left as they are.
+    let current = EditRecipe {
+        unoriented: false,
+        ..old.clone()
+    };
+    assert_eq!(current.on_upright(Turn::from_exif(6)), current);
+}

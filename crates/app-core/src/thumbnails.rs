@@ -302,6 +302,10 @@ impl Shared {
         let options = DecodeOptions::new(DecodeScale::AtLeast(min_edge))
             .with_max_threads(rayon::current_num_threads());
         let decoded = self.decoders.decode(path, options, token)?;
+        // An edit made on the file as stored, adapted to it upright (ADR 0078).
+        let recipe = &recipe.on_upright(renderer::geometry::Turn::from_exif(
+            decoded.info.orientation,
+        ));
         let lens = crate::lens::applied(recipe, crate::lens::of(path).map(|(l, _)| l));
         let plan = RenderPlan::from_recipe(recipe, decoded.info.as_shot_white).with_lens(lens);
         Ok(self

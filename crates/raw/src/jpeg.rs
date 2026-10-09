@@ -26,8 +26,8 @@ fn embedded_profile(bytes: &[u8]) -> Option<Vec<u8>> {
 
 /// Decodes baseline/progressive JPEG and linearises its sRGB encoding.
 ///
-/// Embedded ICC profiles that aren't sRGB are converted from (ADR 0077). EXIF
-/// orientation is ignored.
+/// Embedded ICC profiles that aren't sRGB are converted from (ADR 0077), and the
+/// image is turned upright by its EXIF orientation (ADR 0078).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct JpegDecoder;
 
@@ -45,7 +45,7 @@ impl Decoder for JpegDecoder {
     }
 
     /// The JPEG itself, decoded at reduced scale (DCT scaling with libjpeg-turbo, so
-    /// a 24 MP file is never decoded at full size). EXIF orientation is ignored, as in
+    /// a 24 MP file is never decoded at full size), turned upright as in
     /// [`JpegDecoder::decode`].
     fn display_preview(
         &self,
@@ -64,8 +64,16 @@ impl Decoder for JpegDecoder {
         if let Some(profile) = rendered::profile_for(embedded_profile(&bytes).as_deref(), 3) {
             rendered::to_srgb8(&mut rgb, &profile);
         }
+        // Upright by its EXIF orientation (ADR 0078).
+        let orientation = crate::metadata::read_jpeg(path).map_or(0, |m| m.orientation);
+        let flip = crate::metadata::flip_from_exif(orientation);
+        let (width, height) = if flip & 4 != 0 {
+            (height, width)
+        } else {
+            (width, height)
+        };
         Ok(Some(EmbeddedPreview {
-            image: preview::orient_to_rgba(&rgb, 0),
+            image: preview::orient_to_rgba(&rgb, flip),
             embedded_width: width,
             embedded_height: height,
         }))
@@ -97,11 +105,17 @@ impl Decoder for JpegDecoder {
             return Err(DecodeError::Cancelled);
         }
 
-        // Through the embedded profile when it isn't sRGB (ADR 0077).
+        // The camera's settings from its EXIF, if it has any: the sky finder judges the
+        // scene's brightness by them (ADR 0074).
+        let exif = crate::metadata::read_jpeg(path).unwrap_or_default();
+        // Through the embedded profile when it isn't sRGB (ADR 0077), and upright by
+        // the EXIF orientation (ADR 0078).
         let icc = decoder.icc_profile();
-        let mut image = Raster::new(w, h, 3, Samples::U8(rgb8))?
+        let linear = Raster::new(w, h, 3, Samples::U8(rgb8))?
             .with_profile(icc.as_deref())
             .to_linear()?;
+        let mut image = rendered::upright(linear, exif.orientation)?;
+        let (full_width, full_height) = (image.width(), image.height());
 
         if let DecodeScale::AtLeast(min_edge) = options.scale {
             while image.long_edge() / 2 >= min_edge.max(1) {
@@ -112,9 +126,6 @@ impl Decoder for JpegDecoder {
             }
         }
 
-        // The camera's settings from its EXIF, if it has any: the sky finder judges the
-        // scene's brightness by them (ADR 0074).
-        let exif = crate::metadata::read_jpeg(path).unwrap_or_default();
         Ok(DecodedImage {
             image,
             info: SourceInfo {
@@ -122,13 +133,14 @@ impl Decoder for JpegDecoder {
                 kind: SourceKind::Rendered,
                 make: exif.camera_make.unwrap_or_default(),
                 model: exif.camera_model.unwrap_or_default(),
-                full_width: w,
-                full_height: h,
+                full_width,
+                full_height,
                 iso: exif.iso.map(|v| v as f32),
                 shutter_seconds: exif.shutter_seconds,
                 aperture: exif.aperture,
                 focal_length_mm: exif.focal_length_mm,
                 as_shot_white: None,
+                orientation: exif.orientation.max(1),
             },
         })
     }

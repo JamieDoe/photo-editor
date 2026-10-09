@@ -58,6 +58,9 @@ fn frame_bytes(
 async fn open(state: &AppState, path: PathBuf) -> IpcResult<ImageSummaryDto> {
     let summary = wait(state.engine.open(path)).await?;
     let (saved_recipe, edit_saving) = super::edits::saved_edit(state, &summary.path).await;
+    // An edit made on the file as stored, adapted to it upright (ADR 0078); saved so
+    // with the next change.
+    let saved_recipe = saved_recipe.map(|r| r.on_upright(summary.upright));
     Ok(ImageSummaryDto {
         saved_recipe,
         edit_saving,

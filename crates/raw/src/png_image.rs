@@ -75,7 +75,12 @@ impl Decoder for PngDecoder {
         if cancel.is_cancelled() {
             return Err(DecodeError::Cancelled);
         }
-        Ok(Some(rendered::preview_of(&raster, min_long_edge)))
+        let orientation = crate::metadata::read_png(path).map_or(0, |m| m.orientation);
+        Ok(Some(rendered::preview_of(
+            &raster,
+            min_long_edge,
+            orientation,
+        )))
     }
 
     fn decode(
