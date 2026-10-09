@@ -3,6 +3,7 @@ import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import type { ColourLabelDto } from "../../ipc/generated/ColourLabelDto";
 import {
   COLLECTION_NAMES,
+  inCollection,
   keepsOwnOrder,
   applyChange,
   flagClick,
@@ -198,3 +199,13 @@ describe("recently edited", () => {
     expect(COLLECTION_NAMES.edited).toBe("Recently edited");
   });
 });
+
+describe("favourites", () => {
+  it("are the five-star photos, as their marks change", () => {
+    const marks = (rating: number) => ({ rating, flag: "none" as const, label: "none" as const });
+    expect(inCollection(marks(5), "favourites")).toBe(true);
+    expect(inCollection(marks(4), "favourites")).toBe(false);
+    expect(COLLECTION_NAMES.favourites).toBe("Favourites");
+  });
+});
+
