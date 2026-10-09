@@ -51,6 +51,7 @@ impl AppState {
         settings_path: PathBuf,
         catalogue_path: PathBuf,
         thumbnail_dir: PathBuf,
+        mask_dir: PathBuf,
         backups_dir: PathBuf,
         self_test: Option<PathBuf>,
     ) -> Self {
@@ -95,6 +96,7 @@ impl AppState {
             indexing: Mutex::new(HashMap::new()),
             engine: Engine::new(EngineConfig {
                 thumbnail_cache_dir: Some(thumbnail_dir),
+                mask_dir: Some(mask_dir),
                 ..engine_config(&current)
             }),
             startup_background_intensity: current.performance.background_intensity,

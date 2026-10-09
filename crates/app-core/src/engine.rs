@@ -58,6 +58,8 @@ pub(crate) struct Shared {
     next_image_id: AtomicU64,
     /// The platform's mask generator (ADR 0074), if it has one.
     segmenter: Option<Box<dyn ai::Segmenter>>,
+    /// Generated masks' coverage (ADR 0074).
+    masks: crate::mask_store::MaskStore,
 }
 
 impl Engine {
@@ -67,6 +69,7 @@ impl Engine {
 
     pub fn with_decoders(config: EngineConfig, decoders: DecoderRegistry) -> Self {
         let jobs = JobSystem::new(config.jobs.clone());
+        let masks = crate::mask_store::MaskStore::new(config.mask_dir.clone());
         let shared = Arc::new(Shared {
             images: Mutex::new(OpenImages::new(config.max_open_images)),
             previews: Mutex::new(PreviewCache::new(config.preview_cache_bytes)),
@@ -80,6 +83,7 @@ impl Engine {
             renderer: CpuRenderer,
             next_image_id: AtomicU64::new(1),
             segmenter: ai::platform_segmenter(),
+            masks,
         });
         Self { shared, jobs }
     }
@@ -109,6 +113,7 @@ impl Engine {
             curve_regions: renderer::adjustments::CURVE_REGIONS.to_vec(),
             grading: renderer::adjustments::GRADING.to_vec(),
             calibration: renderer::adjustments::CALIBRATION.to_vec(),
+            mask_kinds: self.mask_kinds().into_iter().map(generated_kind).collect(),
         }
     }
 
@@ -288,7 +293,7 @@ impl Engine {
         let level_index = image.pyramid.select_index(min_edge);
         let level = Arc::clone(&image.pyramid.levels()[level_index]);
         let as_shot_white = image.as_shot_white;
-        let fill = FillState::of(&image, &recipe);
+        let fill = PlanExtras::of(&self.shared, &image, &recipe);
         let key = RenderKey::new(
             image.source_id,
             &fill.keyed(recipe.canonical_bytes()),
@@ -413,7 +418,7 @@ impl Engine {
                 .saturating_sub((f64::from(y) * s).floor() as u32)
                 .max(1),
         );
-        let fill = FillState::of(&image, &recipe);
+        let fill = PlanExtras::of(&self.shared, &image, &recipe);
         let mut key_bytes = fill.keyed(recipe.canonical_bytes());
         for v in [scaled.0, scaled.1, scaled.2, scaled.3] {
             key_bytes.extend(v.to_le_bytes());
@@ -566,8 +571,90 @@ impl Engine {
             .collect()
     }
 
-    /// A `kind` mask of the open photo (ADR 0074), or `None` when it has nothing of
-    /// the kind. Made from the photo as decoded (oriented, no edit, no crop) at about
+    /// Stored mask `name` as it covers the shown part of the photo (ADR 0074): `width`
+    /// × `height` samples (0..255, row by row) over `crop` of the frame that
+    /// `geometry` makes of the open photo, mapped as the renderer maps it. For drawing
+    /// a mask's tint; `None` when the mask isn't stored.
+    pub fn mask_view(
+        &self,
+        image: ImageId,
+        geometry: Option<renderer::Geometry>,
+        name: &str,
+        crop: renderer::CropRect,
+        size: (u32, u32),
+    ) -> JobHandle<Option<Vec<u8>>, EngineError> {
+        let Some(open) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        let shared = Arc::clone(&self.shared);
+        let name = name.to_owned();
+        let spec = JobSpec::new(Lane::Interactive, Priority::VisiblePreview, "mask-view");
+        self.jobs.submit(spec, move |_token| {
+            use renderer::masks::{CompiledShape, Frame, GeneratedKind, MaskShape};
+            if !crate::mask_store::belongs(&name, open.fingerprint) {
+                return Ok(None);
+            }
+            let Some(map) = shared.masks.get(&name) else {
+                return Ok(None);
+            };
+            let (sw, sh) = (open.full_size.0 as f32, open.full_size.1 as f32);
+            let frame = match geometry.filter(|g| !g.is_identity()) {
+                None => Frame::whole(open.full_size.0, open.full_size.1),
+                Some(g) => {
+                    let (fw, fh) = g.oriented_size(sw, sh);
+                    Frame {
+                        crop: renderer::CropRect::FULL,
+                        width: fw,
+                        height: fh,
+                        from_source: Some((g, sw, sh)),
+                    }
+                }
+            };
+            let shape = CompiledShape::new(
+                &MaskShape::Generated {
+                    of: GeneratedKind::Subject,
+                    mask: name.clone(),
+                },
+                &frame,
+                &[(name, map)].into_iter().collect(),
+            );
+            let (w, h) = (size.0.clamp(1, 4096), size.1.clamp(1, 4096));
+            let mut out = Vec::with_capacity((w * h) as usize);
+            for j in 0..h {
+                let fy = (crop.y + (j as f32 + 0.5) / h as f32 * crop.h) * frame.height;
+                for i in 0..w {
+                    let fx = (crop.x + (i as f32 + 0.5) / w as f32 * crop.w) * frame.width;
+                    out.push((shape.coverage(fx, fy) * 255.0).round() as u8);
+                }
+            }
+            Ok(Some(out))
+        })
+    }
+
+    /// The generated masks `recipe` names that open photo `image` can't use (ADR 0074):
+    /// made on another computer or their files removed, or made from another photo (a
+    /// pasted edit, a preset). They cover nothing until made again. All of them when the
+    /// photo isn't open.
+    pub fn missing_masks(&self, image: ImageId, recipe: &EditRecipe) -> Vec<String> {
+        let photo = self
+            .shared
+            .images
+            .lock()
+            .expect("images lock")
+            .get(image)
+            .map(|o| o.fingerprint);
+        generated_in(recipe)
+            .into_iter()
+            .map(|(name, _)| name)
+            .filter(|name| photo.is_none_or(|p| self.shared.usable_mask(name, p).is_none()))
+            .collect()
+    }
+
+    /// A `kind` mask of the open photo (ADR 0074), kept in the mask store under the
+    /// name it returns, or `None` when the photo has nothing of the kind. Made from the photo as decoded (oriented, no edit, no crop) at about
     /// [`SEGMENT_LONG_EDGE`] px, on the background lane: the system's model takes a
     /// second or so. A newer request for the photo replaces one still running.
     pub fn segment(
@@ -600,44 +687,9 @@ impl Engine {
         let shared = Arc::clone(&self.shared);
         let spec = JobSpec::new(Lane::Background, Priority::VisiblePreview, "segment")
             .superseding(format!("segment-{}-{kind:?}", image.0));
+        let photo = open.fingerprint;
         self.jobs.submit(spec, move |token| {
-            let segmenter = shared
-                .segmenter
-                .as_ref()
-                .ok_or(ai::AiError::Unsupported(kind))?;
-            let t0 = Instant::now();
-            // The photo as it looks unedited: what the model was made for.
-            let plan = RenderPlan::from_recipe(&EditRecipe::default(), as_shot_white);
-            let picture = shared
-                .renderer
-                .render(&plan, &level, PixelFormat::Rgba8, token)?;
-            if token.is_cancelled() {
-                return Err(EngineError::cancelled());
-            }
-            let coverage = segmenter.segment(
-                ai::Picture {
-                    width: picture.width(),
-                    height: picture.height(),
-                    rgba: picture.data(),
-                },
-                kind,
-            )?;
-            let ms = ms(t0);
-            log::info!(
-                "{kind:?} mask of a {}x{} picture in {ms:.0} ms: {}",
-                picture.width(),
-                picture.height(),
-                coverage.as_ref().map_or("none".to_owned(), |c| format!(
-                    "{:.1} % covered",
-                    c.share() * 100.0
-                ))
-            );
-            Ok(coverage.map(|c| GeneratedMask {
-                kind,
-                generator: segmenter.generator(kind),
-                coverage: Arc::new(c),
-                ms,
-            }))
+            shared.make_mask(&level, as_shot_white, kind, photo, token)
         })
     }
 
@@ -699,7 +751,7 @@ impl Engine {
         let min_edge = (f64::from(AUTO_TONE_SAMPLE_EDGE) / kept.max(1e-3)).ceil() as u32;
         let level = Arc::clone(&open.pyramid.levels()[open.pyramid.select_index(min_edge)]);
         let as_shot_white = open.as_shot_white;
-        let fill = FillState::of(&open, &recipe);
+        let fill = PlanExtras::of(&self.shared, &open, &recipe);
         let shared = Arc::clone(&self.shared);
         let spec = JobSpec::new(Lane::Interactive, Priority::VisiblePreview, "auto-tone")
             .superseding("auto-tone");
@@ -754,7 +806,7 @@ impl Engine {
             (f64::from(export::estimate::SAMPLE_LONG_EDGE) / kept.max(1e-3)).ceil() as u32;
         let level = Arc::clone(&open.pyramid.levels()[open.pyramid.select_index(min_edge)]);
         let as_shot_white = open.as_shot_white;
-        let fill = FillState::of(&open, &recipe);
+        let fill = PlanExtras::of(&self.shared, &open, &recipe);
         let shared = Arc::clone(&self.shared);
         let spec = JobSpec::new(
             Lane::Interactive,
@@ -889,6 +941,131 @@ impl Engine {
 }
 
 impl Shared {
+    /// Stored mask `name`, if it was made from the photo whose fingerprint is `photo`.
+    fn usable_mask(
+        &self,
+        name: &str,
+        photo: u64,
+    ) -> Option<Arc<renderer::masks::brush::CoverageMap>> {
+        crate::mask_store::belongs(name, photo)
+            .then(|| self.masks.get(name))
+            .flatten()
+    }
+
+    /// The coverage of the generated masks `recipe` names that the store has for the
+    /// photo whose fingerprint is `photo` (ADR 0074), and how many it names that it
+    /// doesn't.
+    fn generated_masks(
+        &self,
+        recipe: &EditRecipe,
+        photo: u64,
+    ) -> (Arc<renderer::masks::GeneratedMasks>, usize) {
+        let mut missing = 0;
+        let found = generated_in(recipe)
+            .into_iter()
+            .filter_map(|(name, _)| {
+                let map = self.usable_mask(&name, photo);
+                missing += usize::from(map.is_none());
+                map.map(|m| (name, m))
+            })
+            .collect();
+        (Arc::new(found), missing)
+    }
+
+    /// A `kind` mask of `image` (the photo whose fingerprint is `photo`, as decoded),
+    /// kept in the mask store; `None` when the photo has nothing of the kind.
+    fn make_mask(
+        &self,
+        image: &image_core::LinearImage,
+        as_shot_white: Option<image_core::Chromaticity>,
+        kind: ai::MaskKind,
+        photo: u64,
+        token: &CancelToken,
+    ) -> Result<Option<GeneratedMask>, EngineError> {
+        let segmenter = self
+            .segmenter
+            .as_ref()
+            .ok_or(ai::AiError::Unsupported(kind))?;
+        let t0 = Instant::now();
+        // The photo as it looks unedited: what the model was made for.
+        let plan = RenderPlan::from_recipe(&EditRecipe::default(), as_shot_white);
+        let picture = self
+            .renderer
+            .render(&plan, image, PixelFormat::Rgba8, token)?;
+        if token.is_cancelled() {
+            return Err(EngineError::cancelled());
+        }
+        let coverage = segmenter.segment(
+            ai::Picture {
+                width: picture.width(),
+                height: picture.height(),
+                rgba: picture.data(),
+            },
+            kind,
+        )?;
+        let ms = ms(t0);
+        log::info!(
+            "{kind:?} mask of a {}x{} picture in {ms:.0} ms: {}",
+            picture.width(),
+            picture.height(),
+            coverage.as_ref().map_or("none".to_owned(), |c| format!(
+                "{:.1} % covered",
+                c.share() * 100.0
+            ))
+        );
+        let Some(coverage) = coverage else {
+            return Ok(None);
+        };
+        // Kept, so recipes can name it and every render can find it.
+        let generator = segmenter.generator(kind);
+        let name = self.masks.put(&coverage, &generator, photo).map_err(|e| {
+            EngineError::new(
+                crate::ErrorKind::Internal,
+                "The mask could not be kept.",
+                e.to_string(),
+            )
+        })?;
+        Ok(Some(GeneratedMask {
+            kind,
+            name,
+            generator,
+            coverage: Arc::new(coverage),
+            ms,
+        }))
+    }
+
+    /// `generated` completed for an export of `image` (ADR 0074): each mask `recipe`
+    /// names that it lacks is made again from the photo being exported, under the
+    /// recipe's name for it. Masks this computer can't make stay missing (they cover
+    /// nothing), with a warning.
+    fn remake_masks(
+        &self,
+        recipe: &EditRecipe,
+        image: &image_core::LinearImage,
+        as_shot_white: Option<image_core::Chromaticity>,
+        photo: u64,
+        generated: &mut renderer::masks::GeneratedMasks,
+        token: &CancelToken,
+    ) -> Result<(), EngineError> {
+        let mut picture = None;
+        for (name, of) in generated_in(recipe) {
+            if generated.contains_key(&name) {
+                continue;
+            }
+            let kind = mask_kind(of);
+            if self.segmenter.as_ref().is_none_or(|s| !s.supports(kind)) {
+                log::warn!("export: no {kind:?} masks on this computer; mask {name} left out");
+                continue;
+            }
+            let picture = picture.get_or_insert_with(|| reduced(image, SEGMENT_LONG_EDGE));
+            let made = self.make_mask(picture, as_shot_white, kind, photo, token)?;
+            if let Some(map) = made.and_then(|m| self.masks.get(&m.name)) {
+                generated.insert(name, map);
+            }
+        }
+        Ok(())
+    }
+
     /// The open photo at full resolution, decoded now (and kept) if it hasn't been.
     fn full_source(
         &self,
@@ -1012,6 +1189,7 @@ impl Shared {
             id,
             path: identity.canonical_path.clone(),
             source_id: identity.source_id(),
+            fingerprint: identity.fingerprint,
             pyramid,
             as_shot_white: info.as_shot_white,
             full_size: (info.full_width, info.full_height),
@@ -1080,6 +1258,25 @@ impl Shared {
         });
         let t = Instant::now();
         let mut plan = RenderPlan::from_recipe(&req.recipe, decoded.info.as_shot_white);
+        if !req.recipe.masks.is_empty() {
+            let photo = SourceIdentity::from_path(&req.source)
+                .map_err(raw::DecodeError::from)?
+                .fingerprint;
+            let (found, missing) = self.generated_masks(&req.recipe, photo);
+            let mut found = Arc::unwrap_or_clone(found);
+            if missing > 0 {
+                // An edit pasted onto a photo not yet opened: its masks are made now.
+                self.remake_masks(
+                    &req.recipe,
+                    &decoded.image,
+                    decoded.info.as_shot_white,
+                    photo,
+                    &mut found,
+                    token,
+                )?;
+            }
+            plan.generated_masks = Arc::new(found);
+        }
         // The open photo's full-resolution fill, once made: a sized export shows the
         // removals as the viewer does (ADR 0070), not filled again at its own size.
         if !plan.removals.is_empty() {
@@ -1246,35 +1443,100 @@ enum FillState {
     Ready(Arc<renderer::remove::Fill>),
 }
 
-impl FillState {
-    fn of(open: &OpenedImage, recipe: &EditRecipe) -> Self {
+/// What a render of an open photo needs beyond its recipe and source: where its
+/// removals' fill comes from (ADR 0070), and its generated masks' coverage (ADR 0074).
+struct PlanExtras {
+    fill: FillState,
+    generated: Arc<renderer::masks::GeneratedMasks>,
+    /// Generated masks the recipe names that the store doesn't have.
+    missing: usize,
+}
+
+impl PlanExtras {
+    fn of(shared: &Shared, open: &OpenedImage, recipe: &EditRecipe) -> Self {
         let removals = painting(&recipe.removals);
-        if removals.is_empty() {
-            return Self::None;
+        let fill = if removals.is_empty() {
+            FillState::None
+        } else {
+            open.fill_for(&removals)
+                .map_or(FillState::Pending, FillState::Ready)
+        };
+        let (generated, missing) = shared.generated_masks(recipe, open.fingerprint);
+        Self {
+            fill,
+            generated,
+            missing,
         }
-        open.fill_for(&removals).map_or(Self::Pending, Self::Ready)
     }
 
     fn pending(&self) -> bool {
-        matches!(self, Self::Pending)
+        matches!(self.fill, FillState::Pending)
     }
 
-    /// `bytes` (a render's cache key) marked with where its removals come from, so a
-    /// render with the full-resolution fill never answers for one without.
+    /// `bytes` (a render's cache key) marked with where its removals come from and how
+    /// many generated masks were missing, so a render with the full-resolution fill or
+    /// a found mask never answers for one without.
     fn keyed(&self, mut bytes: Vec<u8>) -> Vec<u8> {
-        bytes.push(match self {
-            Self::None => 0,
-            Self::Pending => 1,
-            Self::Ready(_) => 2,
+        bytes.push(match self.fill {
+            FillState::None => 0,
+            FillState::Pending => 1,
+            FillState::Ready(_) => 2,
         });
+        bytes.extend((self.missing as u32).to_le_bytes());
         bytes
     }
 
     fn plan(&self, recipe: &EditRecipe, white: Option<image_core::Chromaticity>) -> RenderPlan {
         let mut plan = RenderPlan::from_recipe(recipe, white);
-        if let Self::Ready(fill) = self {
+        if let FillState::Ready(fill) = &self.fill {
             plan.removal_fill = Some(Arc::clone(fill));
         }
+        plan.generated_masks = Arc::clone(&self.generated);
         plan
     }
+}
+
+/// The recipe's name for a kind of generated mask (ADR 0074).
+pub fn generated_kind(kind: ai::MaskKind) -> renderer::masks::GeneratedKind {
+    match kind {
+        ai::MaskKind::Subject => renderer::masks::GeneratedKind::Subject,
+        ai::MaskKind::People => renderer::masks::GeneratedKind::People,
+    }
+}
+
+/// The AI subsystem's name for a kind of generated mask (ADR 0074).
+pub fn mask_kind(kind: renderer::masks::GeneratedKind) -> ai::MaskKind {
+    match kind {
+        renderer::masks::GeneratedKind::Subject => ai::MaskKind::Subject,
+        renderer::masks::GeneratedKind::People => ai::MaskKind::People,
+    }
+}
+
+/// The generated masks `recipe` names (ADR 0074), and what each covers.
+fn generated_in(recipe: &EditRecipe) -> Vec<(String, renderer::masks::GeneratedKind)> {
+    use renderer::masks::MaskShape;
+    let mut names: Vec<_> = recipe
+        .masks
+        .iter()
+        .flat_map(|m| std::iter::once(&m.shape).chain(m.parts.iter().map(|p| &p.shape)))
+        .filter_map(|shape| match shape.clone().sanitized() {
+            MaskShape::Generated { of, mask } if !mask.is_empty() => Some((mask, of)),
+            _ => None,
+        })
+        .collect();
+    names.sort_by(|a, b| a.0.cmp(&b.0));
+    names.dedup_by(|a, b| a.0 == b.0);
+    names
+}
+
+/// `image` halved while it stays at least `long_edge` px on its long edge.
+fn reduced(image: &image_core::LinearImage, long_edge: u32) -> image_core::LinearImage {
+    let mut out = image_core::pyramid::downsample_2x(image);
+    if out.long_edge() < long_edge {
+        return image.clone();
+    }
+    while out.long_edge() / 2 >= long_edge {
+        out = image_core::pyramid::downsample_2x(&out);
+    }
+    out
 }

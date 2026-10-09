@@ -925,7 +925,7 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage, frame: Frame) -> 
                 masks.clone(),
             )))),
             Stage::Local { masks: ref local } => {
-                let field = Arc::new(LocalField::new(local, frame));
+                let field = Arc::new(LocalField::new(local, frame, &plan.generated_masks));
                 if field.has_gains() {
                     out.push(Kernel::Local(Arc::clone(&field)));
                 }

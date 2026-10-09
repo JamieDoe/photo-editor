@@ -239,7 +239,7 @@ mockIPC((cmd, payload) => {
         ["shadowTint", "Tint", "Shadows"], ["redHue", "Hue", "Red primary"], ["redSaturation", "Saturation", "Red primary"],
         ["greenHue", "Hue", "Green primary"], ["greenSaturation", "Saturation", "Green primary"],
         ["blueHue", "Hue", "Blue primary"], ["blueSaturation", "Saturation", "Blue primary"],
-      ].map(([key, label, group]) => ({ key, label, group, min: -100, max: 100, step: 1, default: 0, more: false, unit: "" })) };
+      ].map(([key, label, group]) => ({ key, label, group, min: -100, max: 100, step: 1, default: 0, more: false, unit: "" })), maskKinds: ["subject", "people"] };
     case "open_image_dialog":
     case "open_image_path":
       openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";
@@ -321,6 +321,33 @@ mockIPC((cmd, payload) => {
           120,
         ),
       );
+    case "generate_mask": {
+      // Dev-only stand-in: a subject in the middle, and nobody.
+      const { kind } = payload as { kind: "subject" | "people" };
+      // Named afresh each time, as a mask made from another photo would be.
+      const made = kind === "subject" ? { name: `${Date.now().toString(16).padStart(16, "0")}${"0123456789abcdef".repeat(2)}`, kind, share: 0.12 } : null;
+      return new Promise((r) => setTimeout(() => r(made), 700));
+    }
+    case "missing_masks": {
+      // With ?stale-masks, every generated mask stands for one made from another photo.
+      const { recipe } = payload as { recipe: { masks?: Array<{ shape: { kind: string; mask?: string } }> } };
+      if (!new URLSearchParams(location.search).has("stale-masks")) return [];
+      return (recipe.masks ?? []).flatMap((m) => (m.shape.kind === "generated" && m.shape.mask ? [m.shape.mask] : []));
+    }
+    case "mask_view": {
+      // An upright soft ellipse in the middle of the frame.
+      const { crop, width, height } = payload as { crop: { x: number; y: number; w: number; h: number }; width: number; height: number };
+      const out = new Uint8Array(width * height);
+      for (let j = 0; j < height; j++) {
+        for (let i = 0; i < width; i++) {
+          const fx = crop.x + ((i + 0.5) / width) * crop.w;
+          const fy = crop.y + ((j + 0.5) / height) * crop.h;
+          const d = Math.hypot((fx - 0.5) / 0.16, (fy - 0.55) / 0.32);
+          out[j * width + i] = Math.round(255 * Math.min(1, Math.max(0, (1.05 - d) / 0.1)));
+        }
+      }
+      return new Promise((r) => setTimeout(() => r(out.buffer), 120));
+    }
     case "new_spot": {
       // Dev-only stand-in: the source a little to the right.
       const { kind, at, radius } = payload as { kind: "heal" | "clone"; at: [number, number]; radius: number };

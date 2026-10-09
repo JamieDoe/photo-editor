@@ -205,6 +205,8 @@ pub struct EngineInfo {
     pub curve_regions: Vec<AdjustmentSpec>,
     pub grading: Vec<AdjustmentSpec>,
     pub calibration: Vec<AdjustmentSpec>,
+    /// The masks this computer can make from a photo (ADR 0074).
+    pub mask_kinds: Vec<renderer::masks::GeneratedKind>,
 }
 
 /// A mask made from the photo by the AI subsystem (ADR 0074): what it covers, what
@@ -213,6 +215,8 @@ pub struct EngineInfo {
 #[derive(Debug, Clone)]
 pub struct GeneratedMask {
     pub kind: ai::MaskKind,
+    /// Its name in the mask store, for a recipe's `MaskShape::Generated`.
+    pub name: String,
     pub generator: String,
     pub coverage: Arc<ai::Coverage>,
     /// How long making it took.

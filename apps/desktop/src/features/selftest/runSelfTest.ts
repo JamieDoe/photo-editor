@@ -1701,6 +1701,81 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       retouchCheck.insideChange > 0.2 &&
       retouchCheck.outsideChange === 0;
 
+    // A generated mask (ADR 0074) on the real raw file, where this computer makes them:
+    // the engine finds the subject; +1 EV through it brightens where its view (what the
+    // tint is drawn from) covers and changes nothing where it doesn't; and a mask made
+    // from another photo (as a pasted edit's is) is reported missing, to be made again.
+    const generatedCheck = await (async (): Promise<{
+      supported: boolean;
+      made?: boolean;
+      ms?: number;
+      share?: number;
+      rendered?: boolean;
+      coveredCells?: number;
+      coveredGain?: number | null;
+      outsideChange?: number;
+      missingWhenMade?: string[] | null;
+      foreignMissing?: number | null;
+      renderMs?: number;
+    }> => {
+      const id = driver.editor().image!.id;
+      if (!(driver.editor().info?.maskKinds ?? []).includes("subject")) return { supported: false };
+      const t = performance.now();
+      const made = await ipc.generateMask(id, "subject").catch(() => null);
+      const ms = Math.round(performance.now() - t);
+      if (!made) return { supported: true, made: false, ms };
+      const base = { ...beforeCrop, masks: undefined, geometry: undefined, spots: undefined, removals: undefined };
+      const lit = (name: string): EditRecipe => ({
+        ...base,
+        masks: [{ id: 1, shape: { kind: "generated", of: "subject", mask: name }, adjustments: { exposure: 1, warmth: 0, clarity: 0 } }],
+      });
+      const plain = await show(base, "frame without the subject mask");
+      const masked = await show(lit(made.name), "subject mask frame", plain);
+      const n = 48;
+      const view = await ipc.maskView(id, null, made.name, { x: 0, y: 0, w: 1, h: 1 }, n, n).catch(() => new Uint8Array());
+      const missing = await ipc.missingMasks(id, lit(made.name)).catch(() => null);
+      const foreign = await ipc.missingMasks(id, lit("0".repeat(48))).catch(() => null);
+      driver.editor().setRecipe(beforeCrop);
+      if (!plain || !masked || view.length !== n * n) {
+        return { supported: true, made: true, ms, share: made.share, rendered: false };
+      }
+      // Each view cell's middle pixel, before and after.
+      const { width: w, height: h } = plain.frame;
+      let [gain, covered, outside] = [0, 0, 0];
+      for (let j = 0; j < n; j++) {
+        for (let i = 0; i < n; i++) {
+          const k = (Math.floor(((j + 0.5) / n) * h) * w + Math.floor(((i + 0.5) / n) * w)) * 4;
+          const [p, q] = [plain.frame.pixels, masked.frame.pixels];
+          const change = (q[k]! - p[k]! + q[k + 1]! - p[k + 1]! + q[k + 2]! - p[k + 2]!) / 3;
+          const v = view[j * n + i]!;
+          if (v >= 230) {
+            gain += change;
+            covered++;
+          } else if (v === 0) outside = Math.max(outside, Math.abs(change));
+        }
+      }
+      return {
+        supported: true,
+        made: true,
+        ms,
+        share: Math.round(made.share * 1000) / 1000,
+        rendered: true,
+        coveredCells: covered,
+        coveredGain: covered > 0 ? Math.round((gain / covered) * 10) / 10 : null,
+        outsideChange: Math.round(outside * 10) / 10,
+        missingWhenMade: missing,
+        foreignMissing: foreign?.length ?? null,
+        renderMs: masked.frame.renderMs,
+      };
+    })();
+    const generatedOk =
+      !generatedCheck.supported ||
+      (generatedCheck.made === true &&
+        (generatedCheck.coveredGain ?? 0) > 10 &&
+        (generatedCheck.outsideChange ?? Infinity) <= 2 &&
+        generatedCheck.missingWhenMade?.length === 0 &&
+        generatedCheck.foreignMissing === 1);
+
     // Sensor dust (ADR 0058) on the real raw file: found quickly, each a heal spot with a
     // source; once those are spots, nothing is left to find.
     const dustCheck = await (async () => {
@@ -1886,6 +1961,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       colourGrading: gradingOk,
       calibration: calibrationOk,
       retouch: retouchOk,
+      generatedMask: generatedOk,
       remove: removeOk,
       removalFill: fullFill?.ok === true,
       dust: dustOk,
@@ -1927,6 +2003,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       colourGrading: gradingCheck,
       calibration: calibrationCheck,
       retouch: retouchCheck,
+      generatedMask: generatedCheck,
       remove: removeCheck,
       removalFill: fullFill,
       dust: dustCheck,

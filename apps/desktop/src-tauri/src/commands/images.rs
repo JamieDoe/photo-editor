@@ -206,6 +206,61 @@ pub async fn render_preview(
 
 /// Decodes the open photo at full resolution (ADR 0070) for viewing it at 100 %;
 /// resolves when window renders can use it.
+/// Makes a `kind` mask of the open photo and keeps it (ADR 0074); null when the photo
+/// has nothing of the kind (no subject, nobody).
+#[tauri::command]
+pub async fn generate_mask(
+    state: State<'_, AppState>,
+    image_id: u64,
+    kind: renderer::masks::GeneratedKind,
+) -> IpcResult<Option<crate::ipc::GeneratedMaskDto>> {
+    let made = wait(
+        state
+            .engine
+            .segment(ImageId(image_id), app_core::mask_kind(kind)),
+    )
+    .await?;
+    Ok(made.map(|m| crate::ipc::GeneratedMaskDto {
+        name: m.name,
+        kind,
+        share: m.coverage.share(),
+    }))
+}
+
+/// The generated masks `recipe` names that the open photo can't use (ADR 0074): not
+/// kept on this computer, or made from another photo.
+#[tauri::command]
+pub fn missing_masks(
+    state: State<'_, AppState>,
+    image_id: u64,
+    recipe: renderer::EditRecipe,
+) -> Vec<String> {
+    state.engine.missing_masks(ImageId(image_id), &recipe)
+}
+
+/// Stored mask `name` over the shown part of the open photo (ADR 0074): `width` ×
+/// `height` bytes of coverage over `crop` of the frame `geometry` makes, for drawing
+/// its tint; empty when the mask isn't kept.
+#[tauri::command]
+pub async fn mask_view(
+    state: State<'_, AppState>,
+    image_id: u64,
+    geometry: Option<renderer::Geometry>,
+    name: String,
+    crop: renderer::CropRect,
+    width: u32,
+    height: u32,
+) -> IpcResult<Response> {
+    let view =
+        wait(
+            state
+                .engine
+                .mask_view(ImageId(image_id), geometry, &name, crop, (width, height)),
+        )
+        .await?;
+    Ok(Response::new(view.unwrap_or_default()))
+}
+
 /// Auto tone (ADR 0071): the open photo's tone sliders as a starting point, for the
 /// photo as `recipe` edits it.
 #[tauri::command]

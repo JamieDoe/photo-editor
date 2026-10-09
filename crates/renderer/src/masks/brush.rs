@@ -75,8 +75,9 @@ impl Stroke {
     }
 }
 
-/// Rasterised coverage (0..1 as 0..65535), `width` x `height` over the frame.
-#[derive(Debug)]
+/// Rasterised coverage (0..1 as 0..65535), `width` x `height` over the frame (or, for
+/// a generated mask, over the source: ADR 0074).
+#[derive(Debug, PartialEq)]
 pub struct CoverageMap {
     width: usize,
     height: usize,
@@ -84,6 +85,16 @@ pub struct CoverageMap {
 }
 
 impl CoverageMap {
+    /// A map from 8-bit coverage (0..255), row by row: a generated mask's (ADR 0074).
+    /// `None` when the pixels don't match the size.
+    pub fn from_u8(width: usize, height: usize, data: &[u8]) -> Option<Self> {
+        (width > 0 && height > 0 && data.len() == width * height).then(|| Self {
+            width,
+            height,
+            data: data.iter().map(|&v| u16::from(v) * 257).collect(),
+        })
+    }
+
     pub fn size(&self) -> (usize, usize) {
         (self.width, self.height)
     }

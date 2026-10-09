@@ -21,6 +21,11 @@ import {
   toShown,
   turnMasks,
   withMasks,
+  addableKinds,
+  generatedIn,
+  generatedShape,
+  maskOf,
+  renameGenerated,
 } from "./masks";
 import { neutralRecipe } from "./recipe";
 
@@ -146,5 +151,42 @@ describe("masks", () => {
     expect(part.mode).toBe("subtract");
     expect(part.shape).toMatchObject({ centre: [0.9, 0.2], angle: 90 });
     expect(flipMasks([m])[0]!.parts![0]!.shape).toMatchObject({ centre: [0.8, 0.1] });
+  });
+
+  it("names generated masks by what they cover, and keeps them put when the picture turns", () => {
+    const subject = maskOf(generatedShape("subject", "aa"), []);
+    const linear = newMask("linear", [subject], FULL_CROP);
+    const people = maskOf(generatedShape("people", "bb"), [subject, linear]);
+    const masks = [subject, linear, people];
+    expect(masks.map((m) => maskName(masks, m))).toEqual(["Subject", "Linear gradient", "People"]);
+    // Made in the photo's own coordinates: the renderer maps them, so turns leave them.
+    expect(turnMasks(masks, 1)[0]!.shape).toEqual(subject.shape);
+    expect(flipMasks(masks)[2]!.shape).toEqual(people.shape);
+  });
+
+  it("offers Subject and People only where they can be made", () => {
+    expect(addableKinds([])).toEqual(["brush", "linear", "radial"]);
+    expect(addableKinds(["subject", "people"])).toEqual(["subject", "people", "brush", "linear", "radial"]);
+    expect(addableKinds(["subject"])).toEqual(["subject", "brush", "linear", "radial"]);
+  });
+
+  it("finds and renames the generated masks a recipe names", () => {
+    const subject = maskOf(generatedShape("subject", "aa"), []);
+    // A brush mask less the subject, and the same subject again.
+    const brush = addShape(newMask("brush", [subject], FULL_CROP), "subtract", generatedShape("subject", "aa"));
+    const people = maskOf(generatedShape("people", "bb"), [subject, brush]);
+    const r = withMasks(neutralRecipe(26), [subject, brush, people]);
+    expect(generatedIn(r)).toEqual([
+      { name: "aa", kind: "subject" },
+      { name: "bb", kind: "people" },
+    ]);
+    const renamed = renameGenerated(r, new Map([["aa", "cc"]]));
+    expect(generatedIn(renamed)).toEqual([
+      { name: "cc", kind: "subject" },
+      { name: "bb", kind: "people" },
+    ]);
+    expect(shapesOf(renamed.masks![1]!)[1]!.shape).toEqual(generatedShape("subject", "cc"));
+    // Everything else as it was.
+    expect(renamed.masks![1]!.shape).toEqual(brush.shape);
   });
 });

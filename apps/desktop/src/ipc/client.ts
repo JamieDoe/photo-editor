@@ -43,6 +43,10 @@ import type { ToneSetting } from "./generated/ToneSetting";
 import type { Removal } from "./generated/Removal";
 import type { Spot } from "./generated/Spot";
 import type { SpotKind } from "./generated/SpotKind";
+import type { CropRect } from "./generated/CropRect";
+import type { GeneratedKind } from "./generated/GeneratedKind";
+import type { GeneratedMaskDto } from "./generated/GeneratedMaskDto";
+import type { Geometry } from "./generated/Geometry";
 import type { SettingsViewDto } from "./generated/SettingsViewDto";
 import { decodeFrame, type PreviewFrame } from "./frame";
 
@@ -153,6 +157,28 @@ export const exportPreset = (id: string, destination: string | null = null) =>
  *  `paths` is for the self-test only). */
 export const importPresets = (paths: string[] | null = null) => invoke<PresetImportDto>("import_presets", { paths });
 /** Auto level: the straighten angle that levels the open photo, or null (no clear horizon). */
+/** A `kind` mask of the open photo (ADR 0074), kept on this computer; null when the
+ *  photo has nothing of the kind. Takes a second or so. */
+export const generateMask = (imageId: number, kind: GeneratedKind) =>
+  invoke<GeneratedMaskDto | null>("generate_mask", { imageId, kind });
+/** The generated masks `recipe` names that the open photo can't use: not on this
+ *  computer, or made from another photo (a pasted edit). */
+export const missingMasks = (imageId: number, recipe: EditRecipe) => invoke<string[]>("missing_masks", { imageId, recipe });
+
+/** Stored mask `name` over `crop` of the frame `geometry` makes: `width` x `height`
+ *  coverage bytes (0..255), for its tint; empty when the photo can't use it. */
+export async function maskView(
+  imageId: number,
+  geometry: Geometry | null,
+  name: string,
+  crop: CropRect,
+  width: number,
+  height: number,
+): Promise<Uint8Array> {
+  const bytes = await invoke<ArrayBuffer | number[]>("mask_view", { imageId, geometry, name, crop, width, height });
+  return new Uint8Array(toArrayBuffer(bytes));
+}
+
 export const autoLevel = (imageId: number) => invoke<number | null>("auto_level", { imageId });
 /** A new heal or clone spot at `at` (photo fractions) of `radius` (a fraction of the
  *  long edge), its source found nearby clear of `avoid`; null when none fits. */

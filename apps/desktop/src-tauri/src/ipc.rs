@@ -218,6 +218,8 @@ pub struct EngineInfoDto {
     pub grading: Vec<AdjustmentSpec>,
     /// Calibration's sliders (ADR 0053).
     pub calibration: Vec<AdjustmentSpec>,
+    /// The masks this computer can make from a photo (ADR 0074).
+    pub mask_kinds: Vec<renderer::masks::GeneratedKind>,
 }
 
 impl From<EngineInfo> for EngineInfoDto {
@@ -243,6 +245,7 @@ impl From<EngineInfo> for EngineInfoDto {
             curve_regions: i.curve_regions,
             grading: i.grading,
             calibration: i.calibration,
+            mask_kinds: i.mask_kinds,
         }
     }
 }
@@ -1078,4 +1081,16 @@ mod tests {
             assert_eq!(preset_ref(bad), None, "{bad}");
         }
     }
+}
+
+/// A mask made from the photo and kept (ADR 0074).
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct GeneratedMaskDto {
+    /// Its name in the mask store: a recipe's `MaskShape::Generated` names it.
+    pub name: String,
+    pub kind: renderer::masks::GeneratedKind,
+    /// The share of the photo it covers, 0..1.
+    pub share: f32,
 }

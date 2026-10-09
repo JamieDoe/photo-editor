@@ -110,6 +110,9 @@ pub struct RenderPlan {
     /// instead of filling there (ADR 0070): every view and export of the photo then
     /// shows the same fill. `None` fills at the rendered size.
     pub removal_fill: Option<std::sync::Arc<crate::remove::Fill>>,
+    /// The coverage of the generated masks the plan's masks name (ADR 0074), given by
+    /// whoever holds the store; a name missing here covers nothing.
+    pub generated_masks: std::sync::Arc<crate::masks::GeneratedMasks>,
     /// Heal and clone spots (ADR 0054), applied to the source after the removals.
     pub spots: Vec<crate::retouch::Spot>,
     /// Crop, straighten and perspective (ADRs 0032, 0034), applied first: the source is
@@ -144,6 +147,7 @@ impl RenderPlan {
         Self {
             removals: Vec::new(),
             removal_fill: None,
+            generated_masks: Default::default(),
             spots: Vec::new(),
             geometry: None,
             chromatic_aberration: None,
@@ -288,6 +292,7 @@ impl RenderPlan {
                 .cloned()
                 .collect(),
             removal_fill: None,
+            generated_masks: Default::default(),
             spots: r.spots.iter().filter(|s| !s.is_noop()).copied().collect(),
             geometry: r.geometry.filter(|g| !g.is_identity()),
             chromatic_aberration: r.chromatic_aberration.filter(|c| !c.is_identity()),
