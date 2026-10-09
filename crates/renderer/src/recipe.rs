@@ -61,7 +61,8 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 30: JPEG, PNG and TIFF files are shown upright by their EXIF orientation (ADR
 ///   0078). Older recipes that edit something are marked `unoriented`, made on the
 ///   file as stored, and adapted when they meet the upright photo.
-pub const RECIPE_VERSION: u32 = 30;
+/// - 31: adds red-eye corrections (ADR 0080), written only when there are some.
+pub const RECIPE_VERSION: u32 = 31;
 
 fn is_true(v: &bool) -> bool {
     *v
@@ -194,6 +195,14 @@ pub struct EditRecipe {
         ts(as = "Option<Vec<crate::remove::Removal>>", optional)
     )]
     pub removals: Vec<crate::remove::Removal>,
+    /// Red-eye corrections (ADR 0080), after the spots. Empty (and omitted from the
+    /// JSON) without any.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(
+        feature = "ts",
+        ts(as = "Option<Vec<crate::redeye::RedEye>>", optional)
+    )]
+    pub red_eyes: Vec<crate::redeye::RedEye>,
     /// The base look the adjustments start from.
     pub look: Look,
 }
@@ -234,6 +243,7 @@ impl Default for EditRecipe {
             masks: Vec::new(),
             spots: Vec::new(),
             removals: Vec::new(),
+            red_eyes: Vec::new(),
             look: Look::Standard,
         }
     }
@@ -379,6 +389,7 @@ impl EditRecipe {
                 .map(crate::remove::Removal::sanitized)
                 .filter(|r| !r.is_noop())
                 .collect(),
+            red_eyes: self.red_eyes.iter().map(|e| e.sanitized()).collect(),
             look: self.look,
         }
     }
@@ -447,6 +458,9 @@ impl EditRecipe {
             [spot.x, spot.y] = turn.point([spot.x, spot.y]);
             [spot.source_x, spot.source_y] = turn.point([spot.source_x, spot.source_y]);
         }
+        for eye in &mut r.red_eyes {
+            [eye.x, eye.y] = turn.point([eye.x, eye.y]);
+        }
         for stroke in r.removals.iter_mut().flat_map(|rm| rm.strokes.iter_mut()) {
             for p in &mut stroke.points {
                 *p = turn.point(*p);
@@ -494,6 +508,8 @@ impl EditRecipe {
             && s.channel_curves.is_none()
             && s.masks.is_empty()
             && s.spots.is_empty()
+            && s.removals.is_empty()
+            && s.red_eyes.is_empty()
             && s.look == Look::default()
     }
 }
@@ -564,7 +580,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":30,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":31,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -582,6 +598,35 @@ mod tests {
         // New recipes act near the photo's white.
         let new = EditRecipe::from_json(r#"{"version":26,"whites":30.0}"#).unwrap();
         assert!(!new.whites_from_sensor && new.tone().whites_relative);
+    }
+
+    #[test]
+    fn a_recipe_with_only_retouching_is_an_edit() {
+        // An edit that only removes something, or only fixes red eye, is still an edit
+        // (and so saved).
+        let removal = crate::remove::Removal {
+            strokes: vec![crate::masks::brush::Stroke {
+                erase: false,
+                size: 0.02,
+                feather: 50.0,
+                flow: 100.0,
+                points: vec![[0.5, 0.5]],
+            }],
+        };
+        assert!(
+            !EditRecipe {
+                removals: vec![removal],
+                ..Default::default()
+            }
+            .is_identity()
+        );
+        assert!(
+            !EditRecipe {
+                red_eyes: vec![crate::redeye::RedEye::default()],
+                ..Default::default()
+            }
+            .is_identity()
+        );
     }
 
     #[test]

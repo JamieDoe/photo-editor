@@ -209,6 +209,18 @@ pub async fn render_preview(
 
 /// Decodes the open photo at full resolution (ADR 0070) for viewing it at 100 %;
 /// resolves when window renders can use it.
+/// The red eye nearest `at` on the open photo, within `radius`, as a correction sized
+/// to it (ADR 0080); null when there is no red pupil there.
+#[tauri::command]
+pub async fn find_red_eye(
+    state: State<'_, AppState>,
+    image_id: u64,
+    at: [f32; 2],
+    radius: f32,
+) -> IpcResult<Option<renderer::redeye::RedEye>> {
+    wait(state.engine.find_red_eye(ImageId(image_id), at, radius)).await
+}
+
 /// Makes a `kind` mask of the open photo and keeps it (ADR 0074); null when the photo
 /// has nothing of the kind (no subject, nobody).
 #[tauri::command]

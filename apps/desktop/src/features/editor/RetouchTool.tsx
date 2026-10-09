@@ -3,9 +3,10 @@ import { CheckIcon } from "../../components/icons";
 import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { CropRect } from "../../ipc/generated/CropRect";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
+import type { RedEye } from "../../ipc/generated/RedEye";
 import type { Spot } from "../../ipc/generated/Spot";
 import type { SpotKind } from "../../ipc/generated/SpotKind";
-import { findDust, newSpot } from "../../ipc/client";
+import { findDust, findRedEye, newSpot } from "../../ipc/client";
 import { isTextEntry } from "../../lib/keyboard";
 import { orientedSize } from "./cropGeometry";
 import { FULL_CROP, fromShown, toShown, type Point } from "./masks";
@@ -14,8 +15,11 @@ import {
   BRUSH_SIZE,
   RETOUCH_TOOLS,
   frameToSource,
+  moveRedEye,
   moveSpot,
   newRemoval,
+  redEyeAt,
+  redEyesOf,
   placementOf,
   removalAt,
   removalsOf,
@@ -25,6 +29,7 @@ import {
   stillToFix,
   strokeRadius,
   strokeSizeFor,
+  withRedEyes,
   withRemovals,
   withSpots,
   withoutSpots,
@@ -53,11 +58,16 @@ export function useRetouchTool(opts: {
   const [size, setSizeState] = useState<number>(BRUSH_SIZE.initial);
   const [selected, setSelected] = useState<number | null>(null);
   const [selectedRemoval, setSelectedRemoval] = useState<number | null>(null);
+  // The red-eye correction selected (ADR 0080), whose Pupil size and Darken the panel
+  // shows.
+  const [selectedEye, setSelectedEye] = useState<number | null>(null);
   // Screen pixels per unit of the photo's long edge, as the overlay last measured.
   const [scale, setScale] = useState(1000);
   const spots = recipe ? spotsOf(recipe) : [];
   const spot = selected !== null ? (spots[selected] ?? null) : null;
   const removals = recipe ? removalsOf(recipe) : [];
+  const redEyes = recipe ? redEyesOf(recipe) : [];
+  const eye = selectedEye !== null ? (redEyes[selectedEye] ?? null) : null;
   // The latest recipe, for edits that finish after an await.
   const latest = useRef(recipe);
   latest.current = recipe;
@@ -81,7 +91,11 @@ export function useRetouchTool(opts: {
   useEffect(() => {
     setSelected(null);
     setSelectedRemoval(null);
+    setSelectedEye(null);
   }, [imageId]);
+  useEffect(() => {
+    if (selectedEye !== null && selectedEye >= redEyes.length) setSelectedEye(null);
+  }, [selectedEye, redEyes.length]);
   useEffect(() => {
     if (selected !== null && selected >= spots.length) setSelected(null);
   }, [selected, spots.length]);
@@ -96,6 +110,10 @@ export function useRetouchTool(opts: {
     [onChange],
   );
   const update = (i: number, s: Spot) => commit(spots.map((old, j) => (j === i ? s : old)));
+  const commitEyes = (next: RedEye[]) => {
+    if (latest.current) onChange(withRedEyes(latest.current, next));
+  };
+  const updateEye = (i: number, e: RedEye) => commitEyes(redEyesOf(latest.current ?? recipe!).map((old, j) => (j === i ? e : old)));
   const radiusFor = (px: number) => Math.round((px / 2 / scale) * 1e5) / 1e5;
 
   return {
@@ -104,23 +122,42 @@ export function useRetouchTool(opts: {
     spot,
     removals,
     selectedRemoval,
-    kind: spot?.kind ?? kind,
+    /** Red-eye corrections (ADR 0080), and the one selected. */
+    redEyes,
+    selectedEye,
+    eye,
+    kind: spot?.kind ?? (eye ? "redEye" : kind),
     /** The brush size in screen pixels: the selected spot's, or the next one's. */
     size: spot ? Math.round(spot.radius * 2 * scale) : size,
     scale,
     setScale,
     select: (i: number | null) => {
       setSelected(i);
-      if (i !== null) setSelectedRemoval(null);
+      if (i !== null) {
+        setSelectedRemoval(null);
+        setSelectedEye(null);
+      }
     },
     selectRemoval: (i: number | null) => {
       setSelectedRemoval(i);
-      if (i !== null) setSelected(null);
+      if (i !== null) {
+        setSelected(null);
+        setSelectedEye(null);
+      }
+    },
+    selectEye: (i: number | null) => {
+      setSelectedEye(i);
+      if (i !== null) {
+        setSelected(null);
+        setSelectedRemoval(null);
+        setKindState("redEye");
+      }
     },
     setKind: (k: RetouchToolKind) => {
       setKindState(k);
+      if (k !== "redEye") setSelectedEye(null);
       if (spot && selected !== null) {
-        if (k === "remove") setSelected(null);
+        if (k === "remove" || k === "redEye") setSelected(null);
         else update(selected, { ...spot, kind: k });
       }
     },
@@ -128,11 +165,33 @@ export function useRetouchTool(opts: {
       setSizeState(px);
       if (spot && selected !== null) update(selected, { ...spot, radius: radiusFor(px) });
     },
+    /** A red-eye correction for the eye nearest source point `at`, within the brush
+     *  (ADR 0080). */
+    placeRedEye: async (at: Point) => {
+      if (imageId === null || !latest.current) return;
+      const found = await findRedEye(imageId, at, radiusFor(size)).catch(() => null);
+      if (!found) {
+        notify("No red eye found here. Try a larger brush, centred on the pupil");
+        return;
+      }
+      const now = redEyesOf(latest.current ?? recipe!);
+      commitEyes([...now, found]);
+      setSelectedEye(now.length);
+      setSelected(null);
+      setSelectedRemoval(null);
+    },
+    updateEye,
+    moveEye: (i: number, from: RedEye, delta: Point) => updateEye(i, moveRedEye(from, delta)),
+    removeEye: (i: number) => {
+      commitEyes(redEyes.filter((_, j) => j !== i));
+      setSelectedEye(null);
+    },
+    redEyeAt: (p: Point) => redEyeAt(redEyes, p, aspect),
     /** A new spot at source point `at`, its source found by the engine. */
     place: async (at: Point) => {
       if (imageId === null || !latest.current) return;
       const existing = spotsOf(latest.current);
-      const spotKind: SpotKind = kind === "remove" ? "heal" : kind;
+      const spotKind: SpotKind = kind === "remove" || kind === "redEye" ? "heal" : kind;
       const made = await newSpot(imageId, spotKind, at, radiusFor(size), existing).catch(() => null);
       if (!made) {
         notify("No clean area nearby to take this spot from");
@@ -159,11 +218,12 @@ export function useRetouchTool(opts: {
       if (latest.current) onChange(withRemovals(latest.current, removalsOf(latest.current).filter((_, j) => j !== i)));
       setSelectedRemoval(null);
     },
-    /** Every spot and removal gone, in one edit. */
+    /** Every spot, removal and red-eye correction gone, in one edit. */
     clear: () => {
-      if (latest.current) onChange(withRemovals(withSpots(latest.current, []), []));
+      if (latest.current) onChange(withRedEyes(withRemovals(withSpots(latest.current, []), []), []));
       setSelected(null);
       setSelectedRemoval(null);
+      setSelectedEye(null);
     },
     /** Sensor dust still to fix (ADR 0058); null while it is being looked for. */
     dust: found === null ? null : toFix,
@@ -228,6 +288,8 @@ export function RetouchOverlay({
   // A Remove stroke being painted: its points in the source and as shown, and whether
   // the pointer has moved (a still click on a painted area selects it instead).
   const paint = useRef<{ source: Point[]; last: [number, number]; moved: boolean } | null>(null);
+  // A red-eye correction being dragged (ADR 0080).
+  const eyeDrag = useRef<{ start: Point; eye: RedEye; index: number; frame: number | null; next: Point | null } | null>(null);
   const [painted, setPainted] = useState<Point[] | null>(null);
 
   // Screen pixels per photo long edge: the shown picture is the crop of the frame.
@@ -248,15 +310,19 @@ export function RetouchOverlay({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTextEntry(e.target) || e.target instanceof HTMLInputElement) return;
-      if ((e.key === "Delete" || e.key === "Backspace") && tool.selected !== null) {
+      if ((e.key === "Delete" || e.key === "Backspace") && tool.selectedEye !== null) {
+        tool.removeEye(tool.selectedEye);
+        e.preventDefault();
+      } else if ((e.key === "Delete" || e.key === "Backspace") && tool.selected !== null) {
         tool.remove(tool.selected);
         e.preventDefault();
       } else if ((e.key === "Delete" || e.key === "Backspace") && tool.selectedRemoval !== null) {
         tool.deleteRemoval(tool.selectedRemoval);
         e.preventDefault();
-      } else if (e.key === "Escape" && (tool.selected !== null || tool.selectedRemoval !== null)) {
+      } else if (e.key === "Escape" && (tool.selected !== null || tool.selectedRemoval !== null || tool.selectedEye !== null)) {
         tool.select(null);
         tool.selectRemoval(null);
+        tool.selectEye(null);
         e.preventDefault();
       } else if (e.key === "[" || e.key === "]") {
         const next = e.key === "[" ? tool.size / 1.15 : tool.size * 1.15;
@@ -296,6 +362,18 @@ export function RetouchOverlay({
     ev.preventDefault();
     const { source } = at(ev);
     const spots = tool.spots;
+    // A red-eye correction under the pointer: selected, and dragged to move it.
+    const onEye = tool.redEyeAt(source);
+    if (onEye !== null) {
+      tool.selectEye(onEye);
+      ev.currentTarget.setPointerCapture(ev.pointerId);
+      eyeDrag.current = { start: source, eye: tool.redEyes[onEye]!, index: onEye, frame: null, next: null };
+      return;
+    }
+    if (tool.kind === "redEye") {
+      void tool.placeRedEye(source);
+      return;
+    }
     // Option-click: the selected spot's source moves here.
     if (ev.altKey && tool.spot && tool.selected !== null) {
       tool.update(tool.selected, { ...tool.spot, sourceX: source[0], sourceY: source[1] });
@@ -335,6 +413,17 @@ export function RetouchOverlay({
       }
       return;
     }
+    const e = eyeDrag.current;
+    if (e) {
+      e.next = [p.source[0] - e.start[0], p.source[1] - e.start[1]];
+      e.frame ??= requestAnimationFrame(() => {
+        const now = eyeDrag.current;
+        if (!now) return;
+        now.frame = null;
+        if (now.next) tool.moveEye(now.index, now.eye, now.next);
+      });
+      return;
+    }
     const d = drag.current;
     if (!d) return;
     d.next = moveSpot(d.spot, [p.source[0] - d.start[0], p.source[1] - d.start[1]], d.which);
@@ -347,6 +436,13 @@ export function RetouchOverlay({
     });
   };
   const onPointerUp = () => {
+    const e = eyeDrag.current;
+    if (e) {
+      if (e.frame != null) cancelAnimationFrame(e.frame);
+      if (e.next) tool.moveEye(e.index, e.eye, e.next);
+      eyeDrag.current = null;
+      return;
+    }
     const stroke = paint.current;
     if (stroke) {
       paint.current = null;
@@ -410,6 +506,18 @@ export function RetouchOverlay({
         {painted && painted.length > 0 && (
           <PaintedPath points={painted.map(shown)} width={2 * brushRadius} className="removal-paint" />
         )}
+        {tool.redEyes.map((e, i) => {
+          const c = shown([e.x, e.y]);
+          return (
+            <circle
+              key={`eye-${i}`}
+              className={i === tool.selectedEye ? "redeye-ring selected" : "redeye-ring"}
+              cx={c[0]}
+              cy={c[1]}
+              r={shownRadius([e.x, e.y], e.radius)}
+            />
+          );
+        })}
         {(tool.dust ?? []).map((d, i) => {
           const c = shown([d.x, d.y]);
           return <circle key={`dust-${i}`} className="dust-ring" cx={c[0]} cy={c[1]} r={Math.max(radius(d), 9)} />;
@@ -451,6 +559,20 @@ const BRUSH_SPEC: AdjustmentSpec = {
   unit: "px",
 };
 
+/** A red-eye correction's settings (ADR 0080). */
+const PUPIL_SPEC: AdjustmentSpec = {
+  key: "pupil",
+  label: "Pupil size",
+  group: "Retouch",
+  min: 0,
+  max: 100,
+  step: 1,
+  default: 50,
+  more: false,
+  unit: "",
+};
+const DARKEN_SPEC: AdjustmentSpec = { ...PUPIL_SPEC, key: "darken", label: "Darken" };
+
 /** The Retouch section, as in the design: the tool, what it does, and the brush size;
  *  sensor dust found, with Fix all (and its Undo); then the spots made, with a way to
  *  clear them. */
@@ -458,14 +580,19 @@ export function RetouchControls({ tool, disabled }: { tool: RetouchTool; disable
   const current = RETOUCH_TOOLS.find((t) => t.kind === tool.kind) ?? RETOUCH_TOOLS[0]!;
   const spotCount = tool.spots.length;
   const removalCount = tool.removals.length;
+  const eyeCount = tool.redEyes.length;
   const next =
     tool.kind === "remove"
       ? tool.selectedRemoval !== null
         ? "Delete removes the selected area."
         : "Drag over something to remove it."
-      : tool.spot
-        ? "Changes here apply to the selected spot."
-        : "Click the photo to add a spot.";
+      : tool.kind === "redEye"
+        ? tool.eye
+          ? "Drag the circle to move it; Delete removes it."
+          : ""
+        : tool.spot
+          ? "Changes here apply to the selected spot."
+          : "Click the photo to add a spot.";
   return (
     <div className="retouch">
       <div className="segmented small retouch-tools" role="radiogroup" aria-label="Retouch tool">
@@ -478,6 +605,28 @@ export function RetouchControls({ tool, disabled }: { tool: RetouchTool; disable
       <p className="retouch-hint">
         {current.text} {next}
       </p>
+      {tool.eye && tool.selectedEye !== null && (
+        <>
+          <Slider
+            id="redeye-pupil"
+            spec={PUPIL_SPEC}
+            value={tool.eye.pupil}
+            shown={String(Math.round(tool.eye.pupil))}
+            zeroMark={false}
+            disabled={disabled}
+            onChange={(v) => tool.updateEye(tool.selectedEye!, { ...tool.eye!, pupil: v })}
+          />
+          <Slider
+            id="redeye-darken"
+            spec={DARKEN_SPEC}
+            value={tool.eye.darken}
+            shown={String(Math.round(tool.eye.darken))}
+            zeroMark={false}
+            disabled={disabled}
+            onChange={(v) => tool.updateEye(tool.selectedEye!, { ...tool.eye!, darken: v })}
+          />
+        </>
+      )}
       <Slider
         id="retouch-size"
         spec={BRUSH_SPEC}
@@ -507,12 +656,13 @@ export function RetouchControls({ tool, disabled }: { tool: RetouchTool; disable
           </button>
         </div>
       )}
-      {spotCount + removalCount > 0 && (
+      {spotCount + removalCount + eyeCount > 0 && (
         <div className="retouch-count">
           <span>
             {[
               removalCount > 0 && `${removalCount} ${removalCount === 1 ? "removal" : "removals"}`,
               spotCount > 0 && `${spotCount} ${spotCount === 1 ? "spot" : "spots"}`,
+              eyeCount > 0 && `${eyeCount} red ${eyeCount === 1 ? "eye" : "eyes"}`,
             ]
               .filter(Boolean)
               .join(" · ")}

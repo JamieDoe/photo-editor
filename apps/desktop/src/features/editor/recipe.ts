@@ -84,6 +84,7 @@ export function isIdentity(r: EditRecipe): boolean {
     (r.masks ?? []).length === 0 &&
     (r.spots ?? []).length === 0 &&
     (r.removals ?? []).length === 0 &&
+    (r.redEyes ?? []).length === 0 &&
     r.look === "standard"
   );
 }

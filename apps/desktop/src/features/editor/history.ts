@@ -134,6 +134,7 @@ const GROUPS: Partial<Record<Key, string>> = {
   pointCurve: "Tone curve",
   channelCurves: "Tone curve",
   masks: "Masks",
+  redEyes: "Red eye",
   look: "Look",
 };
 

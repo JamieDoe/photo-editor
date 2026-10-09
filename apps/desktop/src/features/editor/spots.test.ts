@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { Spot } from "../../ipc/generated/Spot";
 import {
+  moveRedEye,
+  redEyeAt,
+  redEyesOf,
+  withRedEyes,
   frameToSource,
   moveSpot,
   newRemoval,
@@ -17,6 +21,7 @@ import {
   withSpots,
   withoutSpots,
 } from "./spots";
+import { neutralRecipe } from "./recipe";
 
 const flat = { straighten: 0, vertical: 0, horizontal: 0, rotation: 0, flip: false };
 const spot = (x: number, y: number, radius = 0.05): Spot => ({ kind: "heal", x, y, sourceX: x + 0.2, sourceY: y, radius, feather: 30, opacity: 100 });
@@ -128,6 +133,25 @@ describe("removals", () => {
     expect(removalAt(removals, [0.45, 0.5], aspect)).toBeNull();
     // The last made wins where they overlap.
     expect(removalAt([...removals, newRemoval([[0.2, 0.5]], size)], [0.2, 0.5], aspect)).toBe(2);
+  });
+});
+
+describe("red-eye corrections", () => {
+  const eye = { x: 0.5, y: 0.4, radius: 0.02, pupil: 50, darken: 50 };
+  it("are kept in the recipe only when there are some", () => {
+    const r = withRedEyes(neutralRecipe(31), [eye]);
+    expect(redEyesOf(r)).toEqual([eye]);
+    expect("redEyes" in withRedEyes(r, [])).toBe(false);
+  });
+  it("are found under the pointer, round on a wide photo, the last made first", () => {
+    const later = { ...eye, x: 0.51 };
+    // A 3:2 photo: 0.02 of the long edge is 0.03 of its height.
+    expect(redEyeAt([eye], [0.5, 0.428], 1.5)).toBe(0);
+    expect(redEyeAt([eye], [0.5, 0.435], 1.5)).toBeNull();
+    expect(redEyeAt([eye, later], [0.505, 0.4], 1.5)).toBe(1);
+  });
+  it("move with a drag, staying on the photo", () => {
+    expect(moveRedEye(eye, [0.1, -0.5])).toEqual({ ...eye, x: 0.6, y: 0 });
   });
 });
 

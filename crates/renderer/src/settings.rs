@@ -86,7 +86,12 @@ pub fn setting_groups() -> Vec<SettingGroup> {
             false,
         ),
         group("masks", "Masks", &["masks"], false),
-        group("retouch", "Retouch", &["spots", "removals"], false),
+        group(
+            "retouch",
+            "Retouch",
+            &["spots", "removals", "redEyes"],
+            false,
+        ),
     ]
 }
 
@@ -192,6 +197,7 @@ mod tests {
             chromatic_aberration: Some(Default::default()),
             profile_corrections: false,
             unoriented: true,
+            red_eyes: vec![Default::default()],
             colour_grading: Some(crate::ops::colour_grading::ColourGrading {
                 global: crate::ops::colour_grading::GradeWheel {
                     hue: 40.0,

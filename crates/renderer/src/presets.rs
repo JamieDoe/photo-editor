@@ -145,7 +145,8 @@ pub fn from_file(text: &str) -> Result<(String, EditRecipe), PresetFileError> {
 
 impl EditRecipe {
     /// This recipe's look alone, as a preset holds it: without the exposure,
-    /// geometry, lens corrections, masks, spots and removals, which belong to the photo.
+    /// geometry, lens corrections, masks, spots, removals and red-eye corrections, which
+    /// belong to the photo.
     pub fn look_only(&self) -> EditRecipe {
         EditRecipe {
             exposure: 0.0,
@@ -155,12 +156,14 @@ impl EditRecipe {
             masks: Vec::new(),
             spots: Vec::new(),
             removals: Vec::new(),
+            red_eyes: Vec::new(),
             ..self.clone()
         }
     }
 
     /// This photo's recipe with `preset`'s look: the preset's settings, keeping this
-    /// recipe's exposure, geometry, lens corrections, masks, spots and removals.
+    /// recipe's exposure, geometry, lens corrections, masks, spots, removals and red-eye
+    /// corrections.
     pub fn with_look_of(&self, preset: &EditRecipe) -> EditRecipe {
         EditRecipe {
             version: self.version,
@@ -171,6 +174,7 @@ impl EditRecipe {
             masks: self.masks.clone(),
             spots: self.spots.clone(),
             removals: self.removals.clone(),
+            red_eyes: self.red_eyes.clone(),
             ..preset.look_only()
         }
     }

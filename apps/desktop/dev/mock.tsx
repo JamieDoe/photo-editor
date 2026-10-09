@@ -349,6 +349,11 @@ mockIPC((cmd, payload) => {
       }
       return new Promise((r) => setTimeout(() => r(out.buffer), 120));
     }
+    case "find_red_eye": {
+      // Dev-only stand-in: an eye wherever clicked, the size of the brush.
+      const { at, radius } = payload as { at: [number, number]; radius: number };
+      return { x: at[0], y: at[1], radius: Math.min(radius, 0.05), pupil: 50, darken: 50 };
+    }
     case "new_spot": {
       // Dev-only stand-in: the source a little to the right.
       const { kind, at, radius } = payload as { kind: "heal" | "clone"; at: [number, number]; radius: number };
