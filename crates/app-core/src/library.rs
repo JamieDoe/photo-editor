@@ -180,13 +180,14 @@ fn index(
             }
         }
         // Photos new to the library take the marks another app left in their sidecars
-        // (ADR 0067), unless they have their own. JPEGs carry theirs inside, and a
-        // `NAME.xmp` beside one belongs to a RAW of the same name.
+        // (ADR 0067), unless they have their own. Rendered images (JPEG, PNG, TIFF)
+        // carry theirs inside, and a `NAME.xmp` beside one belongs to a RAW of the same
+        // name.
         let from_sidecars: Vec<(PhotoId, catalogue::Marks)> = recorded
             .par_iter()
             .zip(identities.par_iter())
             .filter(|((_, outcome), id)| {
-                matches!(outcome, RecordOutcome::New) && !is_jpeg(&id.canonical_path)
+                matches!(outcome, RecordOutcome::New) && !is_rendered(&id.canonical_path)
             })
             .filter_map(|((photo, _), id)| {
                 crate::sidecars::read(&id.canonical_path).map(|m| (*photo, m))
@@ -271,10 +272,10 @@ fn read_details(
     Ok(done)
 }
 
-fn is_jpeg(path: &Path) -> bool {
+fn is_rendered(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "jpg" | "jpeg"))
+        .is_some_and(raw::is_rendered_extension)
 }
 
 fn to_details(m: raw::PhotoMetadata) -> PhotoDetails {

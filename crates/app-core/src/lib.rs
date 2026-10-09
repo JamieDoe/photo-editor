@@ -55,5 +55,5 @@ pub use export::metadata::{Judgements, MetadataChoice};
 pub use export::sharpen::OutputSharpening;
 pub use export::watermark::{Position as WatermarkPosition, Size as WatermarkSize, Watermark};
 pub use jobs::{CancelToken, JobError, JobHandle};
-pub use raw::SourceKind;
+pub use raw::{SourceKind, is_rendered_extension};
 pub use renderer::{EditRecipe, Look, PreviewQuality, RECIPE_VERSION};
