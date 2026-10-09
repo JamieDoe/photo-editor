@@ -123,8 +123,8 @@ pub enum MarkChange {
     Label(ColourLabel),
 }
 
-/// Library-wide views: built from marks, or (Recently imported) from when photos
-/// joined the library.
+/// Library-wide views: built from marks, or from when photos joined the library
+/// (Recently imported) or were last edited (Recently edited).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Collection {
     /// Every present photo (ADR 0065).
@@ -135,12 +135,14 @@ pub enum Collection {
     Rejected,
     /// First indexed within the last [`RECENT_DAYS`] days (ADR 0056).
     RecentlyImported,
+    /// Edited within the last [`RECENT_DAYS`] days (ADR 0079), the latest first.
+    RecentlyEdited,
 }
 
-/// How far back Recently imported reaches.
+/// How far back Recently imported and Recently edited reach.
 pub const RECENT_DAYS: i64 = 30;
 
-/// Photos first indexed after this (ms since the epoch) are recently imported.
+/// Photos first indexed (or edits saved) after this, in ms since the epoch, are recent.
 fn recent_cutoff_ms() -> i64 {
     crate::catalogue::now_ms() - RECENT_DAYS * 24 * 60 * 60 * 1000
 }
@@ -153,9 +155,27 @@ impl Collection {
             Self::Rated => "p.rating > 0".into(),
             Self::Rejected => "p.flag = -1".into(),
             Self::RecentlyImported => format!("p.created_at_ms >= {}", recent_cutoff_ms()),
+            Self::RecentlyEdited => format!(
+                "p.id IN (SELECT photo_id FROM edits WHERE updated_at_ms >= {})",
+                recent_cutoff_ms()
+            ),
+        }
+    }
+
+    /// The order it lists in: by capture time, except Recently edited, the latest edit
+    /// first.
+    fn order(self) -> &'static str {
+        match self {
+            Self::RecentlyEdited => {
+                "(SELECT e.updated_at_ms FROM edits e WHERE e.photo_id = p.id) DESC, f.path"
+            }
+            _ => BY_CAPTURE,
         }
     }
 }
+
+/// Collections' usual order: capture time (unknown last), then path.
+const BY_CAPTURE: &str = "p.captured_at IS NULL, p.captured_at, f.path";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct CollectionCounts {
@@ -165,6 +185,8 @@ pub struct CollectionCounts {
     pub rated: usize,
     pub rejected: usize,
     pub recent: usize,
+    /// Recently edited (ADR 0079).
+    pub edited: usize,
 }
 
 /// A photo in a collection: its present file and what the catalogue knows about it.
@@ -257,7 +279,7 @@ impl Catalogue {
     /// Present photos in `collection` across the whole library, oldest capture first
     /// (then by path; photos without a capture time last).
     pub fn collection(&self, collection: Collection) -> Result<Vec<CollectionEntry>> {
-        self.entries(&collection.condition(), [])
+        self.entries_in_order(&collection.condition(), collection.order(), [])
     }
 
     /// Sets the marks of photos that have none yet (ADR 0067, part 3: marks read from
@@ -295,13 +317,22 @@ impl Catalogue {
         condition: &str,
         params: impl rusqlite::Params,
     ) -> Result<Vec<CollectionEntry>> {
+        self.entries_in_order(condition, BY_CAPTURE, params)
+    }
+
+    fn entries_in_order(
+        &self,
+        condition: &str,
+        order: &str,
+        params: impl rusqlite::Params,
+    ) -> Result<Vec<CollectionEntry>> {
         let conn = self.conn();
         let sql = format!(
             "SELECT p.id, f.path, f.size, f.modified_ns, p.rating, p.flag, p.metadata_version,
                     EXISTS(SELECT 1 FROM edits e WHERE e.photo_id = p.id), p.label, {}
              FROM photos p JOIN files f ON f.photo_id = p.id
              WHERE f.missing = 0 AND {condition}
-             ORDER BY p.captured_at IS NULL, p.captured_at, f.path",
+             ORDER BY {order}",
             crate::details::COLUMNS,
         );
         let mut stmt = conn.prepare(&sql)?;
@@ -343,13 +374,15 @@ impl Catalogue {
                 ))
             },
         )?;
-        let (all, recent): (i64, i64) = conn.query_row(
+        let (all, recent, edited): (i64, i64, i64) = conn.query_row(
             "SELECT COUNT(DISTINCT p.id),
-                    COUNT(DISTINCT CASE WHEN p.created_at_ms >= ?1 THEN p.id END)
+                    COUNT(DISTINCT CASE WHEN p.created_at_ms >= ?1 THEN p.id END),
+                    COUNT(DISTINCT CASE WHEN e.updated_at_ms >= ?1 THEN p.id END)
              FROM photos p JOIN files f ON f.photo_id = p.id
+             LEFT JOIN edits e ON e.photo_id = p.id
              WHERE f.missing = 0",
             [recent_cutoff_ms()],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?;
         Ok(CollectionCounts {
             all: all as usize,
@@ -357,6 +390,7 @@ impl Catalogue {
             rated: rated as usize,
             rejected: rejected as usize,
             recent: recent as usize,
+            edited: edited as usize,
         })
     }
 }

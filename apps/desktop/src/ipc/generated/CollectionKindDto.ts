@@ -4,4 +4,4 @@
  * Library-wide collections: every photo, those built from marks, or the recently
  * imported photos.
  */
-export type CollectionKindDto = "all" | "picks" | "rated" | "rejected" | "recent";
+export type CollectionKindDto = "all" | "picks" | "rated" | "rejected" | "recent" | "edited";

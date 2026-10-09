@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import type { ColourLabelDto } from "../../ipc/generated/ColourLabelDto";
 import {
+  COLLECTION_NAMES,
+  keepsOwnOrder,
   applyChange,
   flagClick,
   labelClick,
@@ -185,5 +187,14 @@ describe("stepFrom", () => {
     // The anchor filtered out of view: just the photo clicked.
     expect(rangeToTick(shown, "z", "c")).toEqual(["c"]);
     expect(rangeToTick(shown, "a", "z")).toEqual([]);
+  });
+});
+
+describe("recently edited", () => {
+  it("keeps the catalogue's order, the latest edit first, and is named for it", () => {
+    expect(keepsOwnOrder("edited")).toBe(true);
+    for (const kind of ["all", "recent", "picks", "rated", "rejected"] as const) expect(keepsOwnOrder(kind)).toBe(false);
+    expect(keepsOwnOrder(null)).toBe(false);
+    expect(COLLECTION_NAMES.edited).toBe("Recently edited");
   });
 });

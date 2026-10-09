@@ -95,6 +95,7 @@ export function inCollection(marks: MarksDto, kind: CollectionKindDto): boolean 
     case "rejected":
       return marks.flag === "reject";
     case "recent":
+    case "edited":
       // Not a mark: the catalogue chose them.
       return true;
   }
@@ -106,7 +107,12 @@ export const COLLECTION_NAMES: Record<CollectionKindDto, string> = {
   rated: "Rated",
   rejected: "Rejected",
   recent: "Recently imported",
+  edited: "Recently edited",
 };
+
+/** Whether a collection keeps the catalogue's order instead of the chosen sort:
+ *  Recently edited lists the latest edits first (ADR 0079). */
+export const keepsOwnOrder = (kind: CollectionKindDto | null) => kind === "edited";
 
 export const starsText = (rating: number) => "★".repeat(Math.max(0, Math.min(5, rating)));
 
