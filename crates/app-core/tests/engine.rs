@@ -927,6 +927,66 @@ fn a_subject_mask_covers_the_subject() {
 }
 
 #[test]
+fn the_cameras_lens_profile_corrects_unless_turned_off() {
+    let raw = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tests/fixtures/local/sony-a7riv-61mp-14bit-compressed.arw");
+    if !raw.exists() {
+        eprintln!("skipped: no local camera fixtures");
+        return;
+    }
+    let engine = engine();
+    let summary = engine.open(&raw).wait().unwrap();
+    assert_eq!(
+        summary.lens_profile.as_deref(),
+        Some("FE 24-70mm F4 ZA OSS")
+    );
+    let on = preview(
+        &engine,
+        summary.id,
+        EditRecipe::default(),
+        PreviewQuality::Detail,
+    );
+    let off = preview(
+        &engine,
+        summary.id,
+        EditRecipe {
+            profile_corrections: false,
+            ..Default::default()
+        },
+        PreviewQuality::Detail,
+    );
+    assert_eq!(
+        (on.image.width(), on.image.height()),
+        (off.image.width(), off.image.height())
+    );
+    // The 24-70's falloff at f/4 lifted: the corner brighter, the centre the same.
+    let mean = |f: &app_core::PreviewFrame, x0: f32, y0: f32| {
+        let (w, h) = (f.image.width() as usize, f.image.height() as usize);
+        let mut sum = 0u64;
+        let mut n = 0u64;
+        for y in (y0 * h as f32) as usize..((y0 + 0.05) * h as f32) as usize {
+            for x in (x0 * w as f32) as usize..((x0 + 0.05) * w as f32) as usize {
+                let i = (y * w + x) * 4;
+                sum += f.image.data()[i..i + 3]
+                    .iter()
+                    .map(|&v| u64::from(v))
+                    .sum::<u64>();
+                n += 3;
+            }
+        }
+        sum as f32 / n as f32
+    };
+    // (The bottom right: the top corners are sky near white, the bottom left hedge
+    // near black, where the tone curve hides it.)
+    assert!(mean(&on, 0.95, 0.95) > mean(&off, 0.95, 0.95) + 6.0);
+    assert!((mean(&on, 0.475, 0.475) - mean(&off, 0.475, 0.475)).abs() < 3.0);
+    // A JPEG records no profile.
+    let dir = fixtures::TempDir::new("engine-lens");
+    let jpeg = write(dir.path(), "plain.jpg", fixtures::subject_jpeg(300, 200));
+    assert_eq!(engine.open(&jpeg).wait().unwrap().lens_profile, None);
+}
+
+#[test]
 fn every_computer_finds_the_sky() {
     let dir = fixtures::TempDir::new("engine-sky");
     let sky = write(dir.path(), "sky.jpg", fixtures::sky_jpeg(900, 600));

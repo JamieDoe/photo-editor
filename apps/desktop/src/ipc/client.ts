@@ -43,10 +43,9 @@ import type { ToneSetting } from "./generated/ToneSetting";
 import type { Removal } from "./generated/Removal";
 import type { Spot } from "./generated/Spot";
 import type { SpotKind } from "./generated/SpotKind";
-import type { CropRect } from "./generated/CropRect";
 import type { GeneratedKind } from "./generated/GeneratedKind";
 import type { GeneratedMaskDto } from "./generated/GeneratedMaskDto";
-import type { Geometry } from "./generated/Geometry";
+import type { MaskViewRequestDto } from "./generated/MaskViewRequestDto";
 import type { SettingsViewDto } from "./generated/SettingsViewDto";
 import { decodeFrame, type PreviewFrame } from "./frame";
 
@@ -165,17 +164,11 @@ export const generateMask = (imageId: number, kind: GeneratedKind) =>
  *  computer, or made from another photo (a pasted edit). */
 export const missingMasks = (imageId: number, recipe: EditRecipe) => invoke<string[]>("missing_masks", { imageId, recipe });
 
-/** Stored mask `name` over `crop` of the frame `geometry` makes: `width` x `height`
- *  coverage bytes (0..255), for its tint; empty when the photo can't use it. */
-export async function maskView(
-  imageId: number,
-  geometry: Geometry | null,
-  name: string,
-  crop: CropRect,
-  width: number,
-  height: number,
-): Promise<Uint8Array> {
-  const bytes = await invoke<ArrayBuffer | number[]>("mask_view", { imageId, geometry, name, crop, width, height });
+/** A stored mask over `crop` of the frame the request's geometry and lens corrections
+ *  make: `width` x `height` coverage bytes (0..255), for its tint; empty when the
+ *  photo can't use it. */
+export async function maskView(imageId: number, view: MaskViewRequestDto): Promise<Uint8Array> {
+  const bytes = await invoke<ArrayBuffer | number[]>("mask_view", { imageId, view });
   return new Uint8Array(toArrayBuffer(bytes));
 }
 

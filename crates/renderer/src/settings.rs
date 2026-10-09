@@ -77,7 +77,7 @@ pub fn setting_groups() -> Vec<SettingGroup> {
         group(
             "geometry",
             "Crop, geometry and lens",
-            &["geometry", "chromaticAberration"],
+            &["geometry", "chromaticAberration", "profileCorrections"],
             false,
         ),
         group("masks", "Masks", &["masks"], false),
@@ -185,6 +185,7 @@ mod tests {
                 ..Default::default()
             }),
             chromatic_aberration: Some(Default::default()),
+            profile_corrections: false,
             colour_grading: Some(crate::ops::colour_grading::ColourGrading {
                 global: crate::ops::colour_grading::GradeWheel {
                     hue: 40.0,

@@ -530,7 +530,7 @@ fn chromatic_aberration_alone_frames_the_source_first() {
         .render(&plan, &img, PixelFormat::Rgb8, &NeverCancel)
         .unwrap();
     assert_eq!((out.width(), out.height()), (img.width(), img.height()));
-    let framed = geometry::resample_corrected(&img, &Geometry::default(), Some(&ca));
+    let framed = geometry::resample_corrected(&img, &Geometry::default(), Some(&ca), None);
     let plain = RenderPlan {
         chromatic_aberration: None,
         ..plan.clone()
@@ -548,6 +548,126 @@ fn chromatic_aberration_alone_frames_the_source_first() {
         RenderPlan::from_recipe(&none, None).chromatic_aberration,
         None
     );
+}
+
+/// A profile of 16 knots whose distortion and vignetting are `d(r)` and `v(r)`.
+fn lens_profile(
+    w: u32,
+    h: u32,
+    d: Option<fn(f32) -> f32>,
+    v: Option<fn(f32) -> f32>,
+) -> crate::lens::LensCorrection {
+    let knots: Vec<f32> = (0..16).map(|i| i as f32 / 15.0).collect();
+    let curve = |f: fn(f32) -> f32| knots.iter().map(|&r| f(r)).collect::<Vec<_>>();
+    let (dc, vc) = (d.map(curve), v.map(curve));
+    let _ = (w, h);
+    crate::lens::LensCorrection::new(&knots, dc.as_deref(), vc.as_deref()).unwrap()
+}
+
+#[test]
+fn lens_vignetting_is_lifted_to_an_even_photo_even_above_the_sensors_white() {
+    // A wall the lens darkened to half towards the corners: the centre near the
+    // sensor's white, so the lifted corners go past it.
+    let (w, h) = (300u32, 200u32);
+    let falloff = |r: f32| 1.0 - 0.5 * r * r;
+    let lens = lens_profile(w, h, None, Some(falloff));
+    let half_diagonal = (w as f32).hypot(h as f32) / 2.0;
+    let data: Vec<u16> = (0..w * h)
+        .flat_map(|k| {
+            let (x, y) = (
+                (k % w) as f32 + 0.5 - w as f32 / 2.0,
+                (k / w) as f32 + 0.5 - h as f32 / 2.0,
+            );
+            let b = falloff(x.hypot(y) / half_diagonal);
+            [(60000.0 * b) as u16; 3]
+        })
+        .collect();
+    let img = LinearImage::new(w, h, data).unwrap();
+    // Exposure down a stop, so the evened wall (60000 everywhere) shows below white.
+    let recipe = EditRecipe {
+        exposure: -1.0,
+        ..Default::default()
+    };
+    let plan = RenderPlan::from_recipe(&recipe, None).with_lens(Some(lens));
+    assert!((lens.headroom() - 2.0).abs() < 0.01);
+    let out = CpuRenderer
+        .render(&plan, &img, PixelFormat::Rgb8, &NeverCancel)
+        .unwrap();
+    let px = |x: u32, y: u32| out.data()[((y * w + x) * 3) as usize];
+    let centre = px(w / 2, h / 2);
+    for (x, y) in [
+        (1, 1),
+        (w - 2, 1),
+        (1, h - 2),
+        (w - 2, h - 2),
+        (w / 2, 2),
+        (2, h / 2),
+    ] {
+        let v = px(x, y);
+        assert!(v.abs_diff(centre) <= 2, "({x}, {y}): {v} against {centre}");
+    }
+    // Without the profile, the corners are far darker.
+    let plain = CpuRenderer
+        .render(
+            &RenderPlan::from_recipe(&recipe, None),
+            &img,
+            PixelFormat::Rgb8,
+            &NeverCancel,
+        )
+        .unwrap();
+    assert!(plain.data()[((w + 1) * 3) as usize] < centre - 30);
+}
+
+#[test]
+fn lens_distortion_straightens_a_line_the_lens_bent() {
+    // A barrel lens bent a horizontal line near the top into an arc: drawn where the
+    // lens put it, the line is lower at the sides than in the middle.
+    let (w, h) = (400u32, 300u32);
+    let barrel = |r: f32| 1.0 - 0.06 * r * r;
+    let lens = lens_profile(w, h, Some(barrel), None);
+    let line_y = 40.0;
+    let mut data = vec![2000u16; (w * h * 3) as usize];
+    for i in 0..4000 {
+        // The ideal line's points, put where the lens puts them.
+        let x = i as f32 / 4000.0 * w as f32;
+        let (sx, sy) = lens.at(w as f32, h as f32).distorted(x, line_y);
+        let (px, py) = (sx.round() as i64, sy.round() as i64);
+        if (0..w as i64).contains(&px) && (0..h as i64).contains(&py) {
+            let k = ((py as u32 * w + px as u32) * 3) as usize;
+            data[k..k + 3].copy_from_slice(&[50000; 3]);
+        }
+    }
+    let img = LinearImage::new(w, h, data).unwrap();
+    let plan = RenderPlan::from_recipe(&EditRecipe::default(), None).with_lens(Some(lens));
+    let out = CpuRenderer
+        .render(&plan, &img, PixelFormat::Rgb8, &NeverCancel)
+        .unwrap();
+    // In the output the line is straight and where an ideal lens would have put it
+    // (a barrel correction needs no scaling to fill the frame).
+    let row_of = |x: u32| {
+        (0..h)
+            .max_by_key(|&y| out.data()[((y * w + x) * 3) as usize])
+            .unwrap() as f32
+    };
+    let rows = [20, 100, 200, 300, 380].map(row_of);
+    for r in rows {
+        assert!((r + 0.5 - line_y).abs() <= 1.0, "rows {rows:?}");
+    }
+    // Uncorrected, the bent line is lower at the sides.
+    let plain = CpuRenderer
+        .render(
+            &RenderPlan::from_recipe(&EditRecipe::default(), None),
+            &img,
+            PixelFormat::Rgb8,
+            &NeverCancel,
+        )
+        .unwrap();
+    let plain_row = |x: u32| {
+        (0..h)
+            .max_by_key(|&y| plain.data()[((y * w + x) * 3) as usize])
+            .unwrap()
+    };
+    assert!(plain_row(20) > plain_row(200) + 3);
 }
 
 fn linear_mask(

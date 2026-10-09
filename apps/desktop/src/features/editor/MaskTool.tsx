@@ -138,6 +138,7 @@ export function useMaskTool(opts: {
     /** The photo, and the frame its masks are drawn in, for generated masks' tints. */
     imageId,
     geometry: recipe?.geometry ?? null,
+    profileCorrections: recipe?.profileCorrections !== false,
     enter: () => {
       setOpen(true);
       if (activeId === null) setActiveId(masks[0]?.id ?? null);
@@ -319,7 +320,14 @@ export function MaskOverlay({ tool, size }: { tool: MaskTool; size: { width: num
   return (
     <div className="mask-overlay" ref={boxRef}>
       {tool.overlay && !mask.hidden && (
-        <MaskTintCanvas mask={mask} crop={crop} boxRef={boxRef} imageId={tool.imageId} geometry={tool.geometry} />
+        <MaskTintCanvas
+          mask={mask}
+          crop={crop}
+          boxRef={boxRef}
+          imageId={tool.imageId}
+          geometry={tool.geometry}
+          profileCorrections={tool.profileCorrections}
+        />
       )}
       {shape.kind === "linear" ? (
         <LinearGuides key={key} {...props} shape={shape} />

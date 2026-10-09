@@ -1119,3 +1119,19 @@ guided filter at about 1500 px) is most of the rest.
 | Canon EOS R6, Fujifilm X-T3, Nikon Z 6 | — | none found | — |
 
 No model loads, so the first mask costs the same as the rest.
+
+## 55. Lens corrections from the camera (ADR 0075)
+
+Sony A7R IV (24–70 mm at 24 mm), release build, on the noisy machine. A Detail preview
+at 4772×3180, the straighten changed each time so the framing is redone:
+
+| Step | Without | With the profile |
+|---|---|---|
+| Framing and render | 86–102 ms | 156–168 ms |
+| A slider change after it (framing cached) | 30–32 ms | 31 ms |
+
+The profile's curves are indexed directly (its knots are evenly spaced) and the radius
+is a plain square root; with a binary search and `hypot` per pixel, framing and render
+took 190–200 ms.
+Reading the profile is a few kilobytes of the file's headers.
+

@@ -277,6 +277,8 @@ pub struct ImageSummaryDto {
     pub decode_ms: f64,
     pub pyramid_ms: f64,
     pub embedded_preview_ms: Option<f64>,
+    /// The lens whose corrections the file has (ADR 0075); null without any.
+    pub lens_profile: Option<String>,
     /// The photo's saved edit, applied from the first render. Null if unedited.
     pub saved_recipe: Option<EditRecipe>,
     /// Whether edits to this photo are saved.
@@ -414,6 +416,7 @@ impl From<ImageSummary> for ImageSummaryDto {
             decode_ms: s.decode_ms,
             pyramid_ms: s.pyramid_ms,
             embedded_preview_ms: s.embedded_preview_ms,
+            lens_profile: s.lens_profile,
             saved_recipe: None,
             edit_saving: EditSavingDto::NotInLibrary,
         }
@@ -1093,4 +1096,19 @@ pub struct GeneratedMaskDto {
     pub kind: renderer::masks::GeneratedKind,
     /// The share of the photo it covers, 0..1.
     pub share: f32,
+}
+
+/// Which stored mask to view, and over what (ADR 0074): the frame the recipe's
+/// geometry and lens corrections make, `crop` of it, at `width` × `height`.
+#[derive(Debug, Clone, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct MaskViewRequestDto {
+    pub name: String,
+    pub geometry: Option<renderer::Geometry>,
+    /// The recipe's `profileCorrections` (ADR 0075).
+    pub profile_corrections: bool,
+    pub crop: renderer::CropRect,
+    pub width: u32,
+    pub height: u32,
 }

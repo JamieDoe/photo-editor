@@ -113,6 +113,9 @@ pub struct RenderPlan {
     /// The coverage of the generated masks the plan's masks name (ADR 0074), given by
     /// whoever holds the store; a name missing here covers nothing.
     pub generated_masks: std::sync::Arc<crate::masks::GeneratedMasks>,
+    /// The lens's corrections (ADR 0075), from the photo's profile when the recipe
+    /// applies it; set by the caller, which knows the photo.
+    pub lens: Option<crate::lens::LensCorrection>,
     /// Heal and clone spots (ADR 0054), applied to the source after the removals.
     pub spots: Vec<crate::retouch::Spot>,
     /// Crop, straighten and perspective (ADRs 0032, 0034), applied first: the source is
@@ -148,12 +151,31 @@ impl RenderPlan {
             removals: Vec::new(),
             removal_fill: None,
             generated_masks: Default::default(),
+            lens: None,
             spots: Vec::new(),
             geometry: None,
             chromatic_aberration: None,
             stages,
             output: OutputTransform::Srgb8,
         }
+    }
+
+    /// The plan applying `lens` (ADR 0075), the photo's profile when the recipe
+    /// applies it. Its vignetting is lifted while framing, divided by its headroom
+    /// (framed images stop at the sensor's white), which a gain at the start puts
+    /// back.
+    pub fn with_lens(mut self, lens: Option<crate::lens::LensCorrection>) -> Self {
+        let headroom = lens.map_or(1.0, |l| l.headroom());
+        if headroom > 1.0 {
+            self.stages.insert(
+                0,
+                Stage::Exposure {
+                    multiplier: headroom,
+                },
+            );
+        }
+        self.lens = lens;
+        self
     }
 
     /// The rendered size for a source of `width` x `height`.
@@ -293,6 +315,7 @@ impl RenderPlan {
                 .collect(),
             removal_fill: None,
             generated_masks: Default::default(),
+            lens: None,
             spots: r.spots.iter().filter(|s| !s.is_noop()).copied().collect(),
             geometry: r.geometry.filter(|g| !g.is_identity()),
             chromatic_aberration: r.chromatic_aberration.filter(|c| !c.is_identity()),

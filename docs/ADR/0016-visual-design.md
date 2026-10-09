@@ -78,7 +78,7 @@ existing screens to the design now, and to match it for every screen built from 
 | Colour section: Temperature in kelvin on a blue–amber track, Tint on a green–magenta track, Vibrance, Saturation | as designed |
 | Detail section: Texture, Clarity, Sharpening (default 40), Noise reduction; "More controls" headed "Finishing" with Vignette and Grain | as designed |
 | Photo toolbar "Crop" button; crop mode (dimmed outside, thirds grid, handles, size label; toolbar with ratios, Straighten, Reset, Done); Geometry section (aspect ratio, Straighten, Crop) | as designed, including Auto level |
-| Geometry "More controls" headed "Perspective & lens": Vertical, Horizontal, Remove chromatic aberration switch | as designed (ADRs 0034, 0035); the Lens correction switch is not built (no lens profiles) |
+| Geometry "More controls" headed "Perspective & lens": Vertical, Horizontal, Lens correction switch ("NIKKOR Z 24–70mm f/4 S · auto"), Remove chromatic aberration switch | as designed (ADRs 0034, 0035, 0075): Lens correction shows the lens's name and "· auto" when the photo's file has a profile, and "No lens profile in this photo's file", disabled, when it hasn't |
 | Colour mixer behind "More controls": label and range name, eight dots (Blues first), Hue / Saturation / Luminance | as designed |
 
 ### Deliberate deviations
@@ -123,7 +123,7 @@ existing screens to the design now, and to match it for every screen built from 
 ### Not built yet (and so not shown)
 
 Search, Recently imported, albums, presets, compare,
-the filmstrip, batch selection, the Export dialog, and the Lens correction switch.
+the filmstrip, batch selection and the Export dialog.
 
 ## Consequences
 

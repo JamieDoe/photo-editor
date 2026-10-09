@@ -302,7 +302,8 @@ impl Shared {
         let options = DecodeOptions::new(DecodeScale::AtLeast(min_edge))
             .with_max_threads(rayon::current_num_threads());
         let decoded = self.decoders.decode(path, options, token)?;
-        let plan = RenderPlan::from_recipe(recipe, decoded.info.as_shot_white);
+        let lens = crate::lens::applied(recipe, crate::lens::of(path).map(|(l, _)| l));
+        let plan = RenderPlan::from_recipe(recipe, decoded.info.as_shot_white).with_lens(lens);
         Ok(self
             .renderer
             .render(&plan, &decoded.image, PixelFormat::Rgb8, token)?)

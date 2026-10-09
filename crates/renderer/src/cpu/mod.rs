@@ -13,7 +13,7 @@ use image_core::gamut::{ON_OUTPUT, compress};
 use image_core::{Cancellation, LinearImage, OutputImage, PixelFormat};
 use rayon::prelude::*;
 
-use crate::masks::Frame;
+use crate::masks::{Frame, SourceFrame};
 use crate::{RenderBackend, RenderError, RenderPlan};
 use kernels::{Kernel, KernelScratch, RowSpan, compile, min_chunk_rows};
 use lut::output_lut;
@@ -110,20 +110,31 @@ impl CpuRenderer {
                 &*retouched
             };
         let (sw, sh) = (source.width(), source.height());
-        if plan.geometry.is_none() && plan.chromatic_aberration.is_none() {
+        if plan.geometry.is_none() && plan.chromatic_aberration.is_none() && plan.lens.is_none() {
             return self.render_frame(plan, source, Frame::whole(sw, sh), rows, out, cancel);
         }
-        // Framing first (crop, straighten, perspective, chromatic aberration); the
-        // stages run on the framed image, which is cached while other controls change.
+        // Framing first (crop, straighten, perspective, lens, chromatic aberration);
+        // the stages run on the framed image, which is cached while other controls
+        // change.
         let g = plan.geometry.unwrap_or_default();
         let (fw, fh) = g.oriented_size(sw as f32, sh as f32);
         let where_in_frame = Frame {
             crop: g.effective_crop(sw as f32, sh as f32),
             width: fw,
             height: fh,
-            from_source: Some((g, sw as f32, sh as f32)),
+            from_source: Some(SourceFrame {
+                geometry: g,
+                width: sw as f32,
+                height: sh as f32,
+                lens: plan.lens,
+            }),
         };
-        let framed = kernels::cached_frame(source, &g, plan.chromatic_aberration.as_ref());
+        let framed = kernels::cached_frame(
+            source,
+            &g,
+            plan.chromatic_aberration.as_ref(),
+            plan.lens.as_ref(),
+        );
         self.render_frame(plan, &framed, where_in_frame, rows, out, cancel)
     }
 

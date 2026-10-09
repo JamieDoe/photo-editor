@@ -17,12 +17,15 @@ export function MaskTintCanvas({
   boxRef,
   imageId,
   geometry,
+  profileCorrections,
 }: {
   mask: Mask;
   crop: CropRect;
   boxRef: RefObject<HTMLDivElement | null>;
   imageId: number | null;
   geometry: Geometry | null;
+  /** Whether the recipe applies the lens's profile (ADR 0075), which moves the frame. */
+  profileCorrections: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const tint = useRef<MaskTint | null>(null);
@@ -47,7 +50,14 @@ export function MaskTintCanvas({
   const width = Math.max(1, Math.round(boxSize.width * (p1 - p0)));
   const height = Math.max(1, Math.round(boxSize.height * (q1 - q0)));
   const { x, y, w, h } = crop;
-  const generated = useGeneratedViews(mask, crop, boxSize.width / Math.max(boxSize.height, 1), imageId, geometry);
+  const generated = useGeneratedViews(
+    mask,
+    crop,
+    boxSize.width / Math.max(boxSize.height, 1),
+    imageId,
+    geometry,
+    profileCorrections,
+  );
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || boxSize.width === 0) return;
@@ -83,6 +93,7 @@ function useGeneratedViews(
   aspect: number,
   imageId: number | null,
   geometry: Geometry | null,
+  profileCorrections: boolean,
 ): ReadonlyMap<string, GeneratedView> {
   const names = shapesOf(mask)
     .flatMap(({ shape }) => (shape.kind === "generated" ? [shape.mask] : []))
@@ -92,7 +103,7 @@ function useGeneratedViews(
   const height = aspect >= 1 ? Math.max(1, Math.round(GENERATED_VIEW_EDGE / aspect)) : GENERATED_VIEW_EDGE;
   const geometryKey = JSON.stringify(geometry);
   // What the views are of; the size they are made at only sharpens them.
-  const of = `${imageId}|${geometryKey}|${names}`;
+  const of = `${imageId}|${geometryKey}|${profileCorrections}|${names}`;
   const key = `${of}|${width}x${height}`;
   useEffect(() => {
     if (imageId === null || names === "" || !Number.isFinite(aspect) || aspect <= 0) return;
@@ -100,7 +111,8 @@ function useGeneratedViews(
     const viewCrop = { ...crop };
     void Promise.all(
       names.split(",").map(async (name) => {
-        const bytes = await maskView(imageId, geometry, name, viewCrop, width, height).catch(() => new Uint8Array());
+        const view = { name, geometry, profileCorrections, crop: viewCrop, width, height };
+        const bytes = await maskView(imageId, view).catch(() => new Uint8Array());
         return [name, bytes] as const;
       }),
     ).then((made) => {

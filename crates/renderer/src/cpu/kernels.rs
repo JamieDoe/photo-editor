@@ -7,6 +7,7 @@ use super::lut::CurveLut;
 use crate::RenderError;
 use crate::chromatic::ChromaticAberration;
 use crate::geometry::Geometry;
+use crate::lens::LensCorrection;
 use crate::masks::{Frame, LocalField};
 use crate::ops::calibration;
 use crate::ops::colour_grading;
@@ -231,21 +232,23 @@ pub(super) fn cached_frame(
     source: &LinearImage,
     g: &Geometry,
     ca: Option<&ChromaticAberration>,
+    lens: Option<&LensCorrection>,
 ) -> Arc<LinearImage> {
-    type Key = (SourceKey, [u32; 7], [u32; 4]);
+    type Key = (SourceKey, [u32; 7], [u32; 4], [u32; 4]);
     static LAST: Mutex<Option<(Key, Arc<LinearImage>)>> = Mutex::new(None);
     let c = g.crop;
     let key: Key = (
         source_key(source),
         [g.straighten, g.vertical, g.horizontal, c.x, c.y, c.w, c.h].map(f32::to_bits),
         ca.map_or([0; 4], |c| c.to_bits()),
+        lens.map_or([0; 4], LensCorrection::key),
     );
     if let Some((k, frame)) = LAST.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
         && *k == key
     {
         return Arc::clone(frame);
     }
-    let frame = Arc::new(crate::geometry::resample_corrected(source, g, ca));
+    let frame = Arc::new(crate::geometry::resample_corrected(source, g, ca, lens));
     *LAST.lock().unwrap_or_else(|e| e.into_inner()) = Some((key, Arc::clone(&frame)));
     frame
 }

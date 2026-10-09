@@ -120,6 +120,11 @@ geometry?: Geometry,
  */
 chromaticAberration?: ChromaticAberration, 
 /**
+ * Lens corrections from the photo's own profile (ADR 0075), when it has one:
+ * distortion and vignetting. On for new edits; written only when off.
+ */
+profileCorrections?: boolean, 
+/**
  * The tone curve's points, `[input, output]` display tones. `None` (and omitted
  * from the JSON) while it is the diagonal.
  */

@@ -17,6 +17,8 @@ pub(crate) struct OpenedImage {
     /// How bright the scene was, from the camera's exposure (`ai::scene_ev`): the sky
     /// finder tells sky from bright walls with it (ADR 0074).
     pub scene_ev: Option<f32>,
+    /// The lens corrections the file records (ADR 0075), and the lens's name.
+    pub lens: Option<(renderer::lens::LensCorrection, String)>,
     pub pyramid: Pyramid,
     /// The as-shot light, which white balance adjustments are relative to.
     pub as_shot_white: Option<image_core::Chromaticity>,

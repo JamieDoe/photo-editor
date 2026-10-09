@@ -20,6 +20,10 @@ describe("recipe helpers", () => {
     const lens = { ...r, chromaticAberration: { red: [0, 0] as [number, number], blue: [0, 0] as [number, number] } };
     expect(geometryEdited(lens)).toBe(true);
     expect(isIdentity(lens)).toBe(false);
+    // The lens's profile is on by default (ADR 0075): off is an edit, on is not.
+    expect(isIdentity({ ...r, profileCorrections: true })).toBe(true);
+    expect(geometryEdited({ ...r, profileCorrections: false })).toBe(true);
+    expect(isIdentity({ ...r, profileCorrections: false })).toBe(false);
   });
 
   it("defaults to the Standard look with neutral adjustments", () => {

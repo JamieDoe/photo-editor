@@ -574,12 +574,14 @@ impl Engine {
 
     /// Stored mask `name` as it covers the shown part of the photo (ADR 0074): `width`
     /// × `height` samples (0..255, row by row) over `crop` of the frame that
-    /// `geometry` makes of the open photo, mapped as the renderer maps it. For drawing
-    /// a mask's tint; `None` when the mask isn't stored.
+    /// `geometry` (and the lens's corrections, with `profile_corrections`; ADR 0075)
+    /// makes of the open photo, mapped as the renderer maps it. For drawing a mask's
+    /// tint; `None` when the mask isn't stored.
     pub fn mask_view(
         &self,
         image: ImageId,
         geometry: Option<renderer::Geometry>,
+        profile_corrections: bool,
         name: &str,
         crop: renderer::CropRect,
         size: (u32, u32),
@@ -594,7 +596,7 @@ impl Engine {
         let name = name.to_owned();
         let spec = JobSpec::new(Lane::Interactive, Priority::VisiblePreview, "mask-view");
         self.jobs.submit(spec, move |_token| {
-            use renderer::masks::{CompiledShape, Frame, GeneratedKind, MaskShape};
+            use renderer::masks::{CompiledShape, Frame, GeneratedKind, MaskShape, SourceFrame};
             if !crate::mask_store::belongs(&name, open.fingerprint) {
                 return Ok(None);
             }
@@ -602,15 +604,26 @@ impl Engine {
                 return Ok(None);
             };
             let (sw, sh) = (open.full_size.0 as f32, open.full_size.1 as f32);
+            let lens = open
+                .lens
+                .as_ref()
+                .map(|(l, _)| *l)
+                .filter(|_| profile_corrections);
             let frame = match geometry.filter(|g| !g.is_identity()) {
-                None => Frame::whole(open.full_size.0, open.full_size.1),
-                Some(g) => {
+                None if lens.is_none() => Frame::whole(open.full_size.0, open.full_size.1),
+                g => {
+                    let g = g.unwrap_or_default();
                     let (fw, fh) = g.oriented_size(sw, sh);
                     Frame {
                         crop: renderer::CropRect::FULL,
                         width: fw,
                         height: fh,
-                        from_source: Some((g, sw, sh)),
+                        from_source: Some(SourceFrame {
+                            geometry: g,
+                            width: sw,
+                            height: sh,
+                            lens,
+                        }),
                     }
                 }
             };
@@ -1103,6 +1116,7 @@ impl Shared {
     ) -> Result<ImageSummary, EngineError> {
         let t0 = Instant::now();
         let identity = SourceIdentity::from_path(path).map_err(raw::DecodeError::from)?;
+        let lens = crate::lens::of(&identity.canonical_path);
         let identity_ms = ms(t0);
 
         let t_embedded = Instant::now();
@@ -1182,6 +1196,7 @@ impl Shared {
             decode_ms,
             pyramid_ms,
             embedded_preview_ms,
+            lens_profile: lens.as_ref().map(|(_, name)| name.clone()),
         };
         let opened = Arc::new(OpenedImage {
             id,
@@ -1189,6 +1204,7 @@ impl Shared {
             source_id: identity.source_id(),
             fingerprint: identity.fingerprint,
             scene_ev: ai::scene_ev(info.iso, info.aperture, info.shutter_seconds),
+            lens,
             pyramid,
             as_shot_white: info.as_shot_white,
             full_size: (info.full_width, info.full_height),
@@ -1256,7 +1272,9 @@ impl Shared {
             fraction: 0.6,
         });
         let t = Instant::now();
-        let mut plan = RenderPlan::from_recipe(&req.recipe, decoded.info.as_shot_white);
+        let lens = crate::lens::applied(&req.recipe, crate::lens::of(&req.source).map(|(l, _)| l));
+        let mut plan =
+            RenderPlan::from_recipe(&req.recipe, decoded.info.as_shot_white).with_lens(lens);
         if !req.recipe.masks.is_empty() {
             let photo = SourceIdentity::from_path(&req.source)
                 .map_err(raw::DecodeError::from)?
@@ -1456,6 +1474,8 @@ struct MaskSource<'a> {
 
 struct PlanExtras {
     fill: FillState,
+    /// The photo's lens corrections, when the recipe applies them (ADR 0075).
+    lens: Option<renderer::lens::LensCorrection>,
     generated: Arc<renderer::masks::GeneratedMasks>,
     /// Generated masks the recipe names that the store doesn't have.
     missing: usize,
@@ -1473,6 +1493,7 @@ impl PlanExtras {
         let (generated, missing) = shared.generated_masks(recipe, open.fingerprint);
         Self {
             fill,
+            lens: crate::lens::applied(recipe, open.lens.as_ref().map(|(l, _)| *l)),
             generated,
             missing,
         }
@@ -1496,7 +1517,7 @@ impl PlanExtras {
     }
 
     fn plan(&self, recipe: &EditRecipe, white: Option<image_core::Chromaticity>) -> RenderPlan {
-        let mut plan = RenderPlan::from_recipe(recipe, white);
+        let mut plan = RenderPlan::from_recipe(recipe, white).with_lens(self.lens);
         if let FillState::Ready(fill) = &self.fill {
             plan.removal_fill = Some(Arc::clone(fill));
         }

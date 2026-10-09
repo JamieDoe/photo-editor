@@ -15,6 +15,7 @@ pub mod cpu;
 pub mod dust;
 pub mod geometry;
 pub mod histogram;
+pub mod lens;
 pub mod masks;
 pub mod ops;
 mod plan;

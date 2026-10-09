@@ -130,6 +130,7 @@ const GROUPS: Partial<Record<Key, string>> = {
   mixer: "Colour mixer",
   geometry: "Crop and geometry",
   chromaticAberration: "Lens corrections",
+  profileCorrections: "Lens corrections",
   pointCurve: "Tone curve",
   channelCurves: "Tone curve",
   masks: "Masks",
