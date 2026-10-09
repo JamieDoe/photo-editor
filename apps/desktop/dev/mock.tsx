@@ -239,7 +239,7 @@ mockIPC((cmd, payload) => {
         ["shadowTint", "Tint", "Shadows"], ["redHue", "Hue", "Red primary"], ["redSaturation", "Saturation", "Red primary"],
         ["greenHue", "Hue", "Green primary"], ["greenSaturation", "Saturation", "Green primary"],
         ["blueHue", "Hue", "Blue primary"], ["blueSaturation", "Saturation", "Blue primary"],
-      ].map(([key, label, group]) => ({ key, label, group, min: -100, max: 100, step: 1, default: 0, more: false, unit: "" })), maskKinds: ["subject", "people"] };
+      ].map(([key, label, group]) => ({ key, label, group, min: -100, max: 100, step: 1, default: 0, more: false, unit: "" })), maskKinds: ["subject", "sky", "people"] };
     case "open_image_dialog":
     case "open_image_path":
       openedPath = cmd === "open_image_path" ? (payload as { path: string }).path : "/elsewhere/mock.nef";
@@ -323,9 +323,9 @@ mockIPC((cmd, payload) => {
       );
     case "generate_mask": {
       // Dev-only stand-in: a subject in the middle, and nobody.
-      const { kind } = payload as { kind: "subject" | "people" };
+      const { kind } = payload as { kind: "subject" | "people" | "sky" };
       // Named afresh each time, as a mask made from another photo would be.
-      const made = kind === "subject" ? { name: `${Date.now().toString(16).padStart(16, "0")}${"0123456789abcdef".repeat(2)}`, kind, share: 0.12 } : null;
+      const made = kind !== "people" ? { name: `${Date.now().toString(16).padStart(16, "0")}${"0123456789abcdef".repeat(2)}`, kind, share: 0.12 } : null;
       return new Promise((r) => setTimeout(() => r(made), 700));
     }
     case "missing_masks": {

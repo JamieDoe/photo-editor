@@ -14,6 +14,9 @@ pub(crate) struct OpenedImage {
     pub source_id: SourceId,
     /// The file's content fingerprint (ADR 0012): generated masks belong to it (ADR 0074).
     pub fingerprint: u64,
+    /// How bright the scene was, from the camera's exposure (`ai::scene_ev`): the sky
+    /// finder tells sky from bright walls with it (ADR 0074).
+    pub scene_ev: Option<f32>,
     pub pyramid: Pyramid,
     /// The as-shot light, which white balance adjustments are relative to.
     pub as_shot_white: Option<image_core::Chromaticity>,

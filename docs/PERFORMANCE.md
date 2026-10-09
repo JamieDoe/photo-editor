@@ -1104,3 +1104,18 @@ Masks in edits (part 2), Nikon Z 6, release build, on the noisy machine:
 
 The self-test's +1 EV through the mask brightens covered areas by 40 levels on average
 and changes uncovered ones by 0.
+
+## 54. Sky masks without a model (ADR 0074)
+
+`bench --segment`, release build, on the noisy machine. The times include rendering the
+picture at the pyramid level of at least 1536 px; finding the sky itself (grid, growth,
+guided filter at about 1500 px) is most of the rest.
+
+| File | Mask | Sky | Share |
+|---|---|---|---|
+| Ricoh GR III | 1505×1006 | 112 ms | 32.4 % |
+| Sony A7R IV | 1196×797 | 69 ms | 37.6 % |
+| Sony A7 III | 1506×1006 | 108 ms | 2.6 % (only part of it; see ADR 0074) |
+| Canon EOS R6, Fujifilm X-T3, Nikon Z 6 | — | none found | — |
+
+No model loads, so the first mask costs the same as the rest.

@@ -29,6 +29,12 @@ const MODES: readonly Combine[] = ["add", "subtract", "intersect"];
  * shapes (ADR 0043): more can be added to it or subtracted from it.
  */
 
+/** The empty state's start: what can be detected, as the design suggests starting. */
+function detected(addable: readonly string[]): string {
+  const found = [addable.includes("subject") && "the subject", addable.includes("sky") && "the sky"].filter(Boolean);
+  return found.length > 0 ? `pick out ${found.join(" or ")}, ` : "";
+}
+
 /** A shape's kind in lists; generated ones say so, as in the design. */
 const kindLabel = (shape: MaskShape) => MASK_KINDS[lookOf(shape)].label + (shape.kind === "generated" ? " · detected" : "");
 export function SelectiveControls({
@@ -85,8 +91,8 @@ export function SelectiveControls({
         })}
         {tool.masks.length === 0 && (
           <div className="mask-empty">
-            Adjust just part of the photo: {tool.addable.includes("subject") && "pick out the subject, "}paint with a brush,
-            darken a sky with a linear gradient, or lift a face with a radial one.
+            Adjust just part of the photo: {detected(tool.addable)}paint with a brush, darken a sky with a linear gradient, or
+            lift a face with a radial one.
           </div>
         )}
       </div>
@@ -263,7 +269,7 @@ export function SelectiveControls({
           </div>
         </div>
       )}
-      <div className="mask-add-grid">
+      <div className={tool.addable.length > 5 ? "mask-add-grid six" : "mask-add-grid"}>
         {tool.addable.map((k) => (
           <button
             key={k}

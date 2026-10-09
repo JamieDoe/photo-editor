@@ -13,7 +13,7 @@
 //! scene-linear gains after the white balance and exposure, Clarity in the detail
 //! stage.
 //!
-//! Generated masks (ADR 0074: Subject, People) are the exception to frame
+//! Generated masks (ADR 0074: Subject, People, Sky) are the exception to frame
 //! coordinates: they are made from the photo as decoded, so their coverage is in its
 //! coordinates, and the frame is mapped back to it (as the crop's resampling does).
 //! Their coverage is stored outside the recipe and given to the renderer with the
@@ -138,6 +138,7 @@ pub enum MaskShape {
 pub enum GeneratedKind {
     Subject,
     People,
+    Sky,
 }
 
 /// The stored coverage of a render's generated masks, by name (ADR 0074), in the

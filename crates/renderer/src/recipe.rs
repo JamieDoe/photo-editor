@@ -54,7 +54,8 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   they did.
 /// - 27: adds generated masks (ADR 0074): Subject and People, named in the recipe and
 ///   kept in the mask store.
-pub const RECIPE_VERSION: u32 = 27;
+/// - 28: adds Sky to generated masks (ADR 0074).
+pub const RECIPE_VERSION: u32 = 28;
 
 /// A non-destructive edit: parameters only, never pixels.
 ///
@@ -271,13 +272,13 @@ impl EditRecipe {
                 ..recipe
             }
             .sanitized()),
-            // Generated masks (version 27) are new; nothing older changes.
-            26 => Ok(Self {
+            // Generated masks (version 27) and Sky (28) are new; nothing older changes.
+            26 | 27 => Ok(Self {
                 version: RECIPE_VERSION,
                 ..recipe
             }
             .sanitized()),
-            27 => Ok(recipe.sanitized()),
+            28 => Ok(recipe.sanitized()),
             v => Err(RecipeError::UnsupportedVersion(v)),
         }
     }
@@ -476,7 +477,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":27,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":28,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 

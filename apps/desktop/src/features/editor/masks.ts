@@ -21,20 +21,21 @@ export type ShapeLook = DrawnKind | GeneratedKind;
 export type Point = [number, number];
 
 export const lookOf = (shape: MaskShape): ShapeLook => (shape.kind === "generated" ? shape.of : shape.kind);
-export const isGenerated = (k: ShapeLook): k is GeneratedKind => k === "subject" || k === "people";
+export const isGenerated = (k: ShapeLook): k is GeneratedKind => k === "subject" || k === "people" || k === "sky";
 
 /** How the design names each kind, and its colour dot. */
 export const MASK_KINDS: Record<ShapeLook, { label: string; dot: string; add: string; hint: string }> = {
   subject: { label: "Subject", dot: "var(--mask-subject)", add: "Subject", hint: "Detect the main subject" },
+  sky: { label: "Sky", dot: "var(--mask-sky)", add: "Sky", hint: "Detect the sky" },
   people: { label: "People", dot: "var(--mask-people)", add: "People", hint: "Detect the people" },
   linear: { label: "Linear gradient", dot: "var(--mask-linear)", add: "Linear", hint: "Graduated filter" },
   radial: { label: "Radial gradient", dot: "var(--mask-radial)", add: "Radial", hint: "Radial filter" },
   brush: { label: "Brush", dot: "var(--mask-brush)", add: "Brush", hint: "Paint an area" },
 };
 
-/** The kinds that can be added, in the design's order (Sky waits for ADR 0074's
- *  phase 2). */
-export const ADDABLE_KINDS: readonly ShapeLook[] = ["subject", "people", "brush", "linear", "radial"];
+/** The kinds that can be added, in the design's order (People, not in the design,
+ *  after Sky). */
+export const ADDABLE_KINDS: readonly ShapeLook[] = ["subject", "sky", "people", "brush", "linear", "radial"];
 
 /** The kinds this computer can add: generated ones only where it can make them. */
 export function addableKinds(generated: readonly GeneratedKind[]): ShapeLook[] {
@@ -42,10 +43,15 @@ export function addableKinds(generated: readonly GeneratedKind[]): ShapeLook[] {
 }
 
 /** While a generated mask is being made: "Finding the subject…". */
-export const FINDING: Record<GeneratedKind, string> = { subject: "Finding the subject…", people: "Finding people…" };
+export const FINDING: Record<GeneratedKind, string> = {
+  subject: "Finding the subject…",
+  sky: "Finding the sky…",
+  people: "Finding people…",
+};
 /** When the photo has none: "No subject found". */
 export const NONE_FOUND: Record<GeneratedKind, string> = {
   subject: "No subject found in this photo",
+  sky: "No sky found in this photo",
   people: "No people found in this photo",
 };
 
