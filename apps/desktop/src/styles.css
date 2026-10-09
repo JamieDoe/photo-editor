@@ -843,7 +843,7 @@ button.batch-export:hover:not(:disabled) { background: var(--hover-strong); colo
 /* Retouch (ADR 0054): the tool switch, its hint, the brush size and the spots made;
    on the photo, the spots as the design's dashed amber rings. */
 .retouch { display: flex; flex-direction: column; gap: 14px; }
-.segmented.small.retouch-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.segmented.small.retouch-tools { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .retouch-hint { margin: -4px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-3); }
 /* The design's dust banner: found (amber card, Fix all), then fixed (Undo). */
 .dust-found { display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 12px; border-radius: 10px; background: var(--accent-soft); border: 1px solid rgb(240 180 94 / 18%); font-size: 12px; line-height: 1.4; color: var(--text); }
@@ -863,6 +863,10 @@ button.dust-fix:hover:not(:disabled) { background: var(--accent); filter: bright
 .dust-ring { fill: rgb(240 180 94 / 8%); stroke: #f0b45e; stroke-width: 1.5; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgb(0 0 0 / 70%)); }
 .spot-ring.selected { stroke: #ffffff; stroke-width: 2.5; stroke-dasharray: none; }
 .spot-ring.source { stroke: #ffffff; stroke-width: 1.5; stroke-dasharray: 5 4; }
+/* Red-eye corrections (ADR 0080): a quiet ring like a spot's, dotted so the two read
+   apart; white when selected. */
+.redeye-ring { fill: none; stroke: rgb(255 255 255 / 55%); stroke-width: 1.5; stroke-dasharray: 2 3; vector-effect: non-scaling-stroke; filter: drop-shadow(0 0 1px rgb(0 0 0 / 70%)); }
+.redeye-ring.selected { stroke: #ffffff; stroke-width: 2.5; stroke-dasharray: none; }
 /* Remove (ADR 0066): the stroke being painted, the selected removal's area, and a pin
    where each removal was started. Painted widths are in the picture's pixels. */
 path.removal-paint, path.removal-area { fill: none; stroke-linecap: round; stroke-linejoin: round; }

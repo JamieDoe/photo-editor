@@ -1,4 +1,5 @@
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
+import type { RedEye } from "../../ipc/generated/RedEye";
 import type { Geometry } from "../../ipc/generated/Geometry";
 import type { Removal } from "../../ipc/generated/Removal";
 import type { Stroke } from "../../ipc/generated/Stroke";
@@ -15,8 +16,9 @@ import type { Point } from "./masks";
  * the two.
  */
 
-/** A retouch tool: Remove paints areas to fill (ADR 0066); Heal and Clone place spots. */
-export type RetouchToolKind = "remove" | SpotKind;
+/** A retouch tool: Remove paints areas to fill (ADR 0066); Heal and Clone place spots;
+ *  Red eye fixes pupils (ADR 0080). */
+export type RetouchToolKind = "remove" | SpotKind | "redEye";
 
 /** The retouch tools, as in the design. */
 export const RETOUCH_TOOLS: ReadonlyArray<{ kind: RetouchToolKind; label: string; hint: string; text: string }> = [
@@ -33,7 +35,41 @@ export const RETOUCH_TOOLS: ReadonlyArray<{ kind: RetouchToolKind; label: string
     hint: "Copy pixels exactly",
     text: "Copies pixels exactly from a nearby area. Drag the source circle, or Option-click, to choose where from.",
   },
+  {
+    kind: "redEye",
+    label: "Red eye",
+    hint: "Fix red pupils from a flash",
+    text: "Click on an eye with red from a flash: the red pupil is found and made dark. Make the brush larger if it isn’t found.",
+  },
 ];
+
+/** Red-eye corrections (ADR 0080), in the source photo's coordinates like spots. */
+export function redEyesOf(r: EditRecipe): RedEye[] {
+  return r.redEyes ?? [];
+}
+
+/** `r` with `eyes`, left out when there are none (as the renderer writes it). */
+export function withRedEyes(r: EditRecipe, eyes: RedEye[]): EditRecipe {
+  const { redEyes: _, ...rest } = r;
+  return eyes.length > 0 ? { ...rest, redEyes: eyes } : rest;
+}
+
+/** Index of the red-eye correction under source point `p` (the last made wins), or
+ *  null. `aspect` is width / height. */
+export function redEyeAt(eyes: readonly RedEye[], p: Point, aspect: number): number | null {
+  const [sx, sy] = aspect >= 1 ? [1, 1 / aspect] : [aspect, 1];
+  for (let i = eyes.length - 1; i >= 0; i--) {
+    const e = eyes[i]!;
+    if (Math.hypot((p[0] - e.x) * sx, (p[1] - e.y) * sy) <= e.radius) return i;
+  }
+  return null;
+}
+
+/** `eye` moved by `delta` (source fractions). */
+export function moveRedEye(eye: RedEye, delta: Point): RedEye {
+  const clamp = (v: number) => Math.round(Math.min(1, Math.max(0, v)) * 1e5) / 1e5;
+  return { ...eye, x: clamp(eye.x + delta[0]), y: clamp(eye.y + delta[1]) };
+}
 
 /** The design's Brush size range and starting value: the spot's diameter on screen. */
 export const BRUSH_SIZE = { min: 5, max: 200, initial: 40 } as const;

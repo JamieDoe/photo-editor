@@ -6,7 +6,7 @@ import type { PresetDto } from "../../ipc/generated/PresetDto";
  * what belongs to the photo. These fields mirror the renderer's
  * `EditRecipe::with_look_of` (crates/renderer/src/presets.rs).
  */
-const PHOTO_FIELDS = ["exposure", "geometry", "chromaticAberration", "profileCorrections", "masks"] as const;
+const PHOTO_FIELDS = ["exposure", "geometry", "chromaticAberration", "profileCorrections", "masks", "redEyes"] as const;
 
 /** `current` with `preset`'s look: the preset's settings, keeping the photo's
  *  exposure, geometry, lens corrections and masks. */

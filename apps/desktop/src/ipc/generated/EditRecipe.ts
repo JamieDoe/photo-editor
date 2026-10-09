@@ -9,6 +9,7 @@ import type { Geometry } from "./Geometry";
 import type { Look } from "./Look";
 import type { Mask } from "./Mask";
 import type { ParametricCurve } from "./ParametricCurve";
+import type { RedEye } from "./RedEye";
 import type { Removal } from "./Removal";
 import type { Spot } from "./Spot";
 
@@ -171,6 +172,11 @@ spots?: Array<Spot>,
  * without any.
  */
 removals?: Array<Removal>, 
+/**
+ * Red-eye corrections (ADR 0080), after the spots. Empty (and omitted from the
+ * JSON) without any.
+ */
+redEyes?: Array<RedEye>, 
 /**
  * The base look the adjustments start from.
  */

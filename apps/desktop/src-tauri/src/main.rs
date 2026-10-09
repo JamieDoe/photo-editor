@@ -135,6 +135,7 @@ fn main() {
             commands::images::prepare_fill,
             commands::images::auto_tone,
             commands::images::auto_setting,
+            commands::images::find_red_eye,
             commands::images::generate_mask,
             commands::images::missing_masks,
             commands::images::mask_view,

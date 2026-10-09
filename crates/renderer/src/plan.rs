@@ -118,6 +118,8 @@ pub struct RenderPlan {
     pub lens: Option<crate::lens::LensCorrection>,
     /// Heal and clone spots (ADR 0054), applied to the source after the removals.
     pub spots: Vec<crate::retouch::Spot>,
+    /// Red-eye corrections (ADR 0080), applied to the source after the spots.
+    pub red_eyes: Vec<crate::redeye::RedEye>,
     /// Crop, straighten and perspective (ADRs 0032, 0034), applied first: the source is
     /// resampled into the output frame, and the stages run on that. `None` renders the
     /// whole source.
@@ -153,6 +155,7 @@ impl RenderPlan {
             generated_masks: Default::default(),
             lens: None,
             spots: Vec::new(),
+            red_eyes: Vec::new(),
             geometry: None,
             chromatic_aberration: None,
             stages,
@@ -317,6 +320,7 @@ impl RenderPlan {
             generated_masks: Default::default(),
             lens: None,
             spots: r.spots.iter().filter(|s| !s.is_noop()).copied().collect(),
+            red_eyes: r.red_eyes.clone(),
             geometry: r.geometry.filter(|g| !g.is_identity()),
             chromatic_aberration: r.chromatic_aberration.filter(|c| !c.is_identity()),
             ..Self::new(stages)

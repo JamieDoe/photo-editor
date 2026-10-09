@@ -43,6 +43,7 @@ import type { ToneSetting } from "./generated/ToneSetting";
 import type { Removal } from "./generated/Removal";
 import type { Spot } from "./generated/Spot";
 import type { SpotKind } from "./generated/SpotKind";
+import type { RedEye } from "./generated/RedEye";
 import type { GeneratedKind } from "./generated/GeneratedKind";
 import type { GeneratedMaskDto } from "./generated/GeneratedMaskDto";
 import type { MaskViewRequestDto } from "./generated/MaskViewRequestDto";
@@ -171,6 +172,11 @@ export async function maskView(imageId: number, view: MaskViewRequestDto): Promi
   const bytes = await invoke<ArrayBuffer | number[]>("mask_view", { imageId, view });
   return new Uint8Array(toArrayBuffer(bytes));
 }
+
+/** The red eye nearest `at` (source fractions) within `radius` (a fraction of the
+ *  photo's long edge), as a correction sized to it (ADR 0080); null if none. */
+export const findRedEye = (imageId: number, at: [number, number], radius: number) =>
+  invoke<RedEye | null>("find_red_eye", { imageId, at, radius });
 
 export const autoLevel = (imageId: number) => invoke<number | null>("auto_level", { imageId });
 /** A new heal or clone spot at `at` (photo fractions) of `radius` (a fraction of the

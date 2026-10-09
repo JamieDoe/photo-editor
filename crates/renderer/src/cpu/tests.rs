@@ -1361,6 +1361,13 @@ fn an_edit_made_on_a_file_as_stored_renders_the_same_on_it_upright() {
             radius: 0.05,
             ..Default::default()
         }],
+        red_eyes: vec![crate::redeye::RedEye {
+            x: 0.7,
+            y: 0.3,
+            radius: 0.08,
+            pupil: 100.0,
+            darken: 100.0,
+        }],
         unoriented: true,
         ..Default::default()
     };
@@ -1389,4 +1396,40 @@ fn an_edit_made_on_a_file_as_stored_renders_the_same_on_it_upright() {
         ..old.clone()
     };
     assert_eq!(current.on_upright(Turn::from_exif(6)), current);
+}
+
+#[test]
+fn red_eye_corrections_render_with_the_photo() {
+    // A grey photo with a red disc (a pupil) at (30, 20).
+    let (w, h) = (80u32, 60u32);
+    let data: Vec<u16> = (0..w * h)
+        .flat_map(|k| {
+            let (x, y) = ((k % w) as f32 + 0.5, (k / w) as f32 + 0.5);
+            let c = if (x - 30.0).hypot(y - 20.0) < 4.0 {
+                [0.6, 0.03, 0.03]
+            } else {
+                [0.2, 0.2, 0.2]
+            };
+            c.map(|v| (v * 65535.0) as u16)
+        })
+        .collect();
+    let img = LinearImage::new(w, h, data).unwrap();
+    let plain = render(&EditRecipe::default(), &img);
+    let eye = crate::redeye::find(&img, [30.0 / 80.0, 20.0 / 60.0], 0.1).expect("the pupil");
+    let fixed = render(
+        &EditRecipe {
+            red_eyes: vec![eye],
+            ..Default::default()
+        },
+        &img,
+    );
+    let px = |o: &OutputImage, x: u32, y: u32| {
+        let i = ((y * w + x) * 3) as usize;
+        [o.data()[i], o.data()[i + 1], o.data()[i + 2]]
+    };
+    // The pupil is no longer red; the grey around it is as it was.
+    let (before, after) = (px(&plain, 30, 20), px(&fixed, 30, 20));
+    assert!(before[0] > before[1] + 100, "{before:?}");
+    assert!(after[0] < after[1] + 15, "{after:?}");
+    assert_eq!(px(&plain, 60, 40), px(&fixed, 60, 40));
 }

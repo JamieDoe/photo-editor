@@ -193,6 +193,29 @@ impl Engine {
         })
     }
 
+    /// The red eye nearest `at` (fractions of the open photo) within `radius` (a fraction
+    /// of its long edge), as a correction sized to it (ADR 0080); `None` when there is
+    /// no red pupil there. Looked for on a preview level of about 1500 px, on the
+    /// interactive lane.
+    pub fn find_red_eye(
+        &self,
+        image: ImageId,
+        at: [f32; 2],
+        radius: f32,
+    ) -> JobHandle<Option<renderer::redeye::RedEye>, EngineError> {
+        let Some(image) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        let level = Arc::clone(&image.pyramid.levels()[image.pyramid.select_index(1500)]);
+        let spec = JobSpec::new(Lane::Interactive, Priority::Interactive, "find-red-eye");
+        self.jobs.submit(spec, move |_token| {
+            Ok(renderer::redeye::find(&level, at, radius))
+        })
+    }
+
     /// Sensor dust on the open photo (ADR 0058), as heal spots not already covered by
     /// `existing`, each with a source. Looked for on a preview level of about 2000 px,
     /// on the interactive lane (tens of milliseconds).

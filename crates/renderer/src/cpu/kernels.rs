@@ -130,6 +130,7 @@ pub(super) fn cached_retouch(
     removals: &[crate::remove::Removal],
     fill: Option<&Arc<crate::remove::Fill>>,
     spots: &[crate::retouch::Spot],
+    red_eyes: &[crate::redeye::RedEye],
     cancel: &dyn Cancellation,
 ) -> Result<Arc<LinearImage>, RenderError> {
     type Key = (SourceKey, Vec<u32>);
@@ -170,6 +171,12 @@ pub(super) fn cached_retouch(
                     s.opacity.to_bits(),
                 ]
             }))
+            .chain(std::iter::once(red_eyes.len() as u32))
+            .chain(
+                red_eyes
+                    .iter()
+                    .flat_map(|e| [e.x, e.y, e.radius, e.pupil, e.darken].map(f32::to_bits)),
+            )
             .collect(),
     );
     if let Some((_, image)) = LAST
@@ -180,7 +187,7 @@ pub(super) fn cached_retouch(
     {
         return Ok(Arc::clone(image));
     }
-    let image = Arc::new(if removals.is_empty() && fill.is_none() {
+    let retouched = if removals.is_empty() && fill.is_none() {
         crate::retouch::retouch(source, spots)
     } else {
         let filled = match fill {
@@ -192,6 +199,11 @@ pub(super) fn cached_retouch(
         } else {
             crate::retouch::retouch(&filled, spots)
         }
+    };
+    let image = Arc::new(if red_eyes.is_empty() {
+        retouched
+    } else {
+        crate::redeye::apply(&retouched, red_eyes)
     });
     let mut cache = LAST.lock().unwrap_or_else(|e| e.into_inner());
     cache.retain(|((id, _), _)| *id != key.0);
