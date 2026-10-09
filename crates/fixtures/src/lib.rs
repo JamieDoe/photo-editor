@@ -62,6 +62,30 @@ pub fn subject_jpeg(width: u16, height: u16) -> Vec<u8> {
     encode_jpeg(&data, width, height, 95)
 }
 
+/// A JPEG of a blue sky over the top 40 % (lighter towards the horizon) and grass,
+/// striped, below.
+pub fn sky_jpeg(width: u16, height: u16) -> Vec<u8> {
+    let (w, h) = (usize::from(width), usize::from(height));
+    let data: Vec<u8> = (0..w * h)
+        .flat_map(|i| {
+            let (x, y) = (i % w, (i / w) as f32 / h as f32);
+            if y < 0.4 {
+                let t = y / 0.4;
+                [
+                    (100.0 + 90.0 * t) as u8,
+                    (145.0 + 65.0 * t) as u8,
+                    (215.0 + 20.0 * t) as u8,
+                ]
+            } else if x % 4 < 2 {
+                [70, 120, 40]
+            } else {
+                [110, 150, 60]
+            }
+        })
+        .collect();
+    encode_jpeg(&data, width, height, 95)
+}
+
 /// A single-colour sRGB JPEG.
 pub fn solid_jpeg(width: u16, height: u16, rgb: [u8; 3]) -> Vec<u8> {
     let data: Vec<u8> = (0..usize::from(width) * usize::from(height))

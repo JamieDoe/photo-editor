@@ -8,10 +8,12 @@
 //!
 //! - **macOS:** Apple Vision (Subject and People from macOS 14). The system's own
 //!   models, so nothing is shipped or licensed (ADR 0074's licensing policy).
-//! - **Elsewhere:** none yet (ADR 0074, phase 2).
+//! - **Everywhere:** the sky, found without a model ([`sky`]).
+//! - **Subject and People elsewhere:** none yet (ADR 0074, phase 2).
 
 use std::fmt;
 
+pub mod sky;
 #[cfg(target_os = "macos")]
 mod vision;
 
@@ -22,6 +24,8 @@ pub enum MaskKind {
     Subject,
     /// The people in it.
     People,
+    /// The sky.
+    Sky,
 }
 
 /// A photo for a segmenter: 8-bit sRGB RGBA, `width` × `height`, rows packed.
@@ -30,6 +34,21 @@ pub struct Picture<'a> {
     pub width: u32,
     pub height: u32,
     pub rgba: &'a [u8],
+    /// How bright the scene was, if the camera says ([`scene_ev`]): mid-grey in the
+    /// picture stands for a scene of this exposure value at ISO 100.
+    pub scene_ev: Option<f32>,
+}
+
+/// The exposure value at ISO 100 a camera was set to (`iso`, f-number `aperture`,
+/// `shutter_seconds`): about 15 for sunlit snow, 12 for an overcast day, 5 to 7 for a
+/// lit room.
+pub fn scene_ev(
+    iso: Option<f32>,
+    aperture: Option<f32>,
+    shutter_seconds: Option<f32>,
+) -> Option<f32> {
+    let (iso, n, t) = (iso?, aperture?, shutter_seconds?);
+    (iso > 0.0 && n > 0.0 && t > 0.0).then(|| (n * n / t).log2() - (iso / 100.0).log2())
 }
 
 /// How much each pixel belongs to the mask, 0 (not at all) to 255 (wholly), `width` ×
@@ -106,8 +125,16 @@ pub trait Segmenter: Send + Sync {
     fn segment(&self, picture: Picture<'_>, kind: MaskKind) -> Result<Option<Coverage>, AiError>;
 }
 
-/// This platform's segmenter, if it has one.
-pub fn platform_segmenter() -> Option<Box<dyn Segmenter>> {
+/// The segmenters this platform has, as one: each kind from the first that makes it.
+pub fn platform_segmenter() -> Box<dyn Segmenter> {
+    let sky: Box<dyn Segmenter> = Box::new(sky::SkyFinder);
+    Box::new(Segmenters(
+        std::iter::once(sky).chain(system_segmenter()).collect(),
+    ))
+}
+
+/// The operating system's own segmenter, if it has one.
+fn system_segmenter() -> Option<Box<dyn Segmenter>> {
     #[cfg(target_os = "macos")]
     {
         Some(Box::new(vision::VisionSegmenter))
@@ -115,6 +142,32 @@ pub fn platform_segmenter() -> Option<Box<dyn Segmenter>> {
     #[cfg(not(target_os = "macos"))]
     {
         None
+    }
+}
+
+/// Several segmenters as one: each kind from the first that makes it.
+struct Segmenters(Vec<Box<dyn Segmenter>>);
+
+impl Segmenters {
+    fn of(&self, kind: MaskKind) -> Option<&dyn Segmenter> {
+        self.0.iter().find(|s| s.supports(kind)).map(|s| s.as_ref())
+    }
+}
+
+impl Segmenter for Segmenters {
+    fn supports(&self, kind: MaskKind) -> bool {
+        self.of(kind).is_some()
+    }
+
+    fn generator(&self, kind: MaskKind) -> String {
+        self.of(kind)
+            .map_or_else(String::new, |s| s.generator(kind))
+    }
+
+    fn segment(&self, picture: Picture<'_>, kind: MaskKind) -> Result<Option<Coverage>, AiError> {
+        self.of(kind)
+            .ok_or(AiError::Unsupported(kind))?
+            .segment(picture, kind)
     }
 }
 
@@ -153,8 +206,28 @@ mod tests {
             width: 4,
             height,
             rgba: &rgba,
+            scene_ev: None,
         };
         assert!(picture(3).check().is_ok());
         assert_eq!(picture(4).check(), Err(AiError::BadPicture));
+    }
+
+    #[test]
+    fn the_camera_settings_give_the_scene_brightness() {
+        // Sunny 16: f/16 at 1/100 s, ISO 100.
+        let ev = scene_ev(Some(100.0), Some(16.0), Some(0.01)).unwrap();
+        assert!((ev - 14.64).abs() < 0.01, "{ev}");
+        // Twice the ISO: a scene a stop darker.
+        let darker = scene_ev(Some(200.0), Some(16.0), Some(0.01)).unwrap();
+        assert!((ev - darker - 1.0).abs() < 1e-4);
+        assert_eq!(scene_ev(None, Some(4.0), Some(0.01)), None);
+        assert_eq!(scene_ev(Some(100.0), Some(4.0), Some(0.0)), None);
+    }
+
+    #[test]
+    fn every_platform_finds_the_sky() {
+        let all = platform_segmenter();
+        assert!(all.supports(MaskKind::Sky));
+        assert_eq!(all.generator(MaskKind::Sky), sky::GENERATOR);
     }
 }

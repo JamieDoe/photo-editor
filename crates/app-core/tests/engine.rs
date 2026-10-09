@@ -927,6 +927,34 @@ fn a_subject_mask_covers_the_subject() {
 }
 
 #[test]
+fn every_computer_finds_the_sky() {
+    let dir = fixtures::TempDir::new("engine-sky");
+    let sky = write(dir.path(), "sky.jpg", fixtures::sky_jpeg(900, 600));
+    let room = write(dir.path(), "room.jpg", fixtures::subject_jpeg(900, 600));
+    let engine = engine();
+    assert!(engine.mask_kinds().contains(&app_core::MaskKind::Sky));
+    let id = engine.open(&sky).wait().unwrap().id;
+    let mask = engine
+        .segment(id, app_core::MaskKind::Sky)
+        .wait()
+        .unwrap()
+        .expect("a sky");
+    let c = &mask.coverage;
+    assert!(c.at(0.5, 0.1) > 0.9 && c.at(0.5, 0.35) > 0.9);
+    assert!(c.at(0.5, 0.45) < 0.1 && c.at(0.5, 0.9) < 0.1);
+    assert!(mask.generator.starts_with("photo-editor/sky/"));
+    // A red disc on grey has no sky.
+    let id = engine.open(&room).wait().unwrap().id;
+    assert!(
+        engine
+            .segment(id, app_core::MaskKind::Sky)
+            .wait()
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
 fn a_generated_mask_adjusts_what_it_covers_and_a_missing_one_nothing() {
     use renderer::masks::{GeneratedKind, LocalAdjustments, Mask, MaskShape};
     let dir = fixtures::TempDir::new("engine-generated-mask");

@@ -100,19 +100,22 @@ impl Decoder for JpegDecoder {
             }
         }
 
+        // The camera's settings from its EXIF, if it has any: the sky finder judges the
+        // scene's brightness by them (ADR 0074).
+        let exif = crate::metadata::read_jpeg(path).unwrap_or_default();
         Ok(DecodedImage {
             image,
             info: SourceInfo {
                 decoder: self.name(),
                 kind: SourceKind::Rendered,
-                make: String::new(),
-                model: String::new(),
+                make: exif.camera_make.unwrap_or_default(),
+                model: exif.camera_model.unwrap_or_default(),
                 full_width: w,
                 full_height: h,
-                iso: None,
-                shutter_seconds: None,
-                aperture: None,
-                focal_length_mm: None,
+                iso: exif.iso.map(|v| v as f32),
+                shutter_seconds: exif.shutter_seconds,
+                aperture: exif.aperture,
+                focal_length_mm: exif.focal_length_mm,
                 as_shot_white: None,
             },
         })

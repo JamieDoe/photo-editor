@@ -164,10 +164,13 @@ describe("masks", () => {
     expect(flipMasks(masks)[2]!.shape).toEqual(people.shape);
   });
 
-  it("offers Subject and People only where they can be made", () => {
+  it("offers generated masks only where they can be made", () => {
     expect(addableKinds([])).toEqual(["brush", "linear", "radial"]);
     expect(addableKinds(["subject", "people"])).toEqual(["subject", "people", "brush", "linear", "radial"]);
     expect(addableKinds(["subject"])).toEqual(["subject", "brush", "linear", "radial"]);
+    // Every platform finds the sky; the design's order, People after it.
+    expect(addableKinds(["sky"])).toEqual(["sky", "brush", "linear", "radial"]);
+    expect(addableKinds(["people", "sky", "subject"])).toEqual(["subject", "sky", "people", "brush", "linear", "radial"]);
   });
 
   it("finds and renames the generated masks a recipe names", () => {

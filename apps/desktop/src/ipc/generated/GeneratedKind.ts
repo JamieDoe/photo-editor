@@ -3,4 +3,4 @@
 /**
  * What a generated mask covers (ADR 0074).
  */
-export type GeneratedKind = "subject" | "people";
+export type GeneratedKind = "subject" | "people" | "sky";

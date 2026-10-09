@@ -251,11 +251,62 @@ Golden images with a fixed stored mask are still to come. The engine tests use
 Vision's masks of a synthetic subject, so they depend on the OS model. They skip on
 systems without one.
 
+## Phase 2, part 1: Sky without a model (2026-10-09)
+
+Option (b), built first because it needs no download and works on every platform.
+`ai::sky::SkyFinder` is a `Segmenter` for Sky. It joins Vision behind one segmenter, so
+Sky is offered everywhere. Generator `photo-editor/sky/1`. Recipe version 28.
+
+How it finds the sky (on the picture the engine segments, at up to 1536 px):
+1. **A grid of about 384 cells** on the long edge. Each cell has its mean colour, its
+   texture, and the colour of its brightest and darkest quarters.
+2. **How bright the scene was:** the camera's exposure (`ai::scene_ev`, EV at ISO 100
+   from ISO, aperture and shutter) plus the cell's luminance. Sky reaches EV 9
+   (daylight 11–15, dusk about 10). Lit rooms stay below 8 even on white walls. This
+   is what tells a studio backdrop or a curtain from an overcast sky. JPEGs now
+   read their EXIF when decoded, for this.
+3. **Candidates:**
+   - **Open sky:** a cell that is bright enough, smooth, and not green, warm or pink.
+   - **Sky through branches:** a cell whose brightest quarter is sky-coloured and
+     brighter than its darkest, and whose dark parts aren't blue. Twigs are grey or
+     brown; waves are blue.
+4. **Growth:** the sky grows from the top edge across neighbours of nearly the same
+   colour and brightness (a third of a stop; 0.6 into a branch cell). So it stops at
+   the horizon over a blue sea.
+5. **Checks:**
+   - What grew must be blue. If not (a grey or white sky), it must be among the
+     brightest things in the photo; a grey wall in daylight is not.
+   - Without exposure data, only blue skies count: a grey one can't be told from a
+     wall.
+6. **Holes** the sky encloses are added (clouds, birds), unless green or warm, or if
+   they reach the bottom of the photo.
+7. **Edges** are refined with a guided filter on the luminance. Through branches, each
+   pixel's share comes from its brightness between the cell's dark and bright
+   quarters.
+
+On the camera fixtures (PERFORMANCE §54):
+
+| File | Sky | Notes |
+|---|---|---|
+| Ricoh GR III (sea, dunes, cumulus) | 32 %, 112 ms | all of the sky and its clouds, the dark ones too; stops at the horizon; none of the sea |
+| Sony A7R IV (pale dusk sky over hills) | 38 %, 69 ms | follows the tree tops and the ridge line |
+| Sony A7 III (overcast, through bare branches) | 3 %, 108 ms | only the open patches at the top left; the sky between the branches is missed |
+| Canon R6 (grey wall, outdoors), Fujifilm X-T3 and Nikon Z 6 (indoors) | none | the wall, a white backdrop and a curtain are not sky |
+
+Not found yet:
+- **Sky only through dense branches** (the A7 III).
+- **Sunsets:** warm skies are taken for walls.
+- **Night skies:** too dark.
+- **Grey skies in photos without exposure data.**
+
+These are what option (a), a SAM-family model with these masks as its prompts,
+would improve. It needs the model downloads (decision 3).
+
 ## Consequences (if accepted as proposed)
 
 - Subject and People arrive on macOS without adding a model, a runtime or a licence
   to the app.
-- Sky waits for the phase 2 benchmark. The design's Sky button stays hidden until
-  then (ADR 0016).
+- Sky arrived in phase 2 without a model (option b), on every platform. A model may
+  follow for the cases it misses.
 - Generated masks add a mask store to the catalogue and a "masks need updating" state
   to the editor.

@@ -1717,6 +1717,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       missingWhenMade?: string[] | null;
       foreignMissing?: number | null;
       renderMs?: number;
+      skyIndoors?: boolean | null;
+      skyMs?: number;
     }> => {
       const id = driver.editor().image!.id;
       if (!(driver.editor().info?.maskKinds ?? []).includes("subject")) return { supported: false };
@@ -1735,6 +1737,13 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const view = await ipc.maskView(id, null, made.name, { x: 0, y: 0, w: 1, h: 1 }, n, n).catch(() => new Uint8Array());
       const missing = await ipc.missingMasks(id, lit(made.name)).catch(() => null);
       const foreign = await ipc.missingMasks(id, lit("0".repeat(48))).catch(() => null);
+      // The Z 6 is a still life indoors: no sky, however white its curtain.
+      const tSky = performance.now();
+      const sky = await ipc.generateMask(id, "sky").then(
+        (m) => m !== null,
+        () => null,
+      );
+      const skyMs = Math.round(performance.now() - tSky);
       driver.editor().setRecipe(beforeCrop);
       if (!plain || !masked || view.length !== n * n) {
         return { supported: true, made: true, ms, share: made.share, rendered: false };
@@ -1766,6 +1775,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         missingWhenMade: missing,
         foreignMissing: foreign?.length ?? null,
         renderMs: masked.frame.renderMs,
+        skyIndoors: sky,
+        skyMs,
       };
     })();
     const generatedOk =
@@ -1774,7 +1785,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         (generatedCheck.coveredGain ?? 0) > 10 &&
         (generatedCheck.outsideChange ?? Infinity) <= 2 &&
         generatedCheck.missingWhenMade?.length === 0 &&
-        generatedCheck.foreignMissing === 1);
+        generatedCheck.foreignMissing === 1 &&
+        generatedCheck.skyIndoors === false);
 
     // Sensor dust (ADR 0058) on the real raw file: found quickly, each a heal spot with a
     // source; once those are spots, nothing is left to find.

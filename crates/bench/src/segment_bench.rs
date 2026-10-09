@@ -66,21 +66,24 @@ fn one(path: &Path, out: Option<&Path>) -> Value {
             .file_stem()
             .map(|s| s.to_string_lossy().into_owned())
             .unwrap_or_default();
-        for (kind, mask) in masks {
-            let Some(mask) = mask else { continue };
-            let tinted = tint(&photo, |x, y| mask.coverage.at(x, y));
+        let write = |name: String, image: &OutputImage| {
             let bytes = export::encode_in(
-                &tinted,
+                image,
                 export::ExportFormat::Jpeg { quality: 85 },
                 export::colour::ExportColourSpace::Srgb,
                 None,
             )
             .expect("encode");
-            std::fs::write(
-                dir.join(format!("mask-{stem}-{kind:?}.jpg").to_lowercase()),
-                bytes,
-            )
-            .expect("write");
+            std::fs::write(dir.join(name.to_lowercase()), bytes).expect("write");
+        };
+        // The photo itself, to judge where a mask should have been.
+        write(format!("photo-{stem}.jpg"), &tint(&photo, |_, _| 0.0));
+        for (kind, mask) in masks {
+            let Some(mask) = mask else { continue };
+            write(
+                format!("mask-{stem}-{kind:?}.jpg"),
+                &tint(&photo, |x, y| mask.coverage.at(x, y)),
+            );
         }
     }
     Value::Object(row)

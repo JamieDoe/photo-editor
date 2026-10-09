@@ -40,17 +40,18 @@ use crate::{AiError, Coverage, MaskKind, Picture, Segmenter};
 /// Apple Vision's segmentation.
 pub(crate) struct VisionSegmenter;
 
-/// The Vision class that makes a `kind` mask.
-fn class_name(kind: MaskKind) -> &'static std::ffi::CStr {
+/// The Vision class that makes a `kind` mask; Vision has none for the sky.
+fn class_name(kind: MaskKind) -> Option<&'static std::ffi::CStr> {
     match kind {
-        MaskKind::Subject => c"VNGenerateForegroundInstanceMaskRequest",
-        MaskKind::People => c"VNGeneratePersonInstanceMaskRequest",
+        MaskKind::Subject => Some(c"VNGenerateForegroundInstanceMaskRequest"),
+        MaskKind::People => Some(c"VNGeneratePersonInstanceMaskRequest"),
+        MaskKind::Sky => None,
     }
 }
 
 impl Segmenter for VisionSegmenter {
     fn supports(&self, kind: MaskKind) -> bool {
-        AnyClass::get(class_name(kind)).is_some()
+        class_name(kind).is_some_and(|c| AnyClass::get(c).is_some())
     }
 
     fn generator(&self, kind: MaskKind) -> String {
@@ -63,6 +64,7 @@ impl Segmenter for VisionSegmenter {
                 match kind {
                     MaskKind::Subject => VNGenerateForegroundInstanceMaskRequest::new().revision(),
                     MaskKind::People => VNGeneratePersonInstanceMaskRequest::new().revision(),
+                    MaskKind::Sky => 0,
                 }
             }
         } else {
@@ -95,6 +97,7 @@ impl Segmenter for VisionSegmenter {
             match kind {
                 MaskKind::Subject => subject(&handler),
                 MaskKind::People => people(&handler),
+                MaskKind::Sky => Err(AiError::Unsupported(kind)),
             }
         })
     }
@@ -306,6 +309,7 @@ mod tests {
                     width: w,
                     height: h,
                     rgba: &rgba,
+                    scene_ev: None,
                 },
                 MaskKind::Subject,
             )
