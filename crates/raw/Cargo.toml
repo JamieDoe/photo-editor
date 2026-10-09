@@ -1,6 +1,6 @@
 [package]
 name = "raw"
-description = "Source decoding behind a decoder abstraction (LibRaw for camera RAW, zune-jpeg for JPEG)."
+description = "Source decoding behind a decoder abstraction (LibRaw for camera RAW; zune-jpeg, png and tiff for rendered images)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -23,6 +23,11 @@ rayon.workspace = true
 zune-jpeg.workspace = true
 # EXIF for JPEGs (BSD-2-Clause, pure Rust). RAW metadata comes from LibRaw.
 kamadak-exif = "0.6"
+# PNG and TIFF input (ADR 0076): pure Rust, MIT/Apache-2.0 and MIT, already used for
+# export. TIFF reading adds LZW (weezl, MIT/Apache-2.0) and JPEG-in-TIFF (zune-jpeg,
+# already used); fax compression (black-and-white documents) is left out.
+png.workspace = true
+tiff = { workspace = true, features = ["lzw", "jpeg"] }
 jpeg-turbo = { workspace = true, optional = true }
 
 [build-dependencies]

@@ -987,6 +987,66 @@ fn the_cameras_lens_profile_corrects_unless_turned_off() {
 }
 
 #[test]
+fn tiff_and_png_exports_open_again() {
+    let dir = fixtures::TempDir::new("engine-tiff-png");
+    let source = write(dir.path(), "chart.jpg", fixtures::chart_jpeg(600, 400, 95));
+    let engine = engine();
+    let export = |format: ExportFormat, name: &str| {
+        let destination = dir.path().join(name);
+        engine
+            .export_file(
+                FileExport {
+                    source: source.clone(),
+                    recipe: EditRecipe::default(),
+                    destination: destination.clone(),
+                    format,
+                    sharpening: app_core::OutputSharpening::None,
+                    colour_space: app_core::ExportColourSpace::Srgb,
+                    metadata: app_core::MetadataChoice::All,
+                    judgements: Default::default(),
+                    watermark: None,
+                    long_edge: None,
+                },
+                |_| {},
+            )
+            .wait()
+            .unwrap();
+        destination
+    };
+    let mut renders = Vec::new();
+    for (format, name, decoder) in [
+        (ExportFormat::Tiff, "chart.tif", "tiff"),
+        (ExportFormat::Png, "chart.png", "png"),
+    ] {
+        let path = export(format, name);
+        let summary = engine.open(&path).wait().unwrap();
+        assert_eq!(summary.decoder, decoder);
+        assert_eq!((summary.full_width, summary.full_height), (600, 400));
+        renders.push(preview(
+            &engine,
+            summary.id,
+            EditRecipe::default(),
+            PreviewQuality::Detail,
+        ));
+    }
+    // The 16-bit TIFF and the 8-bit PNG of the same export render alike.
+    let [tiff, png] = [&renders[0], &renders[1]];
+    assert_eq!(
+        (tiff.image.width(), tiff.image.height()),
+        (png.image.width(), png.image.height())
+    );
+    let worst = tiff
+        .image
+        .data()
+        .iter()
+        .zip(png.image.data())
+        .map(|(a, b)| a.abs_diff(*b))
+        .max()
+        .unwrap();
+    assert!(worst <= 3, "off by {worst}");
+}
+
+#[test]
 fn every_computer_finds_the_sky() {
     let dir = fixtures::TempDir::new("engine-sky");
     let sky = write(dir.path(), "sky.jpg", fixtures::sky_jpeg(900, 600));

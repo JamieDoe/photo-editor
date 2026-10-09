@@ -69,44 +69,143 @@ pub(crate) fn read_jpeg(path: &Path) -> Result<PhotoMetadata, DecodeError> {
     let mut meta = PhotoMetadata::default();
     let (mut width, mut height) = jpeg_dimensions(&head).unzip();
     if let Ok(exif) = exif::Reader::new().read_from_container(&mut std::io::Cursor::new(&head)) {
-        use exif::{In, Tag, Value};
-        let text = |tag: Tag| {
-            exif.get_field(tag, In::PRIMARY)
-                .and_then(|f| match &f.value {
-                    Value::Ascii(v) => v
-                        .first()
-                        .and_then(|b| non_empty(&String::from_utf8_lossy(b))),
-                    _ => None,
-                })
-        };
-        let rational = |tag: Tag| {
-            exif.get_field(tag, In::PRIMARY)
-                .and_then(|f| match &f.value {
-                    Value::Rational(v) => v.first().map(|r| r.to_f64() as f32).and_then(positive),
-                    _ => None,
-                })
-        };
-        let uint = |tag: Tag| {
-            exif.get_field(tag, In::PRIMARY)
-                .and_then(|f| f.value.get_uint(0))
-        };
-
-        meta.camera_make = text(Tag::Make);
-        meta.camera_model = text(Tag::Model);
-        meta.lens = text(Tag::LensModel);
-        // EXIF dates are "YYYY:MM:DD HH:MM:SS".
-        meta.captured_at = text(Tag::DateTimeOriginal)
-            .or_else(|| text(Tag::DateTime))
-            .and_then(|d| exif_date(&d));
-        meta.iso = uint(Tag::PhotographicSensitivity);
-        meta.aperture = rational(Tag::FNumber);
-        meta.shutter_seconds = rational(Tag::ExposureTime);
-        meta.focal_length_mm = rational(Tag::FocalLength);
-        meta.rotation = uint(Tag::Orientation).map_or(0, rotation_from_exif);
-        width = width.or_else(|| uint(Tag::PixelXDimension));
-        height = height.or_else(|| uint(Tag::PixelYDimension));
-        meta.gps = gps(&exif);
+        let (w, h) = fill_from_exif(&mut meta, &exif);
+        width = width.or(w);
+        height = height.or(h);
     }
+    if meta.rotation % 180 == 90 {
+        std::mem::swap(&mut width, &mut height);
+    }
+    meta.width = width;
+    meta.height = height;
+    Ok(meta)
+}
+
+/// `meta` filled from EXIF; the image size it records, if it does.
+fn fill_from_exif(meta: &mut PhotoMetadata, exif: &exif::Exif) -> (Option<u32>, Option<u32>) {
+    use exif::{In, Tag, Value};
+    let text = |tag: Tag| {
+        exif.get_field(tag, In::PRIMARY)
+            .and_then(|f| match &f.value {
+                Value::Ascii(v) => v
+                    .first()
+                    .and_then(|b| non_empty(&String::from_utf8_lossy(b))),
+                _ => None,
+            })
+    };
+    let rational = |tag: Tag| {
+        exif.get_field(tag, In::PRIMARY)
+            .and_then(|f| match &f.value {
+                Value::Rational(v) => v.first().map(|r| r.to_f64() as f32).and_then(positive),
+                _ => None,
+            })
+    };
+    let uint = |tag: Tag| {
+        exif.get_field(tag, In::PRIMARY)
+            .and_then(|f| f.value.get_uint(0))
+    };
+
+    meta.camera_make = text(Tag::Make);
+    meta.camera_model = text(Tag::Model);
+    meta.lens = text(Tag::LensModel);
+    // EXIF dates are "YYYY:MM:DD HH:MM:SS".
+    meta.captured_at = text(Tag::DateTimeOriginal)
+        .or_else(|| text(Tag::DateTime))
+        .and_then(|d| exif_date(&d));
+    meta.iso = uint(Tag::PhotographicSensitivity);
+    meta.aperture = rational(Tag::FNumber);
+    meta.shutter_seconds = rational(Tag::ExposureTime);
+    meta.focal_length_mm = rational(Tag::FocalLength);
+    meta.rotation = uint(Tag::Orientation).map_or(0, rotation_from_exif);
+    meta.gps = gps(exif);
+    (uint(Tag::PixelXDimension), uint(Tag::PixelYDimension))
+}
+
+/// Metadata of a PNG: its size from the header, and EXIF from its `eXIf` chunk if it
+/// has one.
+pub(crate) fn read_png(path: &Path) -> Result<PhotoMetadata, DecodeError> {
+    let mut head = [0u8; 24];
+    std::fs::File::open(path)?.read_exact(&mut head)?;
+    if &head[..8] != b"\x89PNG\r\n\x1a\n" {
+        return Err(DecodeError::Corrupt("not a PNG".into()));
+    }
+    let size = |at: usize| u32::from_be_bytes([head[at], head[at + 1], head[at + 2], head[at + 3]]);
+    let mut meta = PhotoMetadata::default();
+    let file = std::io::BufReader::new(std::fs::File::open(path)?);
+    if let Ok(exif) = exif::Reader::new().read_from_container(&mut { file }) {
+        fill_from_exif(&mut meta, &exif);
+    }
+    let (w, h) = (size(16), size(20));
+    (meta.width, meta.height) = if meta.rotation % 180 == 90 {
+        (Some(h), Some(w))
+    } else {
+        (Some(w), Some(h))
+    };
+    Ok(meta)
+}
+
+/// Metadata of a TIFF image, read from its IFDs by seeking (a TIFF's EXIF can sit
+/// anywhere in a file of hundreds of megabytes; only a few kilobytes are read).
+pub(crate) fn read_tiff(path: &Path) -> Result<PhotoMetadata, DecodeError> {
+    use crate::tiff_ifd::Tiff;
+    let mut file = std::fs::File::open(path)?;
+    let tiff = Tiff::open(&mut file).ok_or_else(|| DecodeError::Corrupt("not a TIFF".into()))?;
+    let entries = tiff
+        .entries(&mut file, tiff.first_ifd)
+        .ok_or_else(|| DecodeError::Corrupt("unreadable TIFF directory".into()))?;
+    let mut meta = PhotoMetadata::default();
+    let (mut width, mut height) = (None, None);
+    let sub = |offset: Option<u32>, file: &mut std::fs::File| {
+        offset
+            .and_then(|o| tiff.entries(file, o))
+            .unwrap_or_default()
+    };
+    let (mut exif_ifd, mut gps_ifd) = (None, None);
+    for e in &entries {
+        match e.tag {
+            0x0100 => width = tiff.unsigned(&mut file, e),
+            0x0101 => height = tiff.unsigned(&mut file, e),
+            0x010f => meta.camera_make = tiff.text(&mut file, e),
+            0x0110 => meta.camera_model = tiff.text(&mut file, e),
+            0x0112 => meta.rotation = tiff.unsigned(&mut file, e).map_or(0, rotation_from_exif),
+            0x0132 => meta.captured_at = tiff.text(&mut file, e).and_then(|d| exif_date(&d)),
+            0x8769 => exif_ifd = tiff.unsigned(&mut file, e),
+            0x8825 => gps_ifd = tiff.unsigned(&mut file, e),
+            _ => {}
+        }
+    }
+    let first = |v: Option<Vec<f64>>| {
+        v.and_then(|v| v.first().copied())
+            .map(|v| v as f32)
+            .and_then(positive)
+    };
+    for e in &sub(exif_ifd, &mut file) {
+        match e.tag {
+            0x829a => meta.shutter_seconds = first(tiff.rationals(&mut file, e)),
+            0x829d => meta.aperture = first(tiff.rationals(&mut file, e)),
+            0x8827 => meta.iso = tiff.unsigned(&mut file, e),
+            0x920a => meta.focal_length_mm = first(tiff.rationals(&mut file, e)),
+            0x9003 => {
+                if let Some(d) = tiff.text(&mut file, e).and_then(|d| exif_date(&d)) {
+                    meta.captured_at = Some(d);
+                }
+            }
+            0xa434 => meta.lens = tiff.text(&mut file, e),
+            _ => {}
+        }
+    }
+    let gps = sub(gps_ifd, &mut file);
+    let find = |tag: u16| gps.iter().find(|e| e.tag == tag);
+    let mut coordinate = |value: u16, reference: u16, negative: &str| -> Option<f64> {
+        let dms = tiff.rationals(&mut file, find(value)?)?;
+        let degrees =
+            dms.first()? + dms.get(1).unwrap_or(&0.0) / 60.0 + dms.get(2).unwrap_or(&0.0) / 3600.0;
+        let r = tiff.text(&mut file, find(reference)?)?;
+        Some(if r == negative { -degrees } else { degrees })
+    };
+    let latitude = coordinate(2, 1, "S");
+    let longitude = coordinate(4, 3, "W");
+    meta.gps = latitude.zip(longitude);
     if meta.rotation % 180 == 90 {
         std::mem::swap(&mut width, &mut height);
     }

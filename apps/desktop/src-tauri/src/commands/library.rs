@@ -125,11 +125,12 @@ async fn list(state: &AppState, dir: PathBuf) -> IpcResult<FolderListingDto> {
     ))
 }
 
-/// Extensions of camera RAW formats (everything the registry accepts except JPEG).
+/// Extensions of camera RAW formats (everything the registry accepts except rendered
+/// images: JPEG, PNG, TIFF).
 pub(super) fn raw_extensions(all: &[&'static str]) -> Vec<&'static str> {
     all.iter()
         .copied()
-        .filter(|e| !matches!(*e, "jpg" | "jpeg"))
+        .filter(|e| !app_core::is_rendered_extension(e))
         .collect()
 }
 
@@ -213,9 +214,9 @@ mod tests {
     }
 
     #[test]
-    fn raw_extensions_exclude_jpeg() {
+    fn raw_extensions_exclude_rendered_images() {
         assert_eq!(
-            raw_extensions(&["jpg", "jpeg", "nef", "cr3"]),
+            raw_extensions(&["jpg", "jpeg", "png", "tif", "tiff", "nef", "cr3"]),
             ["nef", "cr3"]
         );
     }

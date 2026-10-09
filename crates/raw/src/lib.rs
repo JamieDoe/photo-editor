@@ -10,6 +10,12 @@ pub mod lens;
 #[cfg(feature = "libraw")]
 mod libraw;
 mod metadata;
+mod png_image;
+mod rendered;
+#[cfg(test)]
+mod rendered_tests;
+mod tiff_ifd;
+mod tiff_image;
 // Helpers for display previews: embedded RAW previews and reduced JPEG decodes.
 mod preview;
 
@@ -21,6 +27,8 @@ pub use jpeg::JpegDecoder;
 #[cfg(feature = "libraw")]
 pub use libraw::LibRawDecoder;
 pub use metadata::{PhotoMetadata, rotation_from_exif, rotation_from_flip};
+pub use png_image::PngDecoder;
+pub use tiff_image::TiffDecoder;
 
 /// Which JPEG decoder handles display previews (embedded RAW previews, JPEG
 /// thumbnails) in this build.
@@ -171,6 +179,8 @@ impl DecoderRegistry {
     pub fn with_defaults() -> Self {
         Self::new(vec![
             Box::new(JpegDecoder),
+            Box::new(PngDecoder),
+            Box::new(TiffDecoder),
             #[cfg(feature = "libraw")]
             Box::new(LibRawDecoder),
         ])
@@ -235,6 +245,8 @@ impl DecoderRegistry {
     pub fn extensions(&self) -> Vec<&'static str> {
         let mut exts: Vec<&'static str> = Vec::new();
         exts.extend(jpeg::EXTENSIONS);
+        exts.extend(png_image::EXTENSIONS);
+        exts.extend(tiff_image::EXTENSIONS);
         #[cfg(feature = "libraw")]
         exts.extend(libraw::EXTENSIONS);
         exts
@@ -245,6 +257,18 @@ impl Default for DecoderRegistry {
     fn default() -> Self {
         Self::with_defaults()
     }
+}
+
+/// Whether files with extension `ext` (any case) are rendered images (JPEG, PNG,
+/// TIFF), not camera raw: they carry their own metadata, and have no sidecars.
+pub fn is_rendered_extension(ext: &str) -> bool {
+    [
+        jpeg::EXTENSIONS,
+        png_image::EXTENSIONS,
+        tiff_image::EXTENSIONS,
+    ]
+    .iter()
+    .any(|list| list.iter().any(|x| x.eq_ignore_ascii_case(ext)))
 }
 
 pub(crate) fn has_extension(path: &Path, extensions: &[&str]) -> bool {

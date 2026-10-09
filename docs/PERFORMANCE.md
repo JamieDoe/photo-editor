@@ -1135,3 +1135,17 @@ is a plain square root; with a binary search and `hypot` per pixel, framing and 
 took 190–200 ms.
 Reading the profile is a few kilobytes of the file's headers.
 
+## 56. PNG and TIFF input (ADR 0076)
+
+A 6000×4000 image (a gradient with noise), release build, on the noisy machine:
+
+| File | Size | Metadata | Full decode | Thumbnail (512 px) |
+|---|---|---|---|---|
+| TIFF, 16-bit RGB, LZW | 141 MB | 0.14 ms | 1003 ms | 1014 ms |
+| TIFF, 8-bit RGB, LZW | 69 MB | 0.10 ms | 538 ms | 577 ms |
+| PNG, 8-bit RGB | 47 MB | 6.4 ms | 304 ms | 331 ms |
+
+TIFF metadata is read by seeking through its IFDs. The EXIF crate would read the whole
+file. Converting the samples to linear runs in parallel, which saves about 50 ms; the
+rest is decompression, on one thread. A thumbnail decodes the whole file.
+

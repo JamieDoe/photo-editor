@@ -8,8 +8,9 @@
 //! Only the file's headers are read, a few kilobytes, never the image.
 
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
+
+use crate::tiff_ifd::Tiff;
 
 /// A lens's corrections, as curves of the radius: 0 at the centre, 1 at a corner (the
 /// half-diagonal) of the image as decoded.
@@ -97,142 +98,6 @@ fn sony_profile(distortion: Option<Vec<i16>>, vignetting: Option<Vec<i16>>) -> O
                 .collect()
         }),
     })
-}
-
-/// A TIFF file's byte order and first IFD.
-struct Tiff {
-    little: bool,
-    first_ifd: u32,
-}
-
-/// One IFD entry: its tag, type, count, and the four bytes holding its value or
-/// where it is.
-struct Entry {
-    tag: u16,
-    kind: u16,
-    count: u32,
-    value: [u8; 4],
-}
-
-/// IFDs with more entries than this are taken as damage.
-const MAX_ENTRIES: u16 = 1000;
-/// Values longer than this aren't read.
-const MAX_VALUES: u32 = 4096;
-
-impl Tiff {
-    fn open(file: &mut File) -> Option<Self> {
-        let mut head = [0u8; 8];
-        file.read_exact(&mut head).ok()?;
-        let little = match &head[..4] {
-            b"II*\0" => true,
-            b"MM\0*" => false,
-            _ => return None,
-        };
-        let tiff = Self {
-            little,
-            first_ifd: 0,
-        };
-        Some(Self {
-            first_ifd: tiff.u32(&head[4..8]),
-            ..tiff
-        })
-    }
-
-    fn u16(&self, b: &[u8]) -> u16 {
-        let b = [b[0], b[1]];
-        if self.little {
-            u16::from_le_bytes(b)
-        } else {
-            u16::from_be_bytes(b)
-        }
-    }
-
-    fn u32(&self, b: &[u8]) -> u32 {
-        let b = [b[0], b[1], b[2], b[3]];
-        if self.little {
-            u32::from_le_bytes(b)
-        } else {
-            u32::from_be_bytes(b)
-        }
-    }
-
-    /// The entries of the IFD at `offset`. IFDs chained after it aren't followed:
-    /// the tags read here are in SubIFDs.
-    fn entries(&self, file: &mut File, offset: u32) -> Option<Vec<Entry>> {
-        file.seek(SeekFrom::Start(u64::from(offset))).ok()?;
-        let mut count = [0u8; 2];
-        file.read_exact(&mut count).ok()?;
-        let n = self.u16(&count);
-        if n > MAX_ENTRIES {
-            return None;
-        }
-        let mut raw = vec![0u8; usize::from(n) * 12];
-        file.read_exact(&mut raw).ok()?;
-        Some(
-            raw.as_chunks::<12>()
-                .0
-                .iter()
-                .map(|e| Entry {
-                    tag: self.u16(&e[0..2]),
-                    kind: self.u16(&e[2..4]),
-                    count: self.u32(&e[4..8]),
-                    value: [e[8], e[9], e[10], e[11]],
-                })
-                .collect(),
-        )
-    }
-
-    /// The bytes of `e`'s value: in the entry when they fit in four, else where it
-    /// points.
-    fn bytes(&self, file: &mut File, e: &Entry, size: usize) -> Option<Vec<u8>> {
-        if e.count > MAX_VALUES {
-            return None;
-        }
-        let len = size * e.count as usize;
-        if len <= 4 {
-            return Some(e.value[..len].to_vec());
-        }
-        file.seek(SeekFrom::Start(u64::from(self.u32(&e.value))))
-            .ok()?;
-        let mut out = vec![0u8; len];
-        file.read_exact(&mut out).ok()?;
-        Some(out)
-    }
-
-    /// `e`'s values if it holds 16-bit integers (SHORT or SSHORT), as signed.
-    fn shorts(&self, file: &mut File, e: &Entry) -> Option<Vec<i16>> {
-        if e.kind != 3 && e.kind != 8 {
-            return None;
-        }
-        let b = self.bytes(file, e, 2)?;
-        Some(
-            b.as_chunks::<2>()
-                .0
-                .iter()
-                .map(|c| self.u16(c) as i16)
-                .collect(),
-        )
-    }
-
-    /// `e`'s text if it holds ASCII, trimmed; `None` when empty.
-    fn text(&self, file: &mut File, e: &Entry) -> Option<String> {
-        if e.kind != 2 {
-            return None;
-        }
-        let b = self.bytes(file, e, 1)?;
-        let text = String::from_utf8_lossy(&b);
-        let text = text.trim_end_matches('\0').trim();
-        (!text.is_empty()).then(|| text.to_owned())
-    }
-
-    /// `e`'s values if it holds 32-bit offsets (LONG or IFD).
-    fn longs(&self, file: &mut File, e: &Entry) -> Option<Vec<u32>> {
-        if e.kind != 4 && e.kind != 13 {
-            return None;
-        }
-        let b = self.bytes(file, e, 4)?;
-        Some(b.as_chunks::<4>().0.iter().map(|c| self.u32(c)).collect())
-    }
 }
 
 #[cfg(test)]
