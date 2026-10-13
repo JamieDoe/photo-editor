@@ -623,6 +623,11 @@ fn marks_follow_a_moved_photo_and_collections_skip_missing_files() {
     assert_eq!(picks[0].path, new.canonicalize().unwrap());
     assert_eq!(picks[0].marks.rating.stars(), 5);
     assert_eq!(l.cat.collection(Collection::Rated).unwrap().len(), 1);
+    // Five stars: a favourite (ADR 0081).
+    assert_eq!(
+        l.cat.collection(Collection::Favourites).unwrap()[0].photo,
+        photo
+    );
     // The rejected photo's file is missing: not listed, not counted.
     assert!(l.cat.collection(Collection::Rejected).unwrap().is_empty());
     // All photos: the present one only.
@@ -636,6 +641,8 @@ fn marks_follow_a_moved_photo_and_collections_skip_missing_files() {
             picks: 1,
             rated: 1,
             rejected: 0,
+            // The pick was rated five stars.
+            favourites: 1,
             // Both were indexed just now; the missing one is not counted.
             recent: 1,
             edited: 0,

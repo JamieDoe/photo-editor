@@ -835,6 +835,8 @@ pub enum CollectionKindDto {
     Picks,
     Rated,
     Rejected,
+    /// Five stars (ADR 0081).
+    Favourites,
     /// First indexed within the last 30 days (ADR 0056).
     Recent,
     /// Edited within the last 30 days, the latest first (ADR 0079).
@@ -848,6 +850,7 @@ impl From<CollectionKindDto> for app_core::Collection {
             CollectionKindDto::Picks => Self::Picks,
             CollectionKindDto::Rated => Self::Rated,
             CollectionKindDto::Rejected => Self::Rejected,
+            CollectionKindDto::Favourites => Self::Favourites,
             CollectionKindDto::Recent => Self::RecentlyImported,
             CollectionKindDto::Edited => Self::RecentlyEdited,
         }
@@ -863,6 +866,8 @@ pub struct CollectionCountsDto {
     pub picks: u32,
     pub rated: u32,
     pub rejected: u32,
+    /// Five stars (ADR 0081).
+    pub favourites: u32,
     pub recent: u32,
     /// Recently edited (ADR 0079).
     pub edited: u32,
@@ -875,6 +880,7 @@ impl From<app_core::CollectionCounts> for CollectionCountsDto {
             picks: c.picks as u32,
             rated: c.rated as u32,
             rejected: c.rejected as u32,
+            favourites: c.favourites as u32,
             recent: c.recent as u32,
             edited: c.edited as u32,
         }

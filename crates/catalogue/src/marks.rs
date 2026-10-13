@@ -132,6 +132,8 @@ pub enum Collection {
     Picks,
     /// One star or more.
     Rated,
+    /// Five stars: the best (ADR 0081).
+    Favourites,
     Rejected,
     /// First indexed within the last [`RECENT_DAYS`] days (ADR 0056).
     RecentlyImported,
@@ -153,6 +155,7 @@ impl Collection {
             Self::All => "1 = 1".into(),
             Self::Picks => "p.flag = 1".into(),
             Self::Rated => "p.rating > 0".into(),
+            Self::Favourites => "p.rating = 5".into(),
             Self::Rejected => "p.flag = -1".into(),
             Self::RecentlyImported => format!("p.created_at_ms >= {}", recent_cutoff_ms()),
             Self::RecentlyEdited => format!(
@@ -184,6 +187,8 @@ pub struct CollectionCounts {
     pub picks: usize,
     pub rated: usize,
     pub rejected: usize,
+    /// Five stars (ADR 0081).
+    pub favourites: usize,
     pub recent: usize,
     /// Recently edited (ADR 0079).
     pub edited: usize,
@@ -358,11 +363,12 @@ impl Catalogue {
     /// Sizes of the library-wide collections (present photos only).
     pub fn collection_counts(&self) -> Result<CollectionCounts> {
         let conn = self.conn();
-        let (picks, rated, rejected) = conn.query_row(
+        let (picks, rated, rejected, favourites) = conn.query_row(
             "SELECT
                COUNT(DISTINCT CASE WHEN p.flag = 1 THEN p.id END),
                COUNT(DISTINCT CASE WHEN p.rating > 0 THEN p.id END),
-               COUNT(DISTINCT CASE WHEN p.flag = -1 THEN p.id END)
+               COUNT(DISTINCT CASE WHEN p.flag = -1 THEN p.id END),
+               COUNT(DISTINCT CASE WHEN p.rating = 5 THEN p.id END)
              FROM photos p JOIN files f ON f.photo_id = p.id
              WHERE f.missing = 0 AND (p.flag <> 0 OR p.rating > 0)",
             [],
@@ -371,6 +377,7 @@ impl Catalogue {
                     r.get::<_, i64>(0)?,
                     r.get::<_, i64>(1)?,
                     r.get::<_, i64>(2)?,
+                    r.get::<_, i64>(3)?,
                 ))
             },
         )?;
@@ -389,6 +396,7 @@ impl Catalogue {
             picks: picks as usize,
             rated: rated as usize,
             rejected: rejected as usize,
+            favourites: favourites as usize,
             recent: recent as usize,
             edited: edited as usize,
         })

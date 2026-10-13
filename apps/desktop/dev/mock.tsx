@@ -168,6 +168,7 @@ function counts() {
     rejected: all.filter((m) => m.flag === "reject").length,
     recent: 64,
     edited: 7,
+    favourites: 3,
   };
 }
 
@@ -456,7 +457,13 @@ mockIPC((cmd, payload) => {
       return new Promise((r) => setTimeout(() => r({ query, photos }), 40));
     }
     case "library_collection": {
-      const kind = (payload as { kind: "all" | "picks" | "rated" | "rejected" | "recent" | "edited" }).kind;
+      const kind = (payload as { kind: "all" | "picks" | "rated" | "rejected" | "recent" | "edited" | "favourites" }).kind;
+      if (kind === "favourites") {
+        // Dev-only stand-in: three photos, at five stars.
+        const listing = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");
+        const photos = listing.photos.slice(0, 3).map((p, i) => ({ ...p, marks: { ...marksOf(p.path, i), rating: 5 } }));
+        return { kind, photos };
+      }
       if (kind === "edited") {
         // Dev-only stand-in: seven photos, the latest edit first (from the end of the folder).
         const listing = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");

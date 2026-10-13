@@ -174,6 +174,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
             {collectionRow("edited", <PencilIcon size={16} />, counts?.edited)}
             {collectionRow("picks", <PickIcon size={16} />, counts?.picks)}
             {collectionRow("rated", <RatingStar filled={false} />, counts?.rated)}
+            {collectionRow("favourites", <RatingStar filled />, counts?.favourites)}
             {collectionRow("rejected", <RejectIcon size={16} />, counts?.rejected)}
           </section>
           <NavGroup
@@ -453,6 +454,7 @@ function emptyMessage(total: number, filter: LibraryFilter, collection: Collecti
       picks: "Press P to pick the selected photo.",
       rated: "Press 1–5 to rate the selected photo.",
       rejected: "Press X to reject the selected photo.",
+      favourites: "Press 5 to give the selected photo five stars and make it a favourite.",
       recent: `Photos added to the library in the last ${RECENT_DAYS} days show here.`,
       edited: `Photos you edit show here for ${RECENT_DAYS} days, the latest first.`,
     };
