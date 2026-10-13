@@ -14,6 +14,7 @@ mod png_image;
 mod rendered;
 #[cfg(test)]
 mod rendered_tests;
+mod tiff_chunks;
 mod tiff_ifd;
 mod tiff_image;
 // Helpers for display previews: embedded RAW previews and reduced JPEG decodes.

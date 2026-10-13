@@ -50,7 +50,7 @@ pub(crate) fn profile_for(icc: Option<&[u8]>, channels: usize) -> Option<Profile
 }
 
 /// `profile`'s curves as tables over `n` evenly spaced encoded values.
-fn curve_tables(profile: &Profile, n: usize) -> [Vec<f32>; 3] {
+pub(crate) fn curve_tables(profile: &Profile, n: usize) -> [Vec<f32>; 3] {
     std::array::from_fn(|c| {
         (0..n)
             .map(|v| profile.linearise(c, v as f32 / (n - 1) as f32))
@@ -58,7 +58,7 @@ fn curve_tables(profile: &Profile, n: usize) -> [Vec<f32>; 3] {
     })
 }
 
-fn quantise(rgb: [f32; 3]) -> [u16; 3] {
+pub(crate) fn quantise(rgb: [f32; 3]) -> [u16; 3] {
     rgb.map(|v| (v.clamp(0.0, 1.0) * 65535.0).round() as u16)
 }
 
@@ -205,7 +205,7 @@ pub(crate) fn decoded(
     cancel: &dyn Cancellation,
 ) -> Result<DecodedImage, DecodeError> {
     let mut image = upright(raster.to_linear()?, metadata.orientation)?;
-    let (full_width, full_height) = (image.width(), image.height());
+    let full = (image.width(), image.height());
     if let DecodeScale::AtLeast(min_edge) = options.scale {
         while image.long_edge() / 2 >= min_edge.max(1) {
             if cancel.is_cancelled() {
@@ -214,7 +214,28 @@ pub(crate) fn decoded(
             image = downsample_2x(&image);
         }
     }
-    Ok(DecodedImage {
+    Ok(described(image, full, decoder, metadata))
+}
+
+/// How many times an image of `width` × `height` is halved for a decode or preview of
+/// at least `min_long_edge`, as a factor (a power of two).
+pub(crate) fn reduction(width: u32, height: u32, min_long_edge: u32) -> u32 {
+    let mut factor = 1u32;
+    while width.max(height) / factor / 2 >= min_long_edge.max(1) {
+        factor *= 2;
+    }
+    factor
+}
+
+/// `image`, upright and reduced, described as decoded: `full` is its upright size before
+/// reduction.
+pub(crate) fn described(
+    image: LinearImage,
+    (full_width, full_height): (u32, u32),
+    decoder: &'static str,
+    metadata: PhotoMetadata,
+) -> DecodedImage {
+    DecodedImage {
         image,
         info: SourceInfo {
             decoder,
@@ -230,7 +251,7 @@ pub(crate) fn decoded(
             as_shot_white: None,
             orientation: metadata.orientation.max(1),
         },
-    })
+    }
 }
 
 /// `raster` as a preview of about `min_long_edge`, for thumbnails, turned upright by EXIF
@@ -243,22 +264,31 @@ pub(crate) fn preview_of(raster: &Raster, min_long_edge: u32, orientation: u16) 
     if let Some(p) = &raster.profile {
         to_srgb8(&mut rgb, p);
     }
+    oriented_preview(&rgb, (raster.width, raster.height), orientation)
+}
+
+/// A reduced 8-bit sRGB preview of an image stored at `stored` size, turned upright by
+/// EXIF Orientation `orientation`.
+pub(crate) fn oriented_preview(
+    rgb: &Rgb8,
+    stored: (u32, u32),
+    orientation: u16,
+) -> EmbeddedPreview {
     let flip = crate::metadata::flip_from_exif(orientation);
     let (width, height) = if flip & 4 != 0 {
-        (raster.height, raster.width)
+        (stored.1, stored.0)
     } else {
-        (raster.width, raster.height)
+        stored
     };
     EmbeddedPreview {
-        image: preview::orient_to_rgba(&rgb, flip),
+        image: preview::orient_to_rgba(rgb, flip),
         embedded_width: width,
         embedded_height: height,
     }
 }
 
-/// An 8-bit preview in `profile`'s space made sRGB, as the editor shows it (reduced
-/// first, so this is cheap).
-pub(crate) fn to_srgb8(rgb: &mut Rgb8, profile: &Profile) {
+/// Linear sRGB (0..1) encoded as 8-bit sRGB, by a table.
+pub(crate) fn encode_srgb8(v: f32) -> u8 {
     const STEPS: usize = 4096;
     static ENCODE: OnceLock<Vec<u8>> = OnceLock::new();
     let encode = ENCODE.get_or_init(|| {
@@ -266,12 +296,18 @@ pub(crate) fn to_srgb8(rgb: &mut Rgb8, profile: &Profile) {
             .map(|i| (color::linear_to_srgb(i as f32 / STEPS as f32) * 255.0).round() as u8)
             .collect()
     });
+    encode[(v.clamp(0.0, 1.0) * STEPS as f32).round() as usize]
+}
+
+/// An 8-bit preview in `profile`'s space made sRGB, as the editor shows it (reduced
+/// first, so this is cheap).
+pub(crate) fn to_srgb8(rgb: &mut Rgb8, profile: &Profile) {
     let t = curve_tables(profile, 256);
     rgb.data.par_chunks_mut(3 * 1024).for_each(|chunk| {
         for px in chunk.as_chunks_mut::<3>().0 {
             let [r, g, b] = px.map(usize::from);
             let s = profile.to_srgb([t[0][r], t[1][g], t[2][b]]);
-            *px = s.map(|v| encode[(v.clamp(0.0, 1.0) * STEPS as f32).round() as usize]);
+            *px = s.map(encode_srgb8);
         }
     });
 }
