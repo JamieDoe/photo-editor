@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::CatalogueError;
 
 /// Schema version this build creates and understands.
-pub const SCHEMA_VERSION: i64 = 10;
+pub const SCHEMA_VERSION: i64 = 11;
 
 const MIGRATIONS: &[&str] = &[
     // 1: library folders, photos, files.
@@ -141,6 +141,21 @@ const MIGRATIONS: &[&str] = &[
         created_at_ms INTEGER NOT NULL,
         updated_at_ms INTEGER NOT NULL
     );
+    "#,
+    // 11: keywords (ADR 0088): each name once (ignoring ASCII case), linked to photos,
+    // and a smart collection rule for one keyword (NULL for any).
+    r#"
+    CREATE TABLE keywords (
+        id   INTEGER PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE COLLATE NOCASE
+    );
+    CREATE TABLE photo_keywords (
+        photo_id   INTEGER NOT NULL REFERENCES photos(id) ON DELETE CASCADE,
+        keyword_id INTEGER NOT NULL REFERENCES keywords(id) ON DELETE CASCADE,
+        PRIMARY KEY (photo_id, keyword_id)
+    ) WITHOUT ROWID;
+    CREATE INDEX photo_keywords_by_keyword ON photo_keywords(keyword_id);
+    ALTER TABLE smart_collections ADD COLUMN keyword TEXT;
     "#,
 ];
 

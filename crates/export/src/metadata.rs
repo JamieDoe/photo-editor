@@ -11,8 +11,8 @@
 //! original rather than the export.
 //!
 //! The photographer's own marks (ADR 0067), the star rating, a reject and the colour
-//! label, go with them as XMP, where other photo tools read them: an APP1 segment in
-//! JPEGs, an `iTXt` chunk in PNGs, tag 700 in TIFFs.
+//! label, and their keywords (ADR 0088) go with them as XMP, where other photo tools
+//! read them: an APP1 segment in JPEGs, an `iTXt` chunk in PNGs, tag 700 in TIFFs.
 
 use crate::colour::ExportColourSpace;
 
@@ -56,15 +56,39 @@ pub struct CaptureFacts {
     pub gps: Option<(f64, f64)>,
 }
 
-/// The photographer's marks on a photo, as other photo tools read them from XMP
-/// (ADR 0067).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// The photographer's marks on a photo (ADR 0067) and its keywords (ADR 0088), as
+/// other photo tools read them from XMP.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Judgements {
     /// 0 (unrated) to 5 stars.
     pub rating: u8,
     /// Rejected: written as a rating of -1, as Bridge and Lightroom do.
     pub rejected: bool,
     pub label: Option<LabelName>,
+    /// Written as `dc:subject`, in this order.
+    pub keywords: Vec<String>,
+}
+
+/// The Dublin Core namespace, which holds keywords (`dc:subject`).
+pub const DC_NAMESPACE: &str = "http://purl.org/dc/elements/1.1/";
+
+/// `text` with XML's special characters escaped, for element content.
+pub(crate) fn escape_xml(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// `keywords` as a `dc:subject` element (with the namespace bound to `prefix`), each
+/// line after the first starting with `indent`.
+pub(crate) fn subject_element(prefix: &str, keywords: &[String], indent: &str) -> String {
+    let items: String = keywords
+        .iter()
+        .map(|k| format!("{indent}  <rdf:li>{}</rdf:li>\n", escape_xml(k)))
+        .collect();
+    format!(
+        "<{prefix}:subject>\n{indent} <rdf:Bag>\n{items}{indent} </rdf:Bag>\n{indent}</{prefix}:subject>"
+    )
 }
 
 /// A colour label, by the names Lightroom and Bridge write and read.
@@ -98,15 +122,15 @@ impl LabelName {
 }
 
 /// The XMP packet for `judgements`, or `None` when there is nothing to say (unrated,
-/// not rejected, unlabelled). Pick flags have no common XMP property and are not
-/// written.
+/// not rejected, unlabelled, no keywords). Pick flags have no common XMP property and
+/// are not written.
 pub fn xmp_packet(judgements: &Judgements) -> Option<String> {
     let rating = if judgements.rejected {
         Some(-1)
     } else {
         (judgements.rating > 0).then(|| i32::from(judgements.rating.min(5)))
     };
-    if rating.is_none() && judgements.label.is_none() {
+    if rating.is_none() && judgements.label.is_none() && judgements.keywords.is_empty() {
         return None;
     }
     let mut properties = String::new();
@@ -116,11 +140,21 @@ pub fn xmp_packet(judgements: &Judgements) -> Option<String> {
     if let Some(l) = judgements.label {
         properties.push_str(&format!(" xmp:Label=\"{}\"", l.as_str()));
     }
+    // Keywords are an element inside the description, which otherwise closes itself.
+    let close = if judgements.keywords.is_empty() {
+        "/>".to_owned()
+    } else {
+        properties.push_str(&format!(" xmlns:dc=\"{DC_NAMESPACE}\""));
+        format!(
+            ">\n   {}\n  </rdf:Description>",
+            subject_element("dc", &judgements.keywords, "   ")
+        )
+    };
     Some(format!(
         "<?xpacket begin=\"\u{feff}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
          <x:xmpmeta xmlns:x=\"adobe:ns:meta/\">\n \
          <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n  \
-         <rdf:Description rdf:about=\"\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"{properties}/>\n \
+         <rdf:Description rdf:about=\"\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\"{properties}{close}\n \
          </rdf:RDF>\n</x:xmpmeta>\n<?xpacket end=\"w\"?>"
     ))
 }
@@ -158,7 +192,8 @@ pub struct Entries {
     pub exif: Vec<(u16, Value)>,
     /// The GPS directory; empty when there is no location or it is stripped.
     pub gps: Vec<(u16, Value)>,
-    /// The photographer's marks as an XMP packet (ADR 0067), if any.
+    /// The photographer's marks (ADR 0067) and keywords (ADR 0088) as an XMP packet, if
+    /// any.
     pub xmp: Option<String>,
 }
 
@@ -451,6 +486,7 @@ mod tests {
                 rating,
                 rejected,
                 label,
+                keywords: Vec::new(),
             })
         };
         assert_eq!(packet(0, false, None), None, "nothing to say");
@@ -469,6 +505,36 @@ mod tests {
         );
         let label_only = packet(0, false, Some(LabelName::Green)).unwrap();
         assert!(!label_only.contains("xmp:Rating") && label_only.contains(r#"xmp:Label="Green""#));
+    }
+
+    #[test]
+    fn keywords_are_written_as_a_dublin_core_subject() {
+        let p = xmp_packet(&Judgements {
+            keywords: vec!["Heron".into(), "Fish & chips".into(), "<odd>".into()],
+            ..Default::default()
+        })
+        .expect("keywords alone make a packet");
+        assert!(
+            p.contains(r#"xmlns:dc="http://purl.org/dc/elements/1.1/""#),
+            "{p}"
+        );
+        assert!(
+            p.contains("<dc:subject>")
+                && p.contains("<rdf:Bag>")
+                && p.contains("<rdf:li>Heron</rdf:li>")
+                && p.contains("<rdf:li>Fish &amp; chips</rdf:li>")
+                && p.contains("<rdf:li>&lt;odd&gt;</rdf:li>"),
+            "{p}"
+        );
+        assert!(
+            p.contains("</rdf:Description>") && !p.contains("xmp:Rating"),
+            "{p}"
+        );
+        // Read back as written, by the sidecar reader.
+        assert_eq!(
+            crate::sidecar::read_keywords(&p),
+            vec!["Heron", "Fish & chips", "<odd>"]
+        );
     }
 
     #[test]

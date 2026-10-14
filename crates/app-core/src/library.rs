@@ -51,6 +51,8 @@ pub struct IndexSummary {
     pub details_read: usize,
     /// New photos that took their marks from another app's sidecar (ADR 0067).
     pub marks_from_sidecars: usize,
+    /// Photos that took keywords from their sidecars (ADR 0088).
+    pub keywords_from_sidecars: usize,
     pub walk_ms: f64,
     pub details_ms: f64,
     pub total_ms: f64,
@@ -137,6 +139,7 @@ fn index(
         skipped: walk.skipped,
         details_read: 0,
         marks_from_sidecars: 0,
+        keywords_from_sidecars: 0,
         walk_ms,
         details_ms: 0.0,
         total_ms: 0.0,
@@ -179,11 +182,11 @@ fn index(
                 RecordOutcome::Unchanged => summary.unchanged += 1,
             }
         }
-        // Photos new to the library take the marks another app left in their sidecars
-        // (ADR 0067), unless they have their own. Rendered images (JPEG, PNG, TIFF)
-        // carry theirs inside, and a `NAME.xmp` beside one belongs to a RAW of the same
-        // name.
-        let from_sidecars: Vec<(PhotoId, catalogue::Marks)> = recorded
+        // Photos new to the library take the marks (ADR 0067) and keywords (ADR 0088)
+        // another app left in their sidecars, unless they have their own. Rendered
+        // images (JPEG, PNG, TIFF) carry theirs inside, and a `NAME.xmp` beside one
+        // belongs to a RAW of the same name.
+        let from_sidecars: Vec<(PhotoId, crate::sidecars::FromSidecar)> = recorded
             .par_iter()
             .zip(identities.par_iter())
             .filter(|((_, outcome), id)| {
@@ -194,7 +197,17 @@ fn index(
             })
             .collect();
         if !from_sidecars.is_empty() {
-            summary.marks_from_sidecars += catalogue.import_marks(&from_sidecars)?;
+            let marks: Vec<(PhotoId, catalogue::Marks)> = from_sidecars
+                .iter()
+                .filter_map(|(photo, found)| found.marks.map(|m| (*photo, m)))
+                .collect();
+            summary.marks_from_sidecars += catalogue.import_marks(&marks)?;
+            let keywords: Vec<(PhotoId, Vec<String>)> = from_sidecars
+                .into_iter()
+                .filter(|(_, found)| !found.keywords.is_empty())
+                .map(|(photo, found)| (photo, found.keywords))
+                .collect();
+            summary.keywords_from_sidecars += catalogue.import_keywords(&keywords)?;
         }
         progress(IndexProgress {
             stage: IndexStage::Recording,
@@ -210,7 +223,7 @@ fn index(
     summary.total_ms = ms(start);
     log::info!(
         "indexed {} in {:.0} ms: {} found, {} new, {} changed, {} moved, {} unchanged, {} missing, {} skipped; \
-         details read for {} in {:.0} ms; marks from {} sidecars",
+         details read for {} in {:.0} ms; marks from {} sidecars, keywords from {}",
         root.display(),
         summary.total_ms,
         summary.found,
@@ -222,7 +235,8 @@ fn index(
         summary.skipped,
         summary.details_read,
         summary.details_ms,
-        summary.marks_from_sidecars
+        summary.marks_from_sidecars,
+        summary.keywords_from_sidecars
     );
     Ok(summary)
 }

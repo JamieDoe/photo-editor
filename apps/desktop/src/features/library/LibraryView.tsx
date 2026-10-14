@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
-import { AlbumIcon, CloseIcon, FolderIcon, SearchIcon, ImportIcon, MoreIcon, PencilIcon, PhotosIcon, PickIcon, RatingStar, RefreshIcon, RejectIcon, StarIcon } from "../../components/icons";
+import { AlbumIcon, CloseIcon, FolderIcon, SearchIcon, ImportIcon, MoreIcon, PencilIcon, PhotosIcon, PickIcon, RatingStar, RefreshIcon, RejectIcon, StarIcon, TagIcon } from "../../components/icons";
 import type { CollectionKindDto } from "../../ipc/generated/CollectionKindDto";
 import * as ipc from "../../ipc/client";
 import { formatDateRange } from "../../lib/format";
 import { hasCommandModifier, isTextEntry } from "../../lib/keyboard";
 import type { SettingsApi } from "../settings/useSettings";
 import { AddToAlbum, AlbumSettings, AlbumsNav, photosText, setDraggedPaths } from "./Albums";
+import { KeywordsEditor } from "./KeywordsEditor";
 import { SmartCollectionEditor, SmartCollectionsNav } from "./SmartCollections";
 import { NO_RULES, rulesSummary } from "./smart";
 import type { SmartCollectionDto } from "../../ipc/generated/SmartCollectionDto";
@@ -86,11 +87,24 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
   /** Something other than a folder fills the view. */
   const covered = Boolean(collection || albumShown || smartShown || search);
   const [popover, setPopover] = useState<
-    | { kind: "add" | "album"; anchor: HTMLElement }
+    | { kind: "add" | "album" | "keywords"; anchor: HTMLElement }
     | { kind: "smart"; anchor: HTMLElement; editing: SmartCollectionDto | null; start?: { name: string; rules: SmartRulesDto } }
     | null
   >(null);
   const ticked = new Set(library.batch);
+  // ⌘K opens the keywords of the selected or ticked photos (ADR 0088), as in Lightroom.
+  const keywordsButton = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!hasCommandModifier(e) || e.key.toLowerCase() !== "k" || isTextEntry(e.target)) return;
+      const anchor = keywordsButton.current;
+      if (!anchor) return;
+      e.preventDefault();
+      setPopover({ kind: "keywords", anchor });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const targets = library.targets();
   /** ⌘-click ticks a photo, ⇧-click the range to it (the filmstrip's ticks, ADR 0049);
    *  a plain click selects it. */
@@ -161,7 +175,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
             <SearchIcon size={15} />
             <input
               type="search"
-              placeholder="Search folders, cameras, dates"
+              placeholder="Search folders, keywords, dates"
               aria-label="Search photos"
               value={library.query}
               onChange={(e) => library.runSearch(e.target.value)}
@@ -327,6 +341,18 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                     Add to album
                   </button>
                 )}
+                {targets.length > 0 && (
+                  <button
+                    ref={keywordsButton}
+                    className="ghost"
+                    aria-expanded={popover?.kind === "keywords"}
+                    title="Keywords of the selected or ticked photos (⌘K)"
+                    onClick={(e) => setPopover({ kind: "keywords", anchor: e.currentTarget })}
+                  >
+                    <TagIcon />
+                    Keywords
+                  </button>
+                )}
                 {search && (
                   <button
                     className="ghost"
@@ -447,7 +473,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                 <p className="muted empty-note">
                   {search
                     ? library.photos.length === 0
-                      ? `Nothing matches “${search.query.trim()}”. Try a folder or place, a camera, a lens, a year or a month.`
+                      ? `Nothing matches “${search.query.trim()}”. Try a folder or place, a keyword, a camera, a lens, a year or a month.`
                       : "No photos match this filter."
                     : albumShown
                     ? library.photos.length === 0
@@ -490,6 +516,15 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
       </section>
       {popover?.kind === "add" && (
         <AddToAlbum library={library} paths={targets} anchor={popover.anchor} onClose={() => setPopover(null)} notify={notify} />
+      )}
+      {popover?.kind === "keywords" && (
+        <KeywordsEditor
+          paths={targets}
+          anchor={popover.anchor}
+          onClose={() => setPopover(null)}
+          onChanged={library.keywordsChanged}
+          onError={(e) => void library.reportError(e)}
+        />
       )}
       {popover?.kind === "album" && albumShown && (
         <AlbumSettings library={library} album={albumShown.album} anchor={popover.anchor} onClose={() => setPopover(null)} />

@@ -29,6 +29,7 @@ pub use catalogue::{
     PhotoDetails, PhotoId, PresetId, Rating, SourceIdentity, StoredEdit, newest_valid,
 };
 pub use catalogue::{FlagRule, RatingRule, SmartCollection, SmartCollectionId, SmartRules};
+pub use catalogue::{KeywordUse, MAX_KEYWORD_CHARS, keyword_name};
 pub use catalogue::{SCHEMA_VERSION, schema_version_of};
 pub use config::EngineConfig;
 pub use edits::{SavedEdit, load_edit, paste_onto, save_edit, upright_of};

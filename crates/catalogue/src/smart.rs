@@ -3,7 +3,8 @@
 //! flagged, labelled, edited or added.
 //!
 //! A rule left out matches every photo. The words are those of the search box (ADR
-//! 0056): folders (places), cameras, lenses and capture dates.
+//! 0056): folders (places), cameras, lenses, keywords and capture dates. The keyword
+//! rule (ADR 0088) matches one keyword exactly (ignoring case).
 
 use rusqlite::{OptionalExtension, params};
 
@@ -45,6 +46,8 @@ pub struct SmartRules {
     pub edited: Option<bool>,
     /// Words as the search box takes them; empty for none.
     pub words: String,
+    /// Photos with this keyword (ignoring case).
+    pub keyword: Option<String>,
 }
 
 /// A smart collection and how many present photos match it.
@@ -99,7 +102,16 @@ impl SmartRules {
             && self.flag.is_none()
             && self.label.is_none()
             && self.edited.is_none()
+            && self.keyword().is_none()
             && search::terms(&self.words).is_empty()
+    }
+
+    /// The keyword rule, if it names one.
+    fn keyword(&self) -> Option<&str> {
+        self.keyword
+            .as_deref()
+            .map(str::trim)
+            .filter(|k| !k.is_empty())
     }
 
     /// The SQL condition (over `p` and `f`) and its parameters, for the words.
@@ -137,11 +149,20 @@ impl SmartRules {
             parts.push(words);
             params = p;
         }
+        if let Some(keyword) = self.keyword() {
+            params.push(keyword.to_owned());
+            parts.push(format!(
+                "p.id IN (SELECT pk.photo_id FROM keywords k JOIN photo_keywords pk \
+                 ON pk.keyword_id = k.id WHERE k.name = ?{})",
+                params.len()
+            ));
+        }
         (parts.join(" AND "), params)
     }
 }
 
-const SELECT: &str = "SELECT id, name, rating, flag, label, edited, words FROM smart_collections";
+const SELECT: &str =
+    "SELECT id, name, rating, flag, label, edited, words, keyword FROM smart_collections";
 
 fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(SmartCollectionId, String, SmartRules)> {
     Ok((
@@ -153,6 +174,7 @@ fn row(r: &rusqlite::Row<'_>) -> rusqlite::Result<(SmartCollectionId, String, Sm
             label: r.get::<_, Option<i64>>(4)?.map(ColourLabel::from_db),
             edited: r.get::<_, Option<i64>>(5)?.map(|v| v != 0),
             words: r.get(6)?,
+            keyword: r.get(7)?,
         },
     ))
 }
@@ -205,8 +227,8 @@ impl Catalogue {
         let conn = self.conn();
         conn.execute(
             "INSERT INTO smart_collections
-               (name, rating, flag, label, edited, words, created_at_ms, updated_at_ms)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?7)",
+               (name, rating, flag, label, edited, words, keyword, created_at_ms, updated_at_ms)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8)",
             params![
                 name,
                 rules.rating.map(RatingRule::to_db),
@@ -214,6 +236,7 @@ impl Catalogue {
                 rules.label.map(ColourLabel::to_db),
                 rules.edited.map(i64::from),
                 rules.words.trim(),
+                rules.keyword(),
                 now_ms()
             ],
         )?;
@@ -231,7 +254,7 @@ impl Catalogue {
         let n = conn.execute(
             "UPDATE smart_collections
                 SET name = ?2, rating = ?3, flag = ?4, label = ?5, edited = ?6, words = ?7,
-                    updated_at_ms = ?8
+                    keyword = ?8, updated_at_ms = ?9
               WHERE id = ?1",
             params![
                 id.0,
@@ -241,6 +264,7 @@ impl Catalogue {
                 rules.label.map(ColourLabel::to_db),
                 rules.edited.map(i64::from),
                 rules.words.trim(),
+                rules.keyword(),
                 now_ms()
             ],
         )?;

@@ -309,10 +309,15 @@ impl Catalogue {
         })
     }
 
-    /// Present photos with any mark (a rating, a flag or a colour label): the ones whose
-    /// sidecars to write when sidecars are turned on (ADR 0067).
+    /// Present photos with any mark (a rating, a flag or a colour label) or keyword
+    /// (ADR 0088): the ones whose sidecars to write when sidecars are turned on (ADR
+    /// 0067).
     pub fn marked(&self) -> Result<Vec<CollectionEntry>> {
-        self.entries("(p.rating > 0 OR p.flag <> 0 OR p.label <> 0)", [])
+        self.entries(
+            "(p.rating > 0 OR p.flag <> 0 OR p.label <> 0 \
+              OR EXISTS(SELECT 1 FROM photo_keywords pk WHERE pk.photo_id = p.id))",
+            [],
+        )
     }
 
     /// Present photos meeting `condition` (SQL over `p`, the photo, and `f`, its file),

@@ -14,6 +14,7 @@ mod details;
 mod edits;
 mod error;
 mod identity;
+mod keywords;
 mod marks;
 mod presets;
 mod schema;
@@ -27,6 +28,7 @@ pub use details::{METADATA_VERSION, PhotoDetails, camera_name};
 pub use edits::StoredEdit;
 pub use error::CatalogueError;
 pub use identity::SourceIdentity;
+pub use keywords::{KeywordUse, MAX_KEYWORD_CHARS, keyword_name};
 pub use marks::{
     Collection, CollectionCounts, CollectionEntry, ColourLabel, Flag, MarkChange, Marks,
     RECENT_DAYS, Rating,

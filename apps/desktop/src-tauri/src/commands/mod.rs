@@ -8,6 +8,7 @@ pub mod backups;
 pub mod edits;
 pub mod export;
 pub mod images;
+pub mod keywords;
 pub mod library;
 pub mod marks;
 pub mod presets;

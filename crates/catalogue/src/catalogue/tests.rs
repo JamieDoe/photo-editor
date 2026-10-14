@@ -1183,6 +1183,18 @@ fn smart_collections_at_scale() {
             l.cat.set_edit(*p, Some((32, "{}"))).unwrap();
         }
     }
+    // Keywords (ADR 0088): three on each photo from a pool of 500.
+    let t = std::time::Instant::now();
+    for (i, p) in photos.iter().enumerate() {
+        let names: Vec<String> = (0..3)
+            .map(|k| format!("subject {}", (i * 7 + k * 131) % 500))
+            .collect();
+        l.cat.add_keywords(&[*p], &names).unwrap();
+    }
+    eprintln!(
+        "60,000 keywords added one photo at a time: {:.0} ms",
+        t.elapsed().as_secs_f64() * 1000.0
+    );
     let stars = |n| Some(RatingRule::AtLeast(crate::Rating::new(n).unwrap()));
     let cases = [
         (
@@ -1223,6 +1235,27 @@ fn smart_collections_at_scale() {
                 ..Default::default()
             },
         ),
+        (
+            "Keyword \"subject 42\"",
+            SmartRules {
+                keyword: Some("subject 42".into()),
+                ..Default::default()
+            },
+        ),
+        (
+            "\"subject 42\" (as words)",
+            SmartRules {
+                words: "subject 42".into(),
+                ..Default::default()
+            },
+        ),
+        (
+            "\"nothing-here\"",
+            SmartRules {
+                words: "nothing-here".into(),
+                ..Default::default()
+            },
+        ),
     ];
     let median = |f: &dyn Fn() -> usize| {
         let mut times: Vec<f64> = (0..7)
@@ -1245,5 +1278,142 @@ fn smart_collections_at_scale() {
         l.cat.add_smart_collection(name, rules).unwrap();
     }
     let all = median(&|| l.cat.smart_collections().unwrap().len());
-    eprintln!("the sidebar's five smart collections with counts: {all:.1} ms");
+    eprintln!(
+        "the sidebar's {} smart collections with counts: {all:.1} ms",
+        cases.len()
+    );
+    let on = median(&|| l.cat.keywords_on(&photos[..1000]).unwrap().len());
+    let library = median(&|| l.cat.keywords().unwrap().len());
+    eprintln!("keywords of 1,000 photos: {on:.1} ms; the library's 500: {library:.1} ms");
+}
+
+#[test]
+fn keywords_are_shared_found_by_search_and_smart_rules_and_follow_moves() {
+    let l = library("cat-keywords");
+    let rec = |name: &str, seed: u8| {
+        l.cat
+            .record_file(
+                l.folder,
+                &write(&l.root.join(name), &photo_bytes(seed)),
+                ScanId(1),
+            )
+            .unwrap()
+            .0
+    };
+    let (a, b, c) = (rec("a.nef", 41), rec("b.nef", 42), rec("c.nef", 43));
+    let names = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+    l.cat
+        .add_keywords(&[a, b], &names(&["Heron", " grey  heron ", "", "Lake"]))
+        .unwrap();
+    // Another spelling of an existing keyword links it; adding again changes nothing.
+    l.cat
+        .add_keywords(&[c], &names(&["heron", "LAKE"]))
+        .unwrap();
+    l.cat.add_keywords(&[a], &names(&["Heron"])).unwrap();
+    assert_eq!(
+        l.cat.photo_keywords(a).unwrap(),
+        ["grey heron", "Heron", "Lake"]
+    );
+    assert_eq!(l.cat.photo_keywords(c).unwrap(), ["Heron", "Lake"]);
+    let all: Vec<_> = l
+        .cat
+        .keywords()
+        .unwrap()
+        .into_iter()
+        .map(|k| (k.name, k.photos))
+        .collect();
+    assert_eq!(
+        all,
+        [
+            ("grey heron".into(), 2),
+            ("Heron".into(), 3),
+            ("Lake".into(), 3)
+        ]
+    );
+    // On a selection: how many of those photos have each.
+    let on: Vec<_> = l
+        .cat
+        .keywords_on(&[b, c])
+        .unwrap()
+        .into_iter()
+        .map(|k| (k.name, k.photos))
+        .collect();
+    assert_eq!(
+        on,
+        [
+            ("grey heron".into(), 1),
+            ("Heron".into(), 2),
+            ("Lake".into(), 2)
+        ]
+    );
+
+    // Search finds them, as part of a word too; smart rules match one exactly.
+    let found = |q: &str| l.cat.search(q).unwrap().len();
+    assert_eq!(found("heron"), 3);
+    assert_eq!(found("grey"), 2);
+    assert_eq!(found("grey lake"), 2);
+    let rule = |k: &str| crate::SmartRules {
+        keyword: Some(k.into()),
+        ..Default::default()
+    };
+    assert_eq!(l.cat.count_matching(&rule("grey heron")).unwrap(), 2);
+    assert_eq!(l.cat.count_matching(&rule("GREY HERON")).unwrap(), 2);
+    assert_eq!(l.cat.count_matching(&rule("grey")).unwrap(), 0);
+    assert!(rule(" ").is_empty() && !rule("Lake").is_empty());
+    let saved = l
+        .cat
+        .add_smart_collection("Herons", &rule("grey heron"))
+        .unwrap();
+    let stored = l.cat.smart_collection(saved).unwrap().unwrap();
+    assert_eq!(stored.rules.keyword.as_deref(), Some("grey heron"));
+    assert_eq!(stored.count, 2);
+
+    // Removing, ignoring case; a keyword no photo has is forgotten.
+    l.cat
+        .remove_keywords(&[a, b], &names(&["GREY HERON", "lake"]))
+        .unwrap();
+    assert_eq!(l.cat.photo_keywords(a).unwrap(), ["Heron"]);
+    assert_eq!(l.cat.photo_keywords(c).unwrap(), ["Heron", "Lake"]);
+    let left: Vec<_> = l
+        .cat
+        .keywords()
+        .unwrap()
+        .into_iter()
+        .map(|k| k.name)
+        .collect();
+    assert_eq!(left, ["Heron", "Lake"]);
+    let count: i64 = l
+        .cat
+        .conn()
+        .query_row("SELECT COUNT(*) FROM keywords", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 2, "grey heron forgotten");
+
+    // Imported keywords go only to photos without any.
+    let d = rec("d.nef", 44);
+    let taken = l
+        .cat
+        .import_keywords(&[
+            (a, names(&["Ignored"])),
+            (d, names(&["Snow", "snow", "Lake"])),
+        ])
+        .unwrap();
+    assert_eq!(taken, 1);
+    assert_eq!(l.cat.photo_keywords(a).unwrap(), ["Heron"]);
+    assert_eq!(l.cat.photo_keywords(d).unwrap(), ["Lake", "Snow"]);
+
+    // A moved photo keeps its keywords.
+    let moved = l.root.join("Moved/a.nef");
+    std::fs::create_dir_all(moved.parent().unwrap()).unwrap();
+    std::fs::rename(l.root.join("a.nef"), &moved).unwrap();
+    let (photo, _) = l
+        .cat
+        .record_file(
+            l.folder,
+            &SourceIdentity::from_path(&moved).unwrap(),
+            ScanId(2),
+        )
+        .unwrap();
+    assert_eq!(photo, a);
+    assert_eq!(l.cat.photo_keywords(photo).unwrap(), ["Heron"]);
 }

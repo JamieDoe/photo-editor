@@ -1521,11 +1521,13 @@ fn viewer_histogram(
     (quality != PreviewQuality::Thumbnail).then(|| Arc::new(renderer::Histogram::of(image)))
 }
 
-/// The photographer's marks as an export writes them (ADR 0067). Picks have no common
-/// XMP property; a reject is written in place of the rating.
-pub fn judgements(marks: &catalogue::Marks) -> export::metadata::Judgements {
+/// The photographer's marks (ADR 0067) and keywords (ADR 0088) as an export or sidecar
+/// writes them. Picks have no common XMP property; a reject is written in place of the
+/// rating.
+pub fn judgements(marks: &catalogue::Marks, keywords: Vec<String>) -> export::metadata::Judgements {
     use export::metadata::LabelName;
     export::metadata::Judgements {
+        keywords,
         rating: marks.rating.stars(),
         rejected: marks.flag == catalogue::Flag::Reject,
         label: match marks.label {

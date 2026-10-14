@@ -12,6 +12,7 @@ const finished = (over: Partial<Record<string, number>> = {}) => ({
   skipped: 0,
   detailsRead: 0,
   marksFromSidecars: 0,
+  keywordsFromSidecars: 0,
   totalMs: 120,
   ...over,
 });
@@ -30,6 +31,9 @@ describe("indexStatusText", () => {
     expect(indexStatusText(null, finished({ new: 2, missing: 1 }))).toBe("600 photos indexed · 2 new · 1 missing");
     expect(indexStatusText(null, finished({ new: 40, marksFromSidecars: 12 }))).toBe(
       "600 photos indexed · 40 new · ratings and labels from 12 sidecars",
+    );
+    expect(indexStatusText(null, finished({ new: 3, marksFromSidecars: 1, keywordsFromSidecars: 3 }))).toBe(
+      "600 photos indexed · 3 new · ratings and labels from 1 sidecar · keywords from 3 sidecars",
     );
     expect(indexStatusText(null, finished({ new: 1, marksFromSidecars: 1 }))).toBe(
       "600 photos indexed · 1 new · ratings and labels from 1 sidecar",

@@ -19,5 +19,10 @@ export function indexStatusText(indexing: IndexProgress | null, last: IndexFinis
     const n = last.marksFromSidecars;
     parts.push(`ratings and labels from ${n.toLocaleString()} sidecar${n === 1 ? "" : "s"}`);
   }
+  // And keywords (ADR 0088).
+  if (last.keywordsFromSidecars > 0) {
+    const n = last.keywordsFromSidecars;
+    parts.push(`keywords from ${n.toLocaleString()} sidecar${n === 1 ? "" : "s"}`);
+  }
   return parts.join(" · ");
 }

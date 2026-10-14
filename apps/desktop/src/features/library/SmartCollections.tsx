@@ -83,7 +83,17 @@ export function SmartCollectionEditor({
   const [rules, setRules] = useState<SmartRulesDto>(editing?.rules ?? start?.rules ?? NO_RULES);
   const [matching, setMatching] = useState<number | null>(editing?.count ?? null);
   const [confirming, setConfirming] = useState(false);
+  const [keywords, setKeywords] = useState<string[]>([]);
   const noRules = hasNoRules(rules);
+  useEffect(() => {
+    let live = true;
+    ipc.listKeywords().then((k) => live && setKeywords(k.map((x) => x.name)), () => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  // A rule's keyword no photo has any more stays a choice, so it isn't lost on saving.
+  const keywordChoices = rules.keyword && !keywords.includes(rules.keyword) ? [rules.keyword, ...keywords] : keywords;
 
   useEffect(() => {
     if (noRules) {
@@ -151,12 +161,18 @@ export function SmartCollectionEditor({
           onChange={(label) => change({ label })}
         />
         <RuleSelect label="Edited" options={EDITED_RULES} value={rules.edited} onChange={(edited) => change({ edited })} />
+        <RuleSelect<string | null>
+          label="Keyword"
+          options={[{ value: null, label: "Any keyword" }, ...keywordChoices.map((k) => ({ value: k, label: k }))]}
+          value={rules.keyword}
+          onChange={(keyword) => change({ keyword })}
+        />
         <label className="rule-row">
           <span>Words</span>
           <input
             className="text-input"
             maxLength={200}
-            placeholder="Folders, cameras, dates"
+            placeholder="Folders, keywords, cameras, dates"
             value={rules.words}
             onChange={(e) => change({ words: e.target.value })}
           />

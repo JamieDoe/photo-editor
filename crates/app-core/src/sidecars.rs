@@ -1,12 +1,12 @@
 //! XMP sidecars beside RAW files (ADR 0067, part 2): when the setting is on, a RAW's
-//! rating and label are kept in `NAME.xmp` beside it, where Lightroom, Bridge and
-//! Capture One read them. The RAW itself is never written to; other files (JPEGs) carry
-//! their marks inside and get none.
+//! rating, label and keywords (ADR 0088) are kept in `NAME.xmp` beside it, where
+//! Lightroom, Bridge and Capture One read them. The RAW itself is never written to;
+//! other files (JPEGs) carry their marks inside and get none.
 
 use std::path::{Path, PathBuf};
 
 use export::metadata::Judgements;
-use export::sidecar::{SidecarChange, update};
+use export::sidecar::{KeywordSync, SidecarChange, update};
 
 /// Sidecars larger than this are not read (none written by a photo app comes close).
 const MAX_SIDECAR_BYTES: u64 = 4 * 1024 * 1024;
@@ -31,18 +31,34 @@ pub fn is_raw(path: &Path, raw_extensions: &[&str]) -> bool {
         .is_some_and(|e| raw_extensions.contains(&e.to_ascii_lowercase().as_str()))
 }
 
-/// The marks in `raw`'s sidecar (ADR 0067, part 3), if it has one with any: for a
-/// photo joining the library with another app's culling beside it.
-pub fn read(raw: &Path) -> Option<catalogue::Marks> {
+/// What another app left in a RAW's sidecar.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct FromSidecar {
+    pub marks: Option<catalogue::Marks>,
+    pub keywords: Vec<String>,
+}
+
+/// The marks (ADR 0067, part 3) and keywords (ADR 0088) in `raw`'s sidecar, if it has
+/// one with any: for a photo joining the library with another app's culling and
+/// keywording beside it.
+pub fn read(raw: &Path) -> Option<FromSidecar> {
     let sidecar = path_for(raw);
     let meta = std::fs::metadata(&sidecar).ok()?;
     if !meta.is_file() || meta.len() > MAX_SIDECAR_BYTES {
         return None;
     }
     let text = std::fs::read_to_string(&sidecar).ok()?;
-    let j = export::sidecar::read_marks(&text)?;
+    let found = FromSidecar {
+        marks: export::sidecar::read_marks(&text).map(|j| marks_of(&j)),
+        keywords: export::sidecar::read_keywords(&text),
+    };
+    (found != FromSidecar::default()).then_some(found)
+}
+
+/// Marks as the catalogue keeps them, from those read in a sidecar.
+fn marks_of(j: &Judgements) -> catalogue::Marks {
     use export::metadata::LabelName;
-    Some(catalogue::Marks {
+    catalogue::Marks {
         rating: catalogue::Rating::new(j.rating).unwrap_or_default(),
         flag: if j.rejected {
             catalogue::Flag::Reject
@@ -57,11 +73,12 @@ pub fn read(raw: &Path) -> Option<catalogue::Marks> {
             Some(LabelName::Blue) => catalogue::ColourLabel::Blue,
             Some(LabelName::Purple) => catalogue::ColourLabel::Purple,
         },
-    })
+    }
 }
 
-/// Brings `raw`'s sidecar in line with `judgements`.
-pub fn sync(raw: &Path, judgements: &Judgements) -> Result<Synced, String> {
+/// Brings `raw`'s sidecar in line with `judgements`; its keywords too, unless
+/// `keywords` says to leave them.
+pub fn sync(raw: &Path, judgements: &Judgements, keywords: KeywordSync) -> Result<Synced, String> {
     let sidecar = path_for(raw);
     let existing = match std::fs::metadata(&sidecar) {
         Ok(meta) if meta.len() > MAX_SIDECAR_BYTES => {
@@ -71,7 +88,7 @@ pub fn sync(raw: &Path, judgements: &Judgements) -> Result<Synced, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(e.to_string()),
     };
-    match update(existing.as_deref(), judgements).map_err(|e| e.to_string())? {
+    match update(existing.as_deref(), judgements, keywords).map_err(|e| e.to_string())? {
         SidecarChange::Write(text) => {
             export::write_atomic(&sidecar, text.as_bytes()).map_err(|e| e.to_string())?;
             Ok(Synced::Written)
@@ -84,21 +101,39 @@ pub fn sync(raw: &Path, judgements: &Judgements) -> Result<Synced, String> {
     }
 }
 
-/// Syncs each of `files` (the RAWs among them) with its marks in `catalogue`, logging
-/// failures: a sidecar that can't be written never fails the change that caused it.
-pub fn sync_files(catalogue: &catalogue::Catalogue, files: &[PathBuf], raw_extensions: &[&str]) {
+/// Syncs each of `files` (the RAWs among them) with its marks and keywords in
+/// `catalogue`, logging failures: a sidecar that can't be written never fails the
+/// change that caused it.
+///
+/// A sidecar's keywords are made the photo's when they were just changed
+/// (`keywords_changed`) or the photo has some; otherwise they are left, as they may be
+/// another app's that were never brought in (only photos new to the library take them).
+pub fn sync_files(
+    catalogue: &catalogue::Catalogue,
+    files: &[PathBuf],
+    raw_extensions: &[&str],
+    keywords_changed: bool,
+) {
     for file in files.iter().filter(|f| is_raw(f, raw_extensions)) {
-        let marks = catalogue
-            .photo_at(file)
-            .and_then(|photo| photo.map(|p| catalogue.marks(p)).transpose());
-        let judgements = match marks {
-            Ok(m) => m.map(|m| crate::judgements(&m)).unwrap_or_default(),
+        let found = catalogue.photo_at(file).and_then(|photo| {
+            photo
+                .map(|p| Ok((catalogue.marks(p)?, catalogue.photo_keywords(p)?)))
+                .transpose()
+        });
+        let (marks, keywords) = match found {
+            Ok(Some(found)) => found,
+            Ok(None) => Default::default(),
             Err(e) => {
                 log::warn!("sidecar: no marks for {}: {e}", file.display());
                 continue;
             }
         };
-        if let Err(e) = sync(file, &judgements) {
+        let keep = if keywords_changed || !keywords.is_empty() {
+            KeywordSync::Match
+        } else {
+            KeywordSync::Leave
+        };
+        if let Err(e) = sync(file, &crate::judgements(&marks, keywords), keep) {
             log::warn!("sidecar for {} not updated: {e}", file.display());
         }
     }
@@ -118,13 +153,24 @@ mod tests {
             rating: 4,
             rejected: false,
             label: Some(LabelName::Green),
+            keywords: vec!["Heron".into()],
         };
-        assert_eq!(sync(&raw, &rated).unwrap(), Synced::Written);
+        assert_eq!(
+            sync(&raw, &rated, KeywordSync::Match).unwrap(),
+            Synced::Written
+        );
         let side = dir.path().join("DSC_0012.xmp");
         let text = std::fs::read_to_string(&side).unwrap();
         assert!(text.contains(r#"xmp:Rating="4""#) && text.contains(r#"xmp:Label="Green""#));
-        assert_eq!(sync(&raw, &rated).unwrap(), Synced::Unchanged);
-        assert_eq!(sync(&raw, &Judgements::default()).unwrap(), Synced::Deleted);
+        assert_eq!(export::sidecar::read_keywords(&text), ["Heron"]);
+        assert_eq!(
+            sync(&raw, &rated, KeywordSync::Match).unwrap(),
+            Synced::Unchanged
+        );
+        assert_eq!(
+            sync(&raw, &Judgements::default(), KeywordSync::Match).unwrap(),
+            Synced::Deleted
+        );
         assert!(!side.exists());
         assert_eq!(std::fs::read(&raw).unwrap(), b"raw bytes");
     }
@@ -140,11 +186,17 @@ mod tests {
             rating: 5,
             ..Default::default()
         };
-        assert_eq!(sync(&raw, &five).unwrap(), Synced::Written);
+        assert_eq!(
+            sync(&raw, &five, KeywordSync::Match).unwrap(),
+            Synced::Written
+        );
         let text = std::fs::read_to_string(path_for(&raw)).unwrap();
         assert!(text.contains(r#"xmp:Rating="5""#) && text.contains(r#"crs:Exposure2012="+1.00""#));
         // Cleared: the marks go, their file stays.
-        assert_eq!(sync(&raw, &Judgements::default()).unwrap(), Synced::Written);
+        assert_eq!(
+            sync(&raw, &Judgements::default(), KeywordSync::Match).unwrap(),
+            Synced::Written
+        );
         assert!(path_for(&raw).exists());
     }
 
@@ -158,7 +210,7 @@ mod tests {
             rating: 2,
             ..Default::default()
         };
-        assert!(sync(&raw, &rated).is_err());
+        assert!(sync(&raw, &rated, KeywordSync::Match).is_err());
         assert_eq!(
             std::fs::read_to_string(path_for(&raw)).unwrap(),
             "something else entirely"
