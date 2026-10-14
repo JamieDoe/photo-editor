@@ -236,6 +236,10 @@ Built:
   - **Store:** round trip, a fresh store reads from disk, bad names, ownership.
   - **Self-test:** a Subject mask on the Z 6, its effect against its view, and a
     foreign mask reported missing.
+    - Since 2026-10-14, a photo without a subject (the landscapes) is checked with
+      its Sky mask instead, at −1 EV, and each camera fixture is held to the
+      subject and sky in the table above (the Z 6 has no sky). Before, the Sony
+      A7R IV failed for having no subject.
 
 Differences from the proposal:
 - **Where masks are stored:** files beside the catalogue's data, not inside it. This
