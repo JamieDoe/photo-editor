@@ -119,9 +119,18 @@ fn main() {
         return;
     }
     if thumbnails {
-        let fixtures = workspace_root().join("tests/fixtures");
-        let files = collect_files(&[fixtures.join("synthetic"), fixtures.join("local")]);
-        let result = thumb_bench::run(&files, &camera_files());
+        // Files named on the command line are measured on their own, without the
+        // screenful of camera files.
+        let (files, camera) = if inputs.is_empty() {
+            let fixtures = workspace_root().join("tests/fixtures");
+            (
+                collect_files(&[fixtures.join("synthetic"), fixtures.join("local")]),
+                camera_files(),
+            )
+        } else {
+            (collect_files(&inputs), Vec::new())
+        };
+        let result = thumb_bench::run(&files, &camera);
         println!(
             "{}",
             serde_json::to_string_pretty(&result).expect("serialisable result")

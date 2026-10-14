@@ -1165,3 +1165,33 @@ Conversion is per-channel tables and a matrix in parallel rows. A 16-bit file bu
 65,536-entry tables; an 8-bit one 256. Thumbnails convert the reduced preview, so
 they cost nothing measurable.
 
+
+## 58. TIFFs decoded by strips (ADR 0082)
+
+Real 16-bit RGB TIFFs exported by a raw converter (Deflate, horizontal predictor), and
+an LZW copy of one made by `sips` (3-row strips). Release build, on the noisy machine;
+`bench --single FILE` and `bench --thumbnails FILE ...`. Old and new runs interleaved.
+
+| File | Open in the editor | Full decode | One thumbnail (512 px) | Decode peak memory |
+|---|---|---|---|---|
+| 24 MP, Deflate (119 MB) | 655–750 → 115–205 ms | 673 → 134 ms | 735 → 262 ms | 304 → 240 MB |
+| 61 MP, Deflate (286 MB) | 1668 → 337 ms | 1682 → 384 ms | 1792 → 586–895 ms | 742 → 568 MB |
+| 24 MP, LZW (191 MB) | 900–1000 → 220–480 ms | 900–1100 → 380–500 ms | 933 → 509 ms | |
+
+A screenful of 48 of them, cold:
+
+| Files | Default browse lane (3 threads) | One worker |
+|---|---|---|
+| Deflate, 24 and 61 MP | 2.4 → 2.7 a second | 1.0 → 1.0 a second |
+| LZW, 24 MP | 1.9 → 1.7 a second | 1.0 → 1.0 a second |
+
+The browse lane already decoded three files side by side, so decoding one on several
+threads makes each thumbnail arrive sooner but not a folder finish sooner. Per file,
+decompression is the cost: inflating the 24 MP Deflate file's strips takes 550 ms of
+the 660 ms on one thread (`flate2` with `miniz_oxide`); `zlib-rs` saved about 5 %
+overall and `fdeflate` 20 % of the inflating. These files barely compress (147 MB of
+samples in 119 MB).
+
+Interactive previews during an export of the 24 MP file: p50 77 → 83 ms, max
+102 → 108 ms (idle 60 → 55 ms): the same within noise, though the export's decode
+now uses the background lane's threads.

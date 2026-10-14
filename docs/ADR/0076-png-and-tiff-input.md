@@ -63,4 +63,5 @@ screenshots and exports.
   - **Possible speed-ups:** using a TIFF's own embedded thumbnail, and decoding strips
     in parallel.
 - **Done since:** ICC profiles (ADR 0077) and EXIF orientation (ADR 0078), for JPEG
-  too.
+  too. TIFFs are decoded strip by strip in parallel and reduced as they are read
+  (ADR 0082): no large TIFF at hand had an embedded thumbnail to use.

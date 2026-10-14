@@ -18,7 +18,12 @@ const SCREENFUL: usize = 48;
 pub fn run(files: &[PathBuf], camera_files: &[PathBuf]) -> Value {
     let per_file: Vec<Value> = files.iter().map(|f| file(f)).collect();
     let screenful = if camera_files.is_empty() {
-        Value::Null
+        // Files named on the command line: a screenful of them, as they are.
+        json!({
+            "thumbnails": SCREENFUL,
+            "default": screen(files, None, false),
+            "one_worker": screen(files, Some(1), false),
+        })
     } else {
         let default_workers = EngineConfig::default().jobs.browse.workers;
         json!({
