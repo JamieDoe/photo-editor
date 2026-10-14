@@ -13,11 +13,13 @@ const PHOTO_FIELDS = [
   "profileCorrections",
   "profileWithoutChromaticAberration",
   "masks",
+  "spots",
+  "removals",
   "redEyes",
 ] as const;
 
 /** `current` with `preset`'s look: the preset's settings, keeping the photo's
- *  exposure, geometry, lens corrections and masks. */
+ *  exposure, geometry, lens corrections, masks and retouching. */
 export function applyPreset(current: EditRecipe, preset: PresetDto): EditRecipe {
   const next: EditRecipe = { ...preset.recipe, version: current.version };
   for (const k of PHOTO_FIELDS) {

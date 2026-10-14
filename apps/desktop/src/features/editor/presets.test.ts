@@ -28,6 +28,21 @@ describe("presets", () => {
     expect("geometry" in r).toBe(false);
   });
 
+  it("keeps the photo's retouching: heal and clone spots, removals and red-eye", () => {
+    const retouched: EditRecipe = {
+      ...photo,
+      spots: [{ kind: "heal", x: 0.2, y: 0.3, sourceX: 0.3, sourceY: 0.3, radius: 0.02, feather: 50, opacity: 100 }],
+      removals: [{ strokes: [] }],
+      redEyes: [{ x: 0.5, y: 0.4, radius: 0.01, pupil: 50, darken: 50 }],
+    };
+    const r = applyPreset(retouched, mono);
+    expect(r.spots).toBe(retouched.spots);
+    expect(r.removals).toBe(retouched.removals);
+    expect(r.redEyes).toBe(retouched.redEyes);
+    // Retouching doesn't change whether the photo has the preset's look.
+    expect(hasLook(r, mono)).toBe(true);
+  });
+
   it("keeps the photo's lens corrections, which belong to its lens", () => {
     const off = applyPreset({ ...photo, profileCorrections: false }, { ...mono, recipe: { ...mono.recipe, profileCorrections: true } });
     expect(off.profileCorrections).toBe(false);
