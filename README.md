@@ -28,8 +28,16 @@ Building `export` with `--no-default-features` uses the pure-Rust JPEG encoder i
 cd apps/desktop
 npm install
 npx tauri dev                    # development (Vite + debug Rust)
-npx tauri build --bundles app    # release .app in target/release/bundle/macos/
+npx tauri build --bundles app    # release .app for this Mac, in target/release/bundle/macos/
+npm run bundle                   # the .app to give others (macOS 13+, Apple Silicon)
 ```
+
+Only `npm run bundle` makes an app that runs on other Macs (ADR 0086). It builds
+LibRaw and libjpeg-turbo from pinned sources for macOS 13 (`scripts/build-native-macos.sh`,
+once; it needs `brew install cmake`), and puts them in the app. The other builds use
+whichever libraries the build scripts find, Homebrew's until those are built; Homebrew's
+need Homebrew and the macOS they were built for. The bundle is signed ad hoc, so a Mac
+that downloads it asks to allow it in System Settings → Privacy & Security.
 
 The app opens in **Library**: choose a folder, browse its subfolders and photos, and
 click a photo to open it in **Edit**. There you can adjust exposure, contrast,

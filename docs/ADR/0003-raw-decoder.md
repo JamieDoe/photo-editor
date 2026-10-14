@@ -42,7 +42,10 @@ LibRaw 0.22 is dual-licensed **LGPL-2.1 OR CDDL-1.0**. For a proprietary app:
   we compile ourselves with a known feature set.
 
 **Action before distribution:** legal confirmation of the licence route, and a
-bundled LibRaw build per platform (macOS `.app` Frameworks, Windows DLL).
+bundled LibRaw build per platform (macOS `.app` Frameworks, Windows DLL). The macOS
+build is done (ADR 0086): LibRaw 0.22.2 built from source for macOS 13, with LLVM's
+OpenMP and libjpeg-turbo, linked dynamically and shipped in the app's Frameworks with
+its licence texts. The legal confirmation and Windows remain.
 
 Rust dependencies are checked with `cargo deny check` (`deny.toml`: permissive
 licences only). Tauri itself brings in five MPL-2.0 crates (`cssparser`,
