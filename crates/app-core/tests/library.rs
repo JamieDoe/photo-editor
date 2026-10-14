@@ -260,6 +260,7 @@ fn new_raws_take_marks_from_another_apps_sidecars_once() {
 }
 
 #[test]
+#[cfg(feature = "libraw")] // needs the RAW decoder: only RAWs are indexed as such
 fn new_raws_take_keywords_from_another_apps_sidecars() {
     let s = setup("index-sidecar-keywords");
     for (i, name) in ["DSC_1.NEF", "DSC_2.NEF"].iter().enumerate() {
