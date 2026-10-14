@@ -31,11 +31,45 @@ export const MASK_KINDS: Record<ShapeLook, { label: string; dot: string; add: st
   linear: { label: "Linear gradient", dot: "var(--mask-linear)", add: "Linear", hint: "Graduated filter" },
   radial: { label: "Radial gradient", dot: "var(--mask-radial)", add: "Radial", hint: "Radial filter" },
   brush: { label: "Brush", dot: "var(--mask-brush)", add: "Brush", hint: "Paint an area" },
+  luminance: { label: "Luminance range", dot: "var(--mask-luminance)", add: "Luminance", hint: "Adjust a band of brightness" },
+  colour: { label: "Colour range", dot: "var(--mask-colour)", add: "Colour", hint: "Pick a colour to adjust" },
 };
 
 /** The kinds that can be added, in the design's order (People, not in the design,
- *  after Sky). */
-export const ADDABLE_KINDS: readonly ShapeLook[] = ["subject", "sky", "people", "brush", "linear", "radial"];
+ *  after Sky; the range masks, ADR 0085, last). */
+export const ADDABLE_KINDS: readonly ShapeLook[] = ["subject", "sky", "people", "brush", "linear", "radial", "luminance", "colour"];
+
+/** Range masks (ADR 0085): they cover by brightness or colour, not by place. */
+export const isRange = (shape: MaskShape): shape is Extract<MaskShape, { kind: "luminance" | "colour" }> =>
+  shape.kind === "luminance" || shape.kind === "colour";
+
+/** The most colours a colour range may have (the renderer's `MAX_COLOURS`). */
+export const MAX_COLOURS = 5;
+
+/** A shape the engine draws the tint of (generated and range masks), by what it is:
+ *  a generated mask's stored name, or a range shape's settings. */
+export function viewKey(shape: MaskShape): string | null {
+  if (shape.kind === "generated") return shape.mask;
+  if (isRange(shape)) return `range:${JSON.stringify(shape)}`;
+  return null;
+}
+
+/** An Oklab colour (as picked for a colour range) as a CSS colour, for its swatch. */
+export function oklabCss([l, a, b]: readonly [number, number, number]): string {
+  const l_ = (l + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m_ = (l - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s_ = (l - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  const linear = [
+    4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_,
+    -1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_,
+    -0.0041960863 * l_ - 0.7034186147 * m_ + 1.707614701 * s_,
+  ];
+  const encode = (v: number) => {
+    const c = Math.min(1, Math.max(0, v));
+    return Math.round(255 * (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055));
+  };
+  return `rgb(${linear.map(encode).join(", ")})`;
+}
 
 /** The kinds this computer can add: generated ones only where it can make them. */
 export function addableKinds(generated: readonly GeneratedKind[]): ShapeLook[] {
@@ -119,6 +153,12 @@ export function newShape(kind: DrawnKind, crop: CropRect): MaskShape {
     }
     case "brush":
       return { kind: "brush", strokes: [] };
+    // The brighter part of the picture, a common start (a sky, highlights).
+    case "luminance":
+      return { kind: "luminance", low: 60, high: 100, feather: 50 };
+    // No colour yet: the photographer picks one on the photo.
+    case "colour":
+      return { kind: "colour", colours: [], range: 50 };
   }
 }
 
@@ -219,7 +259,10 @@ function mapShape(shape: MaskShape, f: (p: Point) => Point, turn: (angle: number
       // Sizes are fractions of the diagonal, which turns leave alone.
       return { ...shape, strokes: shape.strokes.map((s) => ({ ...s, points: s.points.map(f) })) };
     case "generated":
-      // Made in the photo's own coordinates (ADR 0074), so it turns with the photo.
+    // Made in the photo's own coordinates (ADR 0074), so it turns with the photo.
+    case "luminance":
+    case "colour":
+      // By brightness or colour, not place (ADR 0085).
       return shape;
   }
 }

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import type { CropRect } from "../../ipc/generated/CropRect";
 import type { Geometry } from "../../ipc/generated/Geometry";
+import type { EditRecipe } from "../../ipc/generated/EditRecipe";
 import type { Mask } from "../../ipc/generated/Mask";
-import { maskView } from "../../ipc/client";
+import type { MaskShape } from "../../ipc/generated/MaskShape";
+import { maskView, rangeMaskView } from "../../ipc/client";
 import { MaskTint, coverageCanvas, type GeneratedView } from "./maskTint";
-import { shapesOf } from "./masks";
+import { isRange, shapesOf, viewKey } from "./masks";
 import { useViewerZoom } from "./viewerZoom";
 import { drawnPart } from "./zoom";
 
@@ -16,6 +18,7 @@ export function MaskTintCanvas({
   crop,
   boxRef,
   imageId,
+  recipe,
   geometry,
   profileCorrections,
 }: {
@@ -23,6 +26,9 @@ export function MaskTintCanvas({
   crop: CropRect;
   boxRef: RefObject<HTMLDivElement | null>;
   imageId: number | null;
+  /** The edit: range masks (ADR 0085) see the photo through its white balance and
+   *  exposure. */
+  recipe: EditRecipe | null;
   geometry: Geometry | null;
   /** Whether the recipe applies the lens's profile (ADR 0075), which moves the frame. */
   profileCorrections: boolean;
@@ -50,11 +56,12 @@ export function MaskTintCanvas({
   const width = Math.max(1, Math.round(boxSize.width * (p1 - p0)));
   const height = Math.max(1, Math.round(boxSize.height * (q1 - q0)));
   const { x, y, w, h } = crop;
-  const generated = useGeneratedViews(
+  const generated = useEngineViews(
     mask,
     crop,
     boxSize.width / Math.max(boxSize.height, 1),
     imageId,
+    recipe,
     geometry,
     profileCorrections,
   );
@@ -78,41 +85,57 @@ export function MaskTintCanvas({
   );
 }
 
-/** Generated masks' views are made once over the whole shown crop at this long edge,
- *  then scaled for zooming and panning: smooth coverage scales well. */
+/** Generated and range masks' views are made once over the whole shown crop at this
+ *  long edge, then scaled for zooming and panning: smooth coverage scales well. */
 const GENERATED_VIEW_EDGE = 2048;
 
 /**
- * The views of `mask`'s generated shapes (ADR 0074) over `crop` of the frame, made by
- * the engine (which maps them as the renderer does), by name. `aspect` is the shown
- * crop's on screen. Kept until the photo, the frame, the crop or the names change.
+ * The views of `mask`'s generated shapes (ADR 0074) and range shapes (ADR 0085) over
+ * `crop` of the frame, made by the engine (which maps them as the renderer does and
+ * reads range masks' colours as it does), by `viewKey`. `aspect` is the shown crop's on
+ * screen. Kept until the photo, the frame, the crop, the shapes or (for range shapes)
+ * the white balance and exposure change.
  */
-function useGeneratedViews(
+function useEngineViews(
   mask: Mask,
   crop: CropRect,
   aspect: number,
   imageId: number | null,
+  recipe: EditRecipe | null,
   geometry: Geometry | null,
   profileCorrections: boolean,
 ): ReadonlyMap<string, GeneratedView> {
-  const names = shapesOf(mask)
-    .flatMap(({ shape }) => (shape.kind === "generated" ? [shape.mask] : []))
-    .join(",");
+  const shapes = new Map<string, MaskShape>();
+  for (const { shape } of shapesOf(mask)) {
+    const key = viewKey(shape);
+    if (key !== null) shapes.set(key, shape);
+  }
+  const names = [...shapes.keys()].join("\n");
+  const ranges = [...shapes.values()].some(isRange);
+  // What range masks see the photo through (the plan's gains before its masks).
+  const light = ranges && recipe ? JSON.stringify([recipe.exposure, recipe.temperature, recipe.tint, recipe.whiteBalance ?? null]) : "";
+  const latestRecipe = useRef(recipe);
+  latestRecipe.current = recipe;
   const [views, setViews] = useState<{ of: string; views: ReadonlyMap<string, GeneratedView> }>({ of: "", views: new Map() });
   const width = aspect >= 1 ? GENERATED_VIEW_EDGE : Math.max(1, Math.round(GENERATED_VIEW_EDGE * aspect));
   const height = aspect >= 1 ? Math.max(1, Math.round(GENERATED_VIEW_EDGE / aspect)) : GENERATED_VIEW_EDGE;
   const geometryKey = JSON.stringify(geometry);
   // What the views are of; the size they are made at only sharpens them.
-  const of = `${imageId}|${geometryKey}|${profileCorrections}|${names}`;
+  const of = `${imageId}|${geometryKey}|${profileCorrections}|${light}|${names}`;
   const key = `${of}|${width}x${height}`;
   useEffect(() => {
     if (imageId === null || names === "" || !Number.isFinite(aspect) || aspect <= 0) return;
     let stale = false;
     const viewCrop = { ...crop };
+    const edit = latestRecipe.current;
     void Promise.all(
-      names.split(",").map(async (name) => {
-        const view = { name, geometry, profileCorrections, crop: viewCrop, width, height };
-        const bytes = await maskView(imageId, view).catch(() => new Uint8Array());
+      [...shapes].map(async ([name, shape]) => {
+        const bytes =
+          shape.kind === "generated"
+            ? await maskView(imageId, { name, geometry, profileCorrections, crop: viewCrop, width, height }).catch(() => new Uint8Array())
+            : edit
+              ? await rangeMaskView(imageId, edit, shape, viewCrop, width, height).catch(() => new Uint8Array())
+              : new Uint8Array();
         return [name, bytes] as const;
       }),
     ).then((made) => {

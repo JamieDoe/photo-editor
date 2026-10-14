@@ -368,7 +368,36 @@ mockIPC((cmd, payload) => {
       }
       return new Promise((r) => setTimeout(() => r(out.buffer), 120));
     }
-    case "find_red_eye": {
+    case "range_mask_view": {
+      // The mock photo's brightness falls from the top; luminance ranges cover a band of
+      // rows, colour ranges the upper part whose blue they picked.
+      const { shape, crop, width, height } = payload as {
+        shape: { kind: "luminance"; low: number; high: number; feather: number } | { kind: "colour"; colours: number[][]; range: number };
+        crop: { x: number; y: number; w: number; h: number };
+        width: number;
+        height: number;
+      };
+      const out = new Uint8Array(width * height);
+      for (let j = 0; j < height; j++) {
+        const fy = crop.y + ((j + 0.5) / height) * crop.h;
+        const light = 100 * (1 - fy);
+        const fade = Math.max((shape.kind === "luminance" ? shape.feather : 50) / 4, 0.01);
+        const c =
+          shape.kind === "luminance"
+            ? Math.min(1, Math.max(0, (light - shape.low + fade) / fade), Math.max(0, (shape.high + fade - light) / fade))
+            : shape.colours.length === 0
+              ? 0
+              : Math.min(1, Math.max(0, (0.45 + shape.range / 400 - fy) / 0.08));
+        out.fill(Math.round(255 * Math.min(1, c)), j * width, (j + 1) * width);
+      }
+      return new Promise((r) => setTimeout(() => r(out.buffer), 60));
+    }
+    case "pick_mask_colour": {
+      // A sky blue near the top, a green lower down.
+      const [, y] = (payload as { point: [number, number] }).point;
+      return y < 0.5 ? [0.62, -0.03, -0.09] : [0.55, -0.1, 0.08];
+    }
+        case "find_red_eye": {
       // Dev-only stand-in: an eye wherever clicked, the size of the brush.
       const { at, radius } = payload as { at: [number, number]; radius: number };
       return { x: at[0], y: at[1], radius: Math.min(radius, 0.05), pupil: 50, darken: 50 };

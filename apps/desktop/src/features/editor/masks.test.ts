@@ -26,6 +26,8 @@ import {
   generatedShape,
   maskOf,
   renameGenerated,
+  oklabCss,
+  viewKey,
 } from "./masks";
 import { neutralRecipe } from "./recipe";
 
@@ -165,12 +167,34 @@ describe("masks", () => {
   });
 
   it("offers generated masks only where they can be made", () => {
-    expect(addableKinds([])).toEqual(["brush", "linear", "radial"]);
-    expect(addableKinds(["subject", "people"])).toEqual(["subject", "people", "brush", "linear", "radial"]);
-    expect(addableKinds(["subject"])).toEqual(["subject", "brush", "linear", "radial"]);
+    const always = ["brush", "linear", "radial", "luminance", "colour"];
+    expect(addableKinds([])).toEqual(always);
+    expect(addableKinds(["subject", "people"])).toEqual(["subject", "people", ...always]);
+    expect(addableKinds(["subject"])).toEqual(["subject", ...always]);
     // Every platform finds the sky; the design's order, People after it.
-    expect(addableKinds(["sky"])).toEqual(["sky", "brush", "linear", "radial"]);
-    expect(addableKinds(["people", "sky", "subject"])).toEqual(["subject", "sky", "people", "brush", "linear", "radial"]);
+    expect(addableKinds(["sky"])).toEqual(["sky", ...always]);
+    expect(addableKinds(["people", "sky", "subject"])).toEqual(["subject", "sky", "people", ...always]);
+  });
+
+  it("starts range masks ready to use, and leaves them where they are when turned", () => {
+    const luminance = newShape("luminance", FULL_CROP);
+    expect(luminance).toEqual({ kind: "luminance", low: 60, high: 100, feather: 50 });
+    // A colour range waits for a colour, and covers nothing until then.
+    expect(newShape("colour", FULL_CROP)).toEqual({ kind: "colour", colours: [], range: 50 });
+    const m = maskOf(luminance, []);
+    expect(turnMasks([m], 1)[0]!.shape).toEqual(luminance);
+    expect(flipMasks([m])[0]!.shape).toEqual(luminance);
+    // The engine draws their tint, keyed by their settings.
+    expect(viewKey(luminance)).toBe(`range:${JSON.stringify(luminance)}`);
+    expect(viewKey(generatedShape("sky", "ab"))).toBe("ab");
+    expect(viewKey(newShape("radial", FULL_CROP))).toBeNull();
+  });
+
+  it("shows picked colours as they look", () => {
+    // Oklab white, black and a mid grey.
+    expect(oklabCss([1, 0, 0])).toBe("rgb(255, 255, 255)");
+    expect(oklabCss([0, 0, 0])).toBe("rgb(0, 0, 0)");
+    expect(oklabCss([0.5, 0, 0])).toBe("rgb(99, 99, 99)");
   });
 
   it("finds and renames the generated masks a recipe names", () => {

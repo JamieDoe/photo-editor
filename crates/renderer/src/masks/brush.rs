@@ -95,6 +95,16 @@ impl CoverageMap {
         })
     }
 
+    /// A map from 16-bit coverage (0..65535), row by row: a range mask's (ADR 0085).
+    /// `None` when the pixels don't match the size.
+    pub fn from_u16(width: usize, height: usize, data: Vec<u16>) -> Option<Self> {
+        (width > 0 && height > 0 && data.len() == width * height).then_some(Self {
+            width,
+            height,
+            data,
+        })
+    }
+
     pub fn size(&self) -> (usize, usize) {
         (self.width, self.height)
     }

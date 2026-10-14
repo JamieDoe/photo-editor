@@ -65,7 +65,8 @@ use crate::ops::colour_mixer::ColourMixer;
 /// - 32: lens profiles also correct chromatic aberration (ADR 0083). Older recipes
 ///   that applied a profile to an edit are marked `profileWithoutChromaticAberration`,
 ///   so they render as they did.
-pub const RECIPE_VERSION: u32 = 32;
+/// - 33: adds luminance and colour range masks (ADR 0085); older recipes have none.
+pub const RECIPE_VERSION: u32 = 33;
 
 fn is_true(v: &bool) -> bool {
     *v
@@ -598,7 +599,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":32,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":33,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 

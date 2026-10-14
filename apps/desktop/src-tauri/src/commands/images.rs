@@ -274,6 +274,46 @@ pub async fn mask_view(
     Ok(Response::new(bytes.unwrap_or_default()))
 }
 
+/// A range mask's shape (ADR 0085) as it covers `crop` of the open photo's frame that
+/// `recipe` makes: `width` × `height` bytes (0..255), for its tint.
+#[tauri::command]
+pub async fn range_mask_view(
+    state: State<'_, AppState>,
+    image_id: u64,
+    recipe: renderer::EditRecipe,
+    shape: renderer::masks::MaskShape,
+    crop: renderer::CropRect,
+    width: u32,
+    height: u32,
+) -> IpcResult<Response> {
+    let bytes = wait(state.engine.range_mask_view(
+        ImageId(image_id),
+        &recipe,
+        &shape,
+        crop,
+        (width, height),
+    ))
+    .await?;
+    Ok(Response::new(bytes))
+}
+
+/// The colour at `point` (fractions of the frame `recipe` makes of the open photo), as
+/// range masks see it (ADR 0085): Oklab, for a colour range.
+#[tauri::command]
+pub async fn pick_mask_colour(
+    state: State<'_, AppState>,
+    image_id: u64,
+    recipe: renderer::EditRecipe,
+    point: [f32; 2],
+) -> IpcResult<[f32; 3]> {
+    wait(
+        state
+            .engine
+            .pick_mask_colour(ImageId(image_id), &recipe, point),
+    )
+    .await
+}
+
 /// Auto tone (ADR 0071): the open photo's tone sliders as a starting point, for the
 /// photo as `recipe` edits it.
 #[tauri::command]

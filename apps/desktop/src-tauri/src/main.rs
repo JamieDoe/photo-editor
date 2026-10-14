@@ -145,6 +145,8 @@ fn main() {
             commands::images::generate_mask,
             commands::images::missing_masks,
             commands::images::mask_view,
+            commands::images::range_mask_view,
+            commands::images::pick_mask_colour,
             commands::images::auto_level,
             commands::images::new_spot,
             commands::images::find_dust,

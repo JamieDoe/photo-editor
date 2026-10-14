@@ -10,13 +10,15 @@ import type { MaskShape } from "../../ipc/generated/MaskShape";
 import type { Stroke } from "../../ipc/generated/Stroke";
 import { BrushGuides } from "./BrushOverlay";
 import { MaskTintCanvas } from "./MaskTintCanvas";
-import { errorMessage, generateMask, isCancellation, missingMasks } from "../../ipc/client";
+import { errorMessage, generateMask, isCancellation, missingMasks, pickMaskColour } from "../../ipc/client";
 import { isTextEntry } from "../../lib/keyboard";
 import {
   DEFAULT_BRUSH,
   FINDING,
   FULL_CROP,
   MASK_KINDS,
+  MAX_COLOURS,
+  fromShown,
   NONE_FOUND,
   addShape,
   addableKinds,
@@ -135,8 +137,10 @@ export function useMaskTool(opts: {
     active,
     overlay,
     crop,
-    /** The photo, and the frame its masks are drawn in, for generated masks' tints. */
+    /** The photo, and the frame its masks are drawn in, for generated masks' tints;
+     *  and the edit, which range masks (ADR 0085) read the photo through. */
     imageId,
+    recipe,
     geometry: recipe?.geometry ?? null,
     profileCorrections: recipe?.profileCorrections !== false,
     enter: () => {
@@ -210,6 +214,42 @@ export function useMaskTool(opts: {
     setInvert: (invert: boolean) => changeActive((m) => ({ ...m, invert: invert || undefined })),
     /** A radial shape's Feather. */
     setFeather: (feather: number) => changeShape((s) => (s.kind === "radial" ? { ...s, feather } : s)),
+    /** A luminance range's band and feather (ADR 0085). */
+    setLuminance: (change: Partial<{ low: number; high: number; feather: number }>) =>
+      changeShape((s) => (s.kind === "luminance" ? { ...s, ...change } : s)),
+    /** A colour range's Range. */
+    setColourRange: (range: number) => changeShape((s) => (s.kind === "colour" ? { ...s, range } : s)),
+    /** Takes colour `i` out of a colour range. */
+    removeColour: (i: number) =>
+      changeShape((s) => (s.kind === "colour" ? { ...s, colours: s.colours.filter((_, k) => k !== i) } : s)),
+    /**
+     * Picks the colour at shown point `p` (fractions of the shown picture) for the colour
+     * range being edited (ADR 0085), as range masks see the photo; with `add` (Shift),
+     * as another colour, else in place of those picked before.
+     */
+    pickColour: async (p: Point, add: boolean) => {
+      if (!active || shape?.kind !== "colour" || imageId === null || !recipe) return;
+      const [id, at] = [active.id, shapeIndex];
+      try {
+        const colour = await pickMaskColour(imageId, recipe, fromShown(p, crop));
+        const r = latest.current.recipe;
+        if (!r || latest.current.imageId !== imageId) return;
+        onChange(
+          withMasks(
+            r,
+            updateMask(masksOf(r), id, (m) => {
+              const now = shapesOf(m)[at]?.shape;
+              if (now?.kind !== "colour") return m;
+              const colours = add ? [...now.colours, colour].slice(-MAX_COLOURS) : [colour];
+              return withShapeAt(m, at, { ...now, colours });
+            }),
+          ),
+          "Pick colour",
+        );
+      } catch (e) {
+        if (!isCancellation(e)) notify(`The colour could not be picked: ${errorMessage(e)}`);
+      }
+    },
     toggleOverlay: () => setOverlay((o) => !o),
     /** The brush the next stroke is painted with (ADR 0042). */
     brush,
@@ -325,6 +365,7 @@ export function MaskOverlay({ tool, size }: { tool: MaskTool; size: { width: num
           crop={crop}
           boxRef={boxRef}
           imageId={tool.imageId}
+          recipe={tool.recipe}
           geometry={tool.geometry}
           profileCorrections={tool.profileCorrections}
         />
@@ -335,7 +376,26 @@ export function MaskOverlay({ tool, size }: { tool: MaskTool; size: { width: num
         <RadialGuides key={key} {...props} shape={shape} />
       ) : shape.kind === "brush" ? (
         <BrushGuides key={key} {...props} shape={shape} />
+      ) : shape.kind === "colour" ? (
+        <ColourPicker key={key} tool={tool} boxRef={boxRef} picked={shape.colours.length} />
       ) : null}
+    </div>
+  );
+}
+
+/** A colour range (ADR 0085): the photo is an eyedropper. A click picks the colour
+ *  there, Shift-click another colour; until one is picked, a hint says so. */
+function ColourPicker({ tool, boxRef, picked }: { tool: MaskTool; boxRef: RefObject<HTMLDivElement | null>; picked: number }) {
+  const pick = (e: ReactPointerEvent) => {
+    const box = boxRef.current?.getBoundingClientRect();
+    if (!box || e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+    void tool.pickColour([(e.clientX - box.left) / box.width, (e.clientY - box.top) / box.height], e.shiftKey);
+  };
+  return (
+    <div className="colour-picker" onPointerDown={pick} title="Pick a colour; Shift-click adds another">
+      {picked === 0 && <span className="colour-pick-hint">Click the photo to pick a colour</span>}
     </div>
   );
 }

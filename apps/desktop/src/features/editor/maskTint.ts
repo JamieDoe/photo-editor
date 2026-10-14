@@ -3,7 +3,7 @@ import type { CropRect } from "../../ipc/generated/CropRect";
 import type { Mask } from "../../ipc/generated/Mask";
 import type { MaskShape } from "../../ipc/generated/MaskShape";
 import { BrushTint, canvas2d, fit, type TintView } from "./brushTint";
-import { shapesOf, toShown } from "./masks";
+import { shapesOf, toShown, viewKey } from "./masks";
 
 /**
  * A mask's tint on a canvas (ADRs 0040–0043): where it covers the photo, in the accent
@@ -85,8 +85,8 @@ export class MaskTint {
   private readonly combined = document.createElement("canvas");
   private readonly layer = document.createElement("canvas");
 
-  /** Draws `mask`'s coverage on `target` in `colour`; its generated shapes from
-   *  `generated`, by name (a shape not there yet covers nothing). */
+  /** Draws `mask`'s coverage on `target` in `colour`; its generated and range shapes
+   *  from `generated`, by `viewKey` (a shape not there yet covers nothing). */
   draw(
     target: HTMLCanvasElement,
     mask: Mask,
@@ -130,11 +130,13 @@ export class MaskTint {
     if (shape.kind === "brush") return (this.brushes[i] ??= new BrushTint()).coverage(shape.strokes, view);
     const layer = canvas2d(this.layer);
     layer.clearRect(0, 0, view.width, view.height);
-    if (shape.kind !== "generated") {
+    if (shape.kind === "linear" || shape.kind === "radial") {
       fillGradient(layer, shape, view);
       return this.layer;
     }
-    const made = generated.get(shape.mask);
+    // Generated and range masks (ADRs 0074, 0085): views the engine made.
+    const key = viewKey(shape);
+    const made = key === null ? undefined : generated.get(key);
     if (made) {
       // The part of the made view this view shows, scaled smoothly.
       const { canvas, crop } = made;
