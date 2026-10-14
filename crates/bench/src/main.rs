@@ -7,6 +7,9 @@
 //! With no paths, benchmarks `tests/fixtures/synthetic` and `tests/fixtures/local`.
 //! Each file runs in a child process so peak memory (max RSS) is per file. Results
 //! are printed as a markdown table and written as JSON for comparison over time.
+//!
+//! `--cpus N` stands in for a smaller machine (PERFORMANCE §65): rayon's pool, the job
+//! lanes and LibRaw use at most N threads.
 
 mod auto_bench;
 mod dust_bench;
@@ -36,6 +39,7 @@ fn main() {
     let mut thumbnails = false;
     let mut look = false;
     let mut args_flat = false;
+    let mut cpus: Option<usize> = None;
     let mut inputs = Vec::new();
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
@@ -94,8 +98,18 @@ fn main() {
                 return;
             }
             "--flat" => args_flat = true,
+            "--cpus" => {
+                cpus = it.next().and_then(|v| v.parse().ok()).filter(|&n| n > 0);
+                if let Some(n) = cpus {
+                    rayon::ThreadPoolBuilder::new()
+                        .num_threads(n)
+                        .build_global()
+                        .expect("rayon's pool is set once, first");
+                    measure::set_cpus(n);
+                }
+            }
             "-h" | "--help" => {
-                println!("bench [--iterations N] [--out DIR] [FILE|DIR ...]");
+                println!("bench [--iterations N] [--cpus N] [--out DIR] [FILE|DIR ...]");
                 return;
             }
             other => inputs.push(PathBuf::from(other)),
@@ -197,17 +211,23 @@ fn main() {
     for file in &files {
         eprintln!("benchmarking {} ...", file.display());
         let file_arg = file.display().to_string();
+        let cpus_args: Vec<String> = cpus
+            .map(|n| vec!["--cpus".to_owned(), n.to_string()])
+            .unwrap_or_default();
         let timing = run_child(
             &exe,
-            &[
-                "--single",
-                &file_arg,
-                "--iterations",
-                &iterations.to_string(),
-            ],
+            &with_cpus(
+                &cpus_args,
+                &[
+                    "--single",
+                    &file_arg,
+                    "--iterations",
+                    &iterations.to_string(),
+                ],
+            ),
         );
-        let memory = run_child(&exe, &["--memory", &file_arg]);
-        let decode_peak = run_child(&exe, &["--decode-peak", &file_arg]);
+        let memory = run_child(&exe, &with_cpus(&cpus_args, &["--memory", &file_arg]));
+        let decode_peak = run_child(&exe, &with_cpus(&cpus_args, &["--decode-peak", &file_arg]));
         match (timing, memory) {
             (Some(mut v), memory) => {
                 v["app_memory"] = memory.unwrap_or(Value::Null);
@@ -232,8 +252,21 @@ fn main() {
     eprintln!("wrote {}", path.display());
 }
 
+/// `args` after the `--cpus` ones, so a child stands in for the same machine.
+fn with_cpus<'a>(cpus: &'a [String], args: &[&'a str]) -> Vec<&'a str> {
+    let mut all: Vec<&str> = cpus.iter().map(String::as_str).collect();
+    all.extend_from_slice(args);
+    all
+}
+
 fn run_child(exe: &Path, args: &[&str]) -> Option<Value> {
-    let output = Command::new(exe).args(args).output().ok()?;
+    let mut command = Command::new(exe);
+    command.args(args);
+    // LibRaw's own threads (OpenMP) for decodes that set no limit of their own.
+    if let Some(i) = args.iter().position(|a| *a == "--cpus") {
+        command.env("OMP_NUM_THREADS", args[i + 1]);
+    }
+    let output = command.output().ok()?;
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed = stdout
         .lines()

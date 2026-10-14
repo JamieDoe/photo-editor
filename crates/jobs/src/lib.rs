@@ -156,7 +156,14 @@ pub struct JobSystemConfig {
 
 impl Default for JobSystemConfig {
     fn default() -> Self {
-        let cores = std::thread::available_parallelism().map_or(4, |n| n.get());
+        Self::for_cores(std::thread::available_parallelism().map_or(4, |n| n.get()))
+    }
+}
+
+impl JobSystemConfig {
+    /// Lanes sized for a machine with `cores` hardware threads.
+    pub fn for_cores(cores: usize) -> Self {
+        let cores = cores.max(1);
         Self {
             interactive: LaneConfig {
                 workers: 1,

@@ -16,4 +16,9 @@ slot?: PreviewSlotDto,
  * Only this part of the photo at full resolution (ADR 0070, zoom): `x`, `y`,
  * `width`, `height` in full-resolution output pixels.
  */
-window?: [number, number, number, number], };
+window?: [number, number, number, number], 
+/**
+ * Changes are arriving faster than they render (a drag): the engine may then
+ * render an interactive preview smaller, to keep up (PERFORMANCE §65).
+ */
+catchingUp?: boolean, };

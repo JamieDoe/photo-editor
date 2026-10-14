@@ -83,6 +83,10 @@ the bundle through LaunchServices instead, as a separate instance:
 open -n -W --env PE_SELF_TEST=/path/to/photo.nef --stdout report.txt "target/release/bundle/macos/Photo Editor Prototype.app"
 ```
 
+To stand in for a smaller Mac (PERFORMANCE §65, ADR 0090), add
+`--env PE_SELF_TEST_CPUS=4`: the app then uses at most four threads. The benchmark
+takes `--cpus 4` for the same.
+
 CI (`.github/workflows/ci.yml`, ADR 0017) runs these checks on every pull request:
 the full product on macOS, and the portable core on Linux and Windows. The Rust
 toolchain is pinned in `rust-toolchain.toml`.

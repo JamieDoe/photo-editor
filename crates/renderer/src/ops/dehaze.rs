@@ -20,7 +20,9 @@
 //! (`t' = 1 − s·(1 − t)`, at least [`MIN_TRANSMISSION`]); at `−s` airlight is blended
 //! in, more where the scene is already hazy.
 
-use super::scene::{GuidedMap, SceneMap, luma};
+use rayon::prelude::*;
+
+use super::scene::{GuidedMap, PAR_CELLS, SceneMap, luma};
 
 /// Dark-channel patch radius in map cells (about 6 % of the picture).
 const PATCH_RADIUS: usize = 7;
@@ -50,7 +52,12 @@ impl DehazeModel {
     /// Estimates haze on `scene` for a Dehaze slider value (-100..100).
     pub fn build(scene: &SceneMap, amount: f32) -> Self {
         let (w, h) = (scene.width, scene.height);
-        let raw_dark: Vec<f32> = scene.rgb.iter().map(|c| c[0].min(c[1]).min(c[2])).collect();
+        let raw_dark: Vec<f32> = scene
+            .rgb
+            .par_iter()
+            .with_min_len(PAR_CELLS)
+            .map(|c| c[0].min(c[1]).min(c[2]))
+            .collect();
         let raw_dark = min_filter(&raw_dark, w, h, PATCH_RADIUS);
 
         // Airlight: mean colour of the haziest cells.
@@ -70,7 +77,8 @@ impl DehazeModel {
         // Dark channel of the scene normalised by the airlight, then transmission.
         let dark: Vec<f32> = scene
             .rgb
-            .iter()
+            .par_iter()
+            .with_min_len(PAR_CELLS)
             .map(|c| {
                 (0..3)
                     .map(|i| c[i] / airlight[i])
@@ -167,25 +175,33 @@ impl DehazeModel {
 
 /// Minimum over a (2r+1)² window, clamped at the borders.
 fn min_filter(data: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
+    // Each output row on its own, in parallel (PERFORMANCE §65).
+    let lines = (PAR_CELLS / w.max(1)).max(1);
     let mut rows = vec![0.0f32; w * h];
-    for y in 0..h {
-        for x in 0..w {
-            let (x0, x1) = (x.saturating_sub(r), (x + r).min(w - 1));
-            rows[y * w + x] = data[y * w + x0..=y * w + x1]
-                .iter()
-                .copied()
-                .fold(f32::INFINITY, f32::min);
-        }
-    }
+    rows.par_chunks_mut(w)
+        .with_min_len(lines)
+        .enumerate()
+        .for_each(|(y, row)| {
+            for (x, out) in row.iter_mut().enumerate() {
+                let (x0, x1) = (x.saturating_sub(r), (x + r).min(w - 1));
+                *out = data[y * w + x0..=y * w + x1]
+                    .iter()
+                    .copied()
+                    .fold(f32::INFINITY, f32::min);
+            }
+        });
     let mut out = vec![0.0f32; w * h];
-    for y in 0..h {
-        let (y0, y1) = (y.saturating_sub(r), (y + r).min(h - 1));
-        for x in 0..w {
-            out[y * w + x] = (y0..=y1)
-                .map(|yy| rows[yy * w + x])
-                .fold(f32::INFINITY, f32::min);
-        }
-    }
+    out.par_chunks_mut(w)
+        .with_min_len(lines)
+        .enumerate()
+        .for_each(|(y, row)| {
+            let (y0, y1) = (y.saturating_sub(r), (y + r).min(h - 1));
+            for (x, out) in row.iter_mut().enumerate() {
+                *out = (y0..=y1)
+                    .map(|yy| rows[yy * w + x])
+                    .fold(f32::INFINITY, f32::min);
+            }
+        });
     out
 }
 

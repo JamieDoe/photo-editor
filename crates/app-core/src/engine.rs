@@ -61,6 +61,8 @@ pub(crate) struct Shared {
     segmenter: Box<dyn ai::Segmenter>,
     /// Generated masks' coverage (ADR 0074).
     masks: crate::mask_store::MaskStore,
+    /// What viewer renders cost, to keep drags smooth (PERFORMANCE §65).
+    drag_pace: Mutex<crate::drag_pace::DragPace>,
 }
 
 impl Engine {
@@ -85,6 +87,7 @@ impl Engine {
             next_image_id: AtomicU64::new(1),
             segmenter: ai::platform_segmenter(),
             masks,
+            drag_pace: Mutex::default(),
         });
         Self { shared, jobs }
     }
@@ -314,7 +317,20 @@ impl Engine {
         let full_output = recipe.geometry.map_or((fw, fh), |g| g.output_size(fw, fh));
         let kept = full_output.0.max(full_output.1) as f64 / fw.max(fh).max(1) as f64;
         let min_edge = (f64::from(min_edge) / kept.max(1e-3)).ceil() as u32;
-        let level_index = image.pyramid.select_index(min_edge);
+        let mut level_index = image.pyramid.select_index(min_edge);
+        // A heavy edit on a slow machine drags from the next level down (PERFORMANCE §65);
+        // only while changes outrun renders, so a single change shows at full sharpness.
+        if req.catching_up
+            && (slot, req.quality) == (PreviewSlot::Viewer, PreviewQuality::Interactive)
+        {
+            let levels = image.pyramid.levels();
+            level_index += self
+                .shared
+                .drag_pace
+                .lock()
+                .expect("drag pace lock")
+                .steps_down(level_index, |i| levels.get(i).map(|l| megapixels(l)));
+        }
         let level = Arc::clone(&image.pyramid.levels()[level_index]);
         let as_shot_white = image.as_shot_white;
         let fill = PlanExtras::of(&self.shared, &image, &recipe);
@@ -374,6 +390,13 @@ impl Engine {
                 .renderer
                 .render(&plan, &level, PixelFormat::Rgba8, token)?;
             let render_ms = ms(t0);
+            if slot == PreviewSlot::Viewer && quality != PreviewQuality::Thumbnail {
+                shared
+                    .drag_pace
+                    .lock()
+                    .expect("drag pace lock")
+                    .record(render_ms, megapixels(&level));
+            }
             let out = Arc::new(out);
             let histogram = viewer_histogram(quality, &out);
             shared.previews.lock().expect("preview cache lock").insert(
@@ -1510,6 +1533,11 @@ impl Shared {
             total_ms,
         })
     }
+}
+
+/// A pyramid level's size in megapixels.
+fn megapixels(level: &image_core::LinearImage) -> f64 {
+    f64::from(level.width()) * f64::from(level.height()) / 1e6
 }
 
 /// The histogram the editor's graph shows, for viewer frames only (thumbnails have no

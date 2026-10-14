@@ -17,6 +17,7 @@
 
 use image_core::LinearImage;
 use image_core::color::REC709_LUMA;
+use rayon::prelude::*;
 
 use super::dehaze::DehazeModel;
 use super::scene::{GuidedMap, MAP_LONG_EDGE, SceneMap};
@@ -168,7 +169,11 @@ impl ToneBase {
         if let Some(d) = dehaze {
             d.apply_to_map_luminance(&mut luminance);
         }
-        let i: Vec<f32> = luminance.iter().map(|&l| l.max(FLOOR).log2()).collect();
+        let i: Vec<f32> = luminance
+            .par_iter()
+            .with_min_len(super::scene::PAR_CELLS)
+            .map(|&l| l.max(FLOOR).log2())
+            .collect();
         Self::from_log_luminance(scene.width, scene.height, &i)
     }
 

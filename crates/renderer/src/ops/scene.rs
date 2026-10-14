@@ -17,6 +17,9 @@ use rayon::prelude::*;
 /// Long edge of the scene map in cells.
 pub const MAP_LONG_EDGE: u32 = 256;
 
+/// Map cells per parallel task: maps are small, so work is split no finer than this.
+pub(crate) const PAR_CELLS: usize = 4096;
+
 /// Area-averaged linear RGB of the scene (after `gains`), [`MAP_LONG_EDGE`] cells on
 /// its long edge.
 #[derive(Debug, Clone)]
@@ -130,13 +133,19 @@ impl GuidedMap {
     /// regularisation `eps`: where the guide varies much more than `eps`, the output
     /// follows it (edges are kept); where it is flat, the output is a local mean.
     pub fn new(guide: &[f32], input: &[f32], w: usize, h: usize, r: usize, eps: f32) -> Self {
-        let gg: Vec<f32> = guide.iter().map(|v| v * v).collect();
-        let gi: Vec<f32> = guide.iter().zip(input).map(|(g, i)| g * i).collect();
-        let mean_g = box_blur(guide, w, h, r);
-        let mean_i = box_blur(input, w, h, r);
-        let mean_gg = box_blur(&gg, w, h, r);
-        let mean_gi = box_blur(&gi, w, h, r);
+        // The four means, and then the model's two maps, are independent: each pair is
+        // worked out side by side (PERFORMANCE §65).
+        let ((mean_g, mean_i), (mean_gg, mean_gi)) = rayon::join(
+            || rayon::join(|| box_blur(guide, w, h, r), || box_blur(input, w, h, r)),
+            || {
+                let gg: Vec<f32> = guide.iter().map(|v| v * v).collect();
+                let gi: Vec<f32> = guide.iter().zip(input).map(|(g, i)| g * i).collect();
+                rayon::join(|| box_blur(&gg, w, h, r), || box_blur(&gi, w, h, r))
+            },
+        );
         let (a, b): (Vec<f32>, Vec<f32>) = (0..w * h)
+            .into_par_iter()
+            .with_min_len(PAR_CELLS)
             .map(|k| {
                 let var = (mean_gg[k] - mean_g[k] * mean_g[k]).max(0.0);
                 let cov = mean_gi[k] - mean_g[k] * mean_i[k];
@@ -144,11 +153,12 @@ impl GuidedMap {
                 (a, mean_i[k] - a * mean_g[k])
             })
             .unzip();
+        let (a, b) = rayon::join(|| box_blur(&a, w, h, r), || box_blur(&b, w, h, r));
         Self {
             width: w,
             height: h,
-            a: box_blur(&a, w, h, r),
-            b: box_blur(&b, w, h, r),
+            a,
+            b,
         }
     }
 
@@ -240,33 +250,59 @@ impl RowModel {
 
 /// Mean over a (2r+1)² window, clamped at the borders (divides by the pixels inside).
 pub fn box_blur(data: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
-    let pass = |src: &[f32], len: usize, stride: usize, lines: usize, line_stride: usize| {
+    if data.is_empty() {
+        return Vec::new();
+    }
+    // Rows in parallel; the vertical pass runs as rows of the transposed map, so every
+    // line is summed exactly as one pass along it would.
+    let rows = |src: &[f32], len: usize, lines: usize| {
         let mut out = vec![0.0f32; src.len()];
-        for line in 0..lines {
-            let base = line * line_stride;
-            let at = |k: usize| src[base + k * stride];
-            let mut sum = 0.0f64;
-            let mut count = 0u32;
-            for k in 0..=r.min(len - 1) {
-                sum += f64::from(at(k));
-                count += 1;
-            }
-            for k in 0..len {
-                out[base + k * stride] = (sum / f64::from(count)) as f32;
-                if k + r + 1 < len {
-                    sum += f64::from(at(k + r + 1));
-                    count += 1;
-                }
-                if k >= r {
-                    sum -= f64::from(at(k - r));
-                    count -= 1;
-                }
-            }
-        }
+        out.par_chunks_mut(len)
+            .zip(src.par_chunks(len))
+            .with_min_len((PAR_CELLS / len.max(1)).max(1))
+            .for_each(|(line, src)| blur_line(src, line, r));
+        debug_assert_eq!(out.len(), len * lines);
         out
     };
-    let horizontal = pass(data, w, 1, h, w);
-    pass(&horizontal, h, w, w, 1)
+    let horizontal = rows(data, w, h);
+    let vertical = rows(&transpose(&horizontal, w, h), h, w);
+    transpose(&vertical, h, w)
+}
+
+/// One line's running mean over `r` cells either side (fewer at the ends).
+fn blur_line(src: &[f32], out: &mut [f32], r: usize) {
+    let len = src.len();
+    let mut sum = 0.0f64;
+    let mut count = 0u32;
+    for &v in &src[..=r.min(len - 1)] {
+        sum += f64::from(v);
+        count += 1;
+    }
+    for k in 0..len {
+        out[k] = (sum / f64::from(count)) as f32;
+        if k + r + 1 < len {
+            sum += f64::from(src[k + r + 1]);
+            count += 1;
+        }
+        if k >= r {
+            sum -= f64::from(src[k - r]);
+            count -= 1;
+        }
+    }
+}
+
+/// `data` (`w` x `h`, by rows) by columns: `h` x `w`.
+fn transpose(data: &[f32], w: usize, h: usize) -> Vec<f32> {
+    let mut out = vec![0.0f32; data.len()];
+    out.par_chunks_mut(h)
+        .with_min_len((PAR_CELLS / h.max(1)).max(1))
+        .enumerate()
+        .for_each(|(x, column)| {
+            for (y, v) in column.iter_mut().enumerate() {
+                *v = data[y * w + x];
+            }
+        });
+    out
 }
 
 #[cfg(test)]

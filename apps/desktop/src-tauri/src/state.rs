@@ -54,6 +54,7 @@ impl AppState {
         mask_dir: PathBuf,
         backups_dir: PathBuf,
         self_test: Option<PathBuf>,
+        cpu_threads: usize,
     ) -> Self {
         let backups = BackupStore::new(backups_dir);
         let (settings, outcome) = SettingsStore::load(settings_path);
@@ -97,7 +98,7 @@ impl AppState {
             engine: Engine::new(EngineConfig {
                 thumbnail_cache_dir: Some(thumbnail_dir),
                 mask_dir: Some(mask_dir),
-                ..engine_config(&current)
+                ..engine_config(&current, cpu_threads)
             }),
             startup_background_intensity: current.performance.background_intensity,
             settings_recovered_from: match outcome {
@@ -118,11 +119,12 @@ impl AppState {
     }
 }
 
-/// Engine configuration derived from user settings.
-pub fn engine_config(settings: &Settings) -> EngineConfig {
-    let cpu_threads = std::thread::available_parallelism().map_or(4, |n| n.get());
+/// Engine configuration derived from user settings, for a machine with `cpu_threads`
+/// hardware threads.
+pub fn engine_config(settings: &Settings, cpu_threads: usize) -> EngineConfig {
     let mut config = EngineConfig {
         preview_cache_bytes: settings.performance.preview_cache_mb as usize * 1024 * 1024,
+        jobs: app_core::JobSystemConfig::for_cores(cpu_threads),
         ..EngineConfig::default()
     };
     config.jobs.background.compute_threads = Some(
@@ -143,12 +145,12 @@ mod tests {
         let mut s = Settings::default();
         s.performance.preview_cache_mb = 512;
         s.performance.background_intensity = BackgroundIntensity::Low;
-        let c = engine_config(&s);
+        let c = engine_config(&s, 8);
         assert_eq!(c.preview_cache_bytes, 512 * 1024 * 1024);
-        let cpus = std::thread::available_parallelism().map_or(4, |n| n.get());
         assert_eq!(
             c.jobs.background.compute_threads,
-            Some(BackgroundIntensity::Low.threads(cpus))
+            Some(BackgroundIntensity::Low.threads(8))
         );
+        assert_eq!(c.jobs.browse.workers, 2, "sized for 8 threads");
     }
 }
