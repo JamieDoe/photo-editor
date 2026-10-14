@@ -82,6 +82,12 @@ Calibration panel.
    - **Release self-test, Nikon Z 6:** the primaries move colours by 1.5 levels on
      average, with mean brightness within 0.3 of the original. Shadow Tint +100 makes
      the frame 2.9 levels more magenta.
+   - **The self-test's measure (2026-10-14):** the mean colour change over the
+     photo's colourfulness (its mean channel spread), above 0.025, not a fixed
+     number of levels. The primaries move colours in proportion to how colourful the
+     photo is, so the muted dusk landscape of the Sony A7R IV moved only 0.8 levels
+     (failing the old "more than 1"), against 2.6 on the Z 6. The ratio was 0.04–0.07
+     on all six camera fixtures (0.063 on the A7R IV, 0.050 on the Z 6).
 9. **Performance** (PERFORMANCE §36): the matrix adds about 1 ms to a 1516×1010
    render and Shadow Tint about 2.4 ms more. A Shadow Tint table over the square root
    of luminance (no cube root) saved about 0.4 ms, within the machine's noise, and was

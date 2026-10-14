@@ -313,11 +313,14 @@ pub(super) fn cached_frame(
     ca: Option<&ChromaticAberration>,
     lens: Option<&LensCorrection>,
 ) -> Arc<LinearImage> {
-    type Key = (SourceKey, [u32; 7], [u32; 4], [u32; 4]);
+    type Key = (SourceKey, (u8, bool), [u32; 7], [u32; 4], [u32; 4]);
     static LAST: Mutex<Option<(Key, Arc<LinearImage>)>> = Mutex::new(None);
     let c = g.crop;
     let key: Key = (
         source_key(source),
+        // A quarter turn or a mirror frames the source differently (turned back, the
+        // old frame would be the wrong size; mirrored back, the wrong way round).
+        (g.rotation % 4, g.flip),
         [g.straighten, g.vertical, g.horizontal, c.x, c.y, c.w, c.h].map(f32::to_bits),
         ca.map_or([0; 4], |c| c.to_bits()),
         lens.map_or([0; 4], LensCorrection::key),

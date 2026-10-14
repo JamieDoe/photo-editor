@@ -6,6 +6,7 @@ import type { OutputSharpening } from "../../ipc/generated/OutputSharpening";
 import type { ExportColourSpace } from "../../ipc/generated/ExportColourSpace";
 import type { ExportQueueEvent } from "../../ipc/generated/ExportQueueEvent";
 import type { EditRecipe } from "../../ipc/generated/EditRecipe";
+import type { GeneratedKind } from "../../ipc/generated/GeneratedKind";
 import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { SelfTestConfigDto } from "../../ipc/generated/SelfTestConfigDto";
@@ -767,6 +768,11 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         "reopened recipe",
       );
       const reset = await ipc.saveEdit(target, original);
+      // The editor too, so the checks after start from the photo's own rendering, not
+      // +1 EV: that would push a bright sky so far past white that a local -1 EV
+      // still leaves it white.
+      driver.editor().setRecipe(original);
+      await waitFor(() => (driver.editor().recipe === original ? true : null), 5_000, "reset recipe");
       return {
         edited: saved.edited,
         listed,
@@ -1747,7 +1753,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         const [p, q] = [a.frame.pixels, b.frame.pixels];
         let sum = 0;
         for (let i = 0; i < p.length; i += 4) sum += Math.abs(p[i]! - q[i]!) + Math.abs(p[i + 1]! - q[i + 1]!) + Math.abs(p[i + 2]! - q[i + 2]!);
-        return Math.round((sum / ((p.length / 4) * 3)) * 10) / 10;
+        return sum / ((p.length / 4) * 3);
       };
       const magenta = (f: RenderedFrame | null) => {
         if (!f) return null;
@@ -1756,9 +1762,23 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         for (let i = 0; i < px.length; i += 4) sum += (px[i]! + px[i + 2]!) / 2 - px[i + 1]!;
         return Math.round((sum / (px.length / 4)) * 10) / 10;
       };
+      // How colourful the photo is (mean channel spread): the primaries move colours in
+      // proportion to it, so a muted photo (a dusk landscape) moves less than a bright
+      // still life. Their ratio was 0.04-0.07 on every camera fixture.
+      const spread = (f: RenderedFrame | null) => {
+        if (!f) return null;
+        const px = f.frame.pixels;
+        let sum = 0;
+        for (let i = 0; i < px.length; i += 4) sum += Math.max(px[i]!, px[i + 1]!, px[i + 2]!) - Math.min(px[i]!, px[i + 1]!, px[i + 2]!);
+        return sum / (px.length / 4);
+      };
+      const colourChange = change(plain, moved);
+      const colourfulness = spread(plain);
       const luma = (f: RenderedFrame | null) => (f ? meanLuma(f) : null);
       return {
-        colourChange: change(plain, moved),
+        colourChange: colourChange !== null ? Math.round(colourChange * 10) / 10 : null,
+        colourfulness: colourfulness !== null ? Math.round(colourfulness * 10) / 10 : null,
+        changePerColour: colourChange !== null && colourfulness ? Math.round((colourChange / colourfulness) * 1000) / 1000 : null,
         lumaChange: luma(plain) !== null && luma(moved) !== null ? Math.round((luma(moved)! - luma(plain)!) * 10) / 10 : null,
         magentaLift: magenta(tinted) !== null && magenta(plain) !== null ? Math.round((magenta(tinted)! - magenta(plain)!) * 10) / 10 : null,
         renderMs: moved?.frame.renderMs ?? null,
@@ -1766,8 +1786,8 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     })();
     driver.editor().setRecipe(beforeCrop);
     const calibrationOk =
-      calibrationCheck.colourChange !== null &&
-      calibrationCheck.colourChange > 1 &&
+      calibrationCheck.changePerColour !== null &&
+      calibrationCheck.changePerColour > 0.025 &&
       calibrationCheck.lumaChange !== null &&
       Math.abs(calibrationCheck.lumaChange) < 3 &&
       calibrationCheck.magentaLift !== null &&
@@ -1893,13 +1913,32 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       retouchCheck.outsideChange === 0;
 
     // A generated mask (ADR 0074) on the real raw file, where this computer makes them:
-    // the engine finds the subject; +1 EV through it brightens where its view (what the
-    // tint is drawn from) covers and changes nothing where it doesn't; and a mask made
-    // from another photo (as a pasted edit's is) is reported missing, to be made again.
+    // the engine finds the subject or, in a photo without one (a landscape), the sky;
+    // an exposure change through it (+1 EV on a subject, -1 EV on a sky, as a
+    // photographer would) changes where its view (what the tint is drawn from) covers
+    // and nothing where it doesn't; and a mask made from another photo (as a pasted
+    // edit's is) is reported missing, to be made again.
+    // What the camera fixtures show (ADR 0074's tables), so each is held to its scene:
+    // the Z 6 is a still life indoors, with no sky however white its curtain. Other
+    // photos are held to nothing.
+    const fixtureScenes: Record<string, { subject: boolean; sky: boolean }> = {
+      "nikon-z6-14bit-lossless.nef": { subject: true, sky: false },
+      "canon-eos-r6-20mp.cr3": { subject: true, sky: false },
+      "fujifilm-xt3-compressed.raf": { subject: true, sky: false },
+      "sony-a7riv-61mp-14bit-compressed.arw": { subject: false, sky: true },
+      "sony-a7iii-14bit-compressed.arw": { subject: false, sky: true },
+      "ricoh-gr3.dng": { subject: false, sky: true },
+    };
     const generatedCheck = await (async (): Promise<{
       supported: boolean;
+      subject?: boolean;
+      sky?: boolean;
+      scene?: { subject: boolean; sky: boolean } | null;
+      errors?: string[];
+      of?: GeneratedKind;
       made?: boolean;
       ms?: number;
+      skyMs?: number;
       share?: number;
       rendered?: boolean;
       coveredCells?: number;
@@ -1908,38 +1947,51 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       missingWhenMade?: string[] | null;
       foreignMissing?: number | null;
       renderMs?: number;
-      skyIndoors?: boolean | null;
-      skyMs?: number;
     }> => {
       const id = driver.editor().image!.id;
       if (!(driver.editor().info?.maskKinds ?? []).includes("subject")) return { supported: false };
+      const errors: string[] = [];
+      const generate = (kind: GeneratedKind) =>
+        ipc.generateMask(id, kind).catch((e: unknown) => {
+          errors.push(`${kind}: ${e instanceof Error ? e.message : JSON.stringify(e)}`);
+          return null;
+        });
       const t = performance.now();
-      const made = await ipc.generateMask(id, "subject").catch(() => null);
+      const subject = await generate("subject");
       const ms = Math.round(performance.now() - t);
-      if (!made) return { supported: true, made: false, ms };
+      const tSky = performance.now();
+      const sky = await generate("sky");
+      const skyMs = Math.round(performance.now() - tSky);
+      const found = {
+        supported: true,
+        subject: subject !== null,
+        sky: sky !== null,
+        scene: fixtureScenes[summary.fileName] ?? null,
+        errors,
+        ms,
+        skyMs,
+      };
+      const made = subject ?? sky;
+      if (!made) return { ...found, made: false };
+      const of: GeneratedKind = subject ? "subject" : "sky";
+      const exposure = of === "subject" ? 1 : -1;
       const base = { ...beforeCrop, masks: undefined, geometry: undefined, spots: undefined, removals: undefined };
       const lit = (name: string): EditRecipe => ({
         ...base,
-        masks: [{ id: 1, shape: { kind: "generated", of: "subject", mask: name }, adjustments: { exposure: 1, warmth: 0, clarity: 0 } }],
+        masks: [{ id: 1, shape: { kind: "generated", of, mask: name }, adjustments: { exposure, warmth: 0, clarity: 0 } }],
       });
-      const plain = await show(base, "frame without the subject mask");
-      const masked = await show(lit(made.name), "subject mask frame", plain);
+      const plain = await show(base, `frame without the ${of} mask`);
+      const masked = await show(lit(made.name), `${of} mask frame`, plain);
       const n = 48;
       const view = await ipc.maskView(id, { name: made.name, geometry: null, profileCorrections: true, crop: { x: 0, y: 0, w: 1, h: 1 }, width: n, height: n }).catch(() => new Uint8Array());
       const missing = await ipc.missingMasks(id, lit(made.name)).catch(() => null);
       const foreign = await ipc.missingMasks(id, lit("0".repeat(48))).catch(() => null);
-      // The Z 6 is a still life indoors: no sky, however white its curtain.
-      const tSky = performance.now();
-      const sky = await ipc.generateMask(id, "sky").then(
-        (m) => m !== null,
-        () => null,
-      );
-      const skyMs = Math.round(performance.now() - tSky);
       driver.editor().setRecipe(beforeCrop);
       if (!plain || !masked || view.length !== n * n) {
-        return { supported: true, made: true, ms, share: made.share, rendered: false };
+        return { ...found, of, made: true, share: made.share, rendered: false };
       }
-      // Each view cell's middle pixel, before and after.
+      // Each view cell's middle pixel, before and after; the gain is the change the way
+      // the exposure goes.
       const { width: w, height: h } = plain.frame;
       let [gain, covered, outside] = [0, 0, 0];
       for (let j = 0; j < n; j++) {
@@ -1949,15 +2001,15 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
           const change = (q[k]! - p[k]! + q[k + 1]! - p[k + 1]! + q[k + 2]! - p[k + 2]!) / 3;
           const v = view[j * n + i]!;
           if (v >= 230) {
-            gain += change;
+            gain += change * exposure;
             covered++;
           } else if (v === 0) outside = Math.max(outside, Math.abs(change));
         }
       }
       return {
-        supported: true,
+        ...found,
+        of,
         made: true,
-        ms,
         share: Math.round(made.share * 1000) / 1000,
         rendered: true,
         coveredCells: covered,
@@ -1966,18 +2018,18 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
         missingWhenMade: missing,
         foreignMissing: foreign?.length ?? null,
         renderMs: masked.frame.renderMs,
-        skyIndoors: sky,
-        skyMs,
       };
     })();
     const generatedOk =
       !generatedCheck.supported ||
       (generatedCheck.made === true &&
+        generatedCheck.errors?.length === 0 &&
         (generatedCheck.coveredGain ?? 0) > 10 &&
         (generatedCheck.outsideChange ?? Infinity) <= 2 &&
         generatedCheck.missingWhenMade?.length === 0 &&
         generatedCheck.foreignMissing === 1 &&
-        generatedCheck.skyIndoors === false);
+        (!generatedCheck.scene ||
+          (generatedCheck.scene.subject === generatedCheck.subject && generatedCheck.scene.sky === generatedCheck.sky)));
 
     // Sensor dust (ADR 0058) on the real raw file: found quickly, each a heal spot with a
     // source; once those are spots, nothing is left to find.

@@ -550,6 +550,40 @@ fn chromatic_aberration_alone_frames_the_source_first() {
     );
 }
 
+#[test]
+fn turning_or_mirroring_back_never_reuses_the_turned_frame() {
+    // The framed source is cached while other controls change. Correcting chromatic
+    // aberration (or a lens profile) frames it even with the whole photo in view, so
+    // a turn or a mirror is all that tells the frames apart.
+    use crate::chromatic::ChromaticAberration;
+    use crate::geometry::Geometry;
+    let img = chart();
+    let framed = |rotation, flip| EditRecipe {
+        chromatic_aberration: Some(ChromaticAberration {
+            red: [0.002, 0.0],
+            blue: [-0.001, 0.0005],
+        }),
+        geometry: Some(Geometry {
+            rotation,
+            flip,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let upright = render(&framed(0, false), &img);
+    let turned = render(&framed(1, false), &img);
+    assert_eq!(
+        (turned.width(), turned.height()),
+        (img.height(), img.width())
+    );
+    let back = render(&framed(0, false), &img);
+    assert_eq!(back.data(), upright.data(), "turned back");
+    let mirrored = render(&framed(0, true), &img);
+    assert_ne!(mirrored.data(), upright.data());
+    let back = render(&framed(0, false), &img);
+    assert_eq!(back.data(), upright.data(), "mirrored back");
+}
+
 /// A profile of 16 knots whose distortion and vignetting are `d(r)` and `v(r)`.
 fn lens_profile(
     w: u32,
