@@ -154,6 +154,7 @@ mod tests {
             rejected: false,
             label: Some(LabelName::Green),
             keywords: vec!["Heron".into()],
+            description: Default::default(),
         };
         assert_eq!(
             sync(&raw, &rated, KeywordSync::Match).unwrap(),

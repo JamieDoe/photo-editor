@@ -20,6 +20,7 @@ mod presets;
 mod schema;
 mod search;
 mod smart;
+mod text;
 
 pub use albums::{Album, AlbumId};
 pub use backup::{BackupInfo, BackupKind, BackupStore, newest_valid, schema_version_of, to_prune};
@@ -36,6 +37,7 @@ pub use marks::{
 pub use presets::{PresetId, StoredPreset};
 pub use schema::SCHEMA_VERSION;
 pub use smart::{FlagRule, RatingRule, SmartCollection, SmartCollectionId, SmartRules};
+pub use text::{PhotoText, TextField};
 
 /// Row id of a photo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

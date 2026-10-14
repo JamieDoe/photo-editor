@@ -347,6 +347,11 @@ pub struct ExportSettings {
     /// The export preset last chosen ("web", "social", "full"), if the settings still
     /// match it.
     pub preset: Option<String>,
+    /// Who made the photos, written into every export unless a photo has its own
+    /// (ADR 0089); none while empty.
+    pub creator: String,
+    /// Their copyright notice ("© 2026 Jamie Doe"), likewise.
+    pub copyright: String,
 }
 
 /// An export's file format (ADR 0057): JPEG for sharing, TIFF (16-bit) for printing and
@@ -422,6 +427,8 @@ impl<'de> Deserialize<'de> for ExportColourSpace {
 impl ExportSettings {
     pub const JPEG_QUALITY_MIN: u8 = 50;
     pub const JPEG_QUALITY_MAX: u8 = 100;
+    /// Longer creators and copyright notices are cut to this many characters.
+    pub const CREDIT_MAX: usize = 200;
     /// Long edges below this are not photos any more.
     pub const LONG_EDGE_MIN: u32 = 256;
     pub const LONG_EDGE_MAX: u32 = 16_384;
@@ -441,6 +448,8 @@ impl Default for ExportSettings {
             folder: None,
             long_edge: Some(2048),
             preset: Some("web".to_owned()),
+            creator: String::new(),
+            copyright: String::new(),
         }
     }
 }
@@ -464,6 +473,15 @@ impl Settings {
             .long_edge
             .map(|e| e.clamp(ExportSettings::LONG_EDGE_MIN, ExportSettings::LONG_EDGE_MAX));
         self.export.folder = self.export.folder.take().filter(|f| !f.trim().is_empty());
+        // Cut, not trimmed: these are typed into, and the stored value comes back to
+        // the field while a space may still be followed by a word. Exports trim them.
+        for credit in [&mut self.export.creator, &mut self.export.copyright] {
+            *credit = credit
+                .chars()
+                .map(|c| if c.is_control() { ' ' } else { c })
+                .take(ExportSettings::CREDIT_MAX)
+                .collect();
+        }
         let lib = &mut self.library;
         lib.default_folder = lib.default_folder.take().filter(|f| !f.trim().is_empty());
         let mut seen = std::collections::HashSet::new();
@@ -652,6 +670,31 @@ mod tests {
         assert_eq!(
             serde_json::to_string(&place).unwrap(),
             r#"{"kind":"collection","collection":"picks"}"#
+        );
+    }
+
+    #[test]
+    fn credits_are_empty_by_default_and_bounded() {
+        let s = Settings::default();
+        assert!(s.export.creator.is_empty() && s.export.copyright.is_empty());
+        let mut s = Settings::default();
+        s.export.creator = "Jamie Doe \n".into();
+        s.export.copyright = "©".repeat(ExportSettings::CREDIT_MAX + 9);
+        let s = s.sanitized();
+        assert_eq!(
+            s.export.creator, "Jamie Doe  ",
+            "one line, spaces kept while typing"
+        );
+        assert_eq!(
+            s.export.copyright.chars().count(),
+            ExportSettings::CREDIT_MAX
+        );
+        // A file from before them reads with them empty.
+        let old: Settings =
+            serde_json::from_str(r#"{"version":7,"export":{"jpegQuality":90}}"#).unwrap();
+        assert_eq!(
+            (old.export.jpeg_quality, old.export.copyright.as_str()),
+            (90, "")
         );
     }
 

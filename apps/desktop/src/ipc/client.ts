@@ -8,6 +8,8 @@ import type { ExportEstimateDto } from "./generated/ExportEstimateDto";
 import type { ExportEstimateRequestDto } from "./generated/ExportEstimateRequestDto";
 import type { LibraryPlace } from "./generated/LibraryPlace";
 import type { KeywordUseDto } from "./generated/KeywordUseDto";
+import type { PhotoTextDto } from "./generated/PhotoTextDto";
+import type { TextFieldDto } from "./generated/TextFieldDto";
 import type { ChromaticAberration } from "./generated/ChromaticAberration";
 import type { EngineInfoDto } from "./generated/EngineInfoDto";
 import type { BackupStatusDto } from "./generated/BackupStatusDto";
@@ -246,6 +248,11 @@ export const countSmartRules = (rules: SmartRulesDto) => invoke<number>("count_s
 /** Keywords (ADR 0088): the library's, for suggestions; those of some photos, each with
  *  how many of them have it; and adding or removing some (the photos' keywords after). */
 export const listKeywords = () => invoke<KeywordUseDto[]>("list_keywords");
+/** A photo's words (ADR 0089): title, caption, its own creator and copyright; shared
+ *  or mixed across several photos. Setting one returns them all afterwards. */
+export const photoText = (paths: string[]) => invoke<PhotoTextDto>("photo_text", { paths });
+export const setPhotoText = (paths: string[], field: TextFieldDto, text: string) =>
+  invoke<PhotoTextDto>("set_photo_text", { paths, field, text });
 export const photoKeywords = (paths: string[]) => invoke<KeywordUseDto[]>("photo_keywords", { paths });
 export const addKeywords = (paths: string[], names: string[]) => invoke<KeywordUseDto[]>("add_keywords", { paths, names });
 export const removeKeywords = (paths: string[], names: string[]) =>

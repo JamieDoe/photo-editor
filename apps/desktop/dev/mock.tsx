@@ -45,7 +45,7 @@ let mockSettings: Record<string, unknown> = {
   general: { theme: "system" },
   performance: { previewCacheMb: 256, backgroundIntensity: "balanced" },
   library: { defaultFolder: null, recentFolders: [], view: { layout: "grid", filter: "all", label: null, sort: "captured" }, lastPlace: null, writeSidecars: false },
-  export: { format: "jpeg", sharpen: "screen", colourSpace: "srgb", keepMetadata: true, stripLocation: false, watermark: { enabled: false, text: "", position: "bottomRight", size: "medium" }, jpegQuality: 85, folder: null, longEdge: 2048, preset: "web" },
+  export: { format: "jpeg", sharpen: "screen", colourSpace: "srgb", keepMetadata: true, stripLocation: false, watermark: { enabled: false, text: "", position: "bottomRight", size: "medium" }, jpegQuality: 85, folder: null, longEdge: 2048, preset: "web", creator: "", copyright: "" },
   backups: { copyFolder: null },
 };
 
@@ -70,6 +70,24 @@ const mockSmart = new Map<number, { name: string; rules: SmartRulesDto }>([
   [1, { name: "Best of Iceland", rules: { rating: 4, flag: null, label: null, edited: null, words: "iceland", keyword: null } }],
 ]);
 let nextSmart = 2;
+/** Dev-only words (ADR 0089), by photo path and field. */
+const mockText = new Map<string, Partial<Record<"title" | "caption" | "creator" | "copyright", string>>>();
+const textOf = (paths: string[]) => {
+  const shared = (field: "title" | "caption" | "creator" | "copyright") => {
+    const values = paths.map((p) => mockText.get(p)?.[field] ?? null);
+    return values.every((v) => v === values[0]) ? { value: values[0] ?? null, mixed: false } : { value: null, mixed: true };
+  };
+  const credits = mockSettings.export as { creator: string; copyright: string };
+  const credit = (s: string) => s.trim() || null;
+  return {
+    title: shared("title"),
+    caption: shared("caption"),
+    creator: shared("creator"),
+    copyright: shared("copyright"),
+    defaultCreator: credit(credits.creator),
+    defaultCopyright: credit(credits.copyright),
+  };
+};
 /** Dev-only keywords (ADR 0088), by photo path; a few to begin with. */
 const mockKeywords = new Map<string, string[]>([
   ["/Users/me/Photos/2026 Iceland/DSC_0.NEF", ["Iceland", "Waterfall"]],
@@ -507,6 +525,18 @@ mockIPC((cmd, payload) => {
       const all = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");
       const members = new Set(mockAlbums.get(id)!.paths);
       return { album: albumDto(id), photos: all.photos.map((p, i) => ({ ...p, marks: marksOf(p.path, i) })).filter((p) => members.has(p.path)) };
+    }
+    case "photo_text":
+      return textOf((payload as { paths: string[] }).paths);
+    case "set_photo_text": {
+      const { paths, field, text } = payload as { paths: string[]; field: "title" | "caption" | "creator" | "copyright"; text: string };
+      for (const p of paths) {
+        const now = { ...mockText.get(p) };
+        if (text.trim()) now[field] = text.trim();
+        else delete now[field];
+        mockText.set(p, now);
+      }
+      return textOf(paths);
     }
     case "list_keywords":
       return keywordUses(null);

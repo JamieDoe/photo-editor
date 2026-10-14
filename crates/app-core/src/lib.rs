@@ -30,6 +30,7 @@ pub use catalogue::{
 };
 pub use catalogue::{FlagRule, RatingRule, SmartCollection, SmartCollectionId, SmartRules};
 pub use catalogue::{KeywordUse, MAX_KEYWORD_CHARS, keyword_name};
+pub use catalogue::{PhotoText, TextField};
 pub use catalogue::{SCHEMA_VERSION, schema_version_of};
 pub use config::EngineConfig;
 pub use edits::{SavedEdit, load_edit, paste_onto, save_edit, upright_of};
@@ -57,7 +58,7 @@ pub use types::{
 pub use cache::DiskCacheStats;
 pub use export::ExportFormat;
 pub use export::colour::ExportColourSpace;
-pub use export::metadata::{Judgements, MetadataChoice};
+pub use export::metadata::{Description, Judgements, MetadataChoice};
 pub use export::sharpen::OutputSharpening;
 pub use export::watermark::{Position as WatermarkPosition, Size as WatermarkSize, Watermark};
 pub use jobs::{CancelToken, JobError, JobHandle};

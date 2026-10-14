@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalibrationIcon, ColourIcon, CompareIcon, RetouchIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, SearchIcon, TagIcon, UndoIcon } from "../../components/icons";
+import { CalibrationIcon, ColourIcon, CompareIcon, RetouchIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, SearchIcon, TagIcon, CaptionIcon, UndoIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../../ipc/generated/MarksDto";
 import { formatAperture, formatFocal, formatShutter } from "../../lib/format";
 import { hasCommandModifier, isTextEntry } from "../../lib/keyboard";
 import { KeywordsEditor } from "../library/KeywordsEditor";
+import { PhotoTextEditor } from "../library/PhotoTextEditor";
 import { markChangeForKey } from "../library/marks";
 import type { LibraryApi } from "../library/useLibrary";
 import * as ipc from "../../ipc/client";
@@ -203,9 +204,14 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
   const [syncing, setSyncing] = useState(false);
   // Keywords (ADR 0088) of the open Library photo and any ticked in the filmstrip.
   const [keywordsAt, setKeywordsAt] = useState<HTMLElement | null>(null);
+  // Its title and caption (ADR 0089), likewise.
+  const [textAt, setTextAt] = useState<HTMLElement | null>(null);
   const keywordsButton = useRef<HTMLButtonElement>(null);
   const keywordTargets = currentPath ? [currentPath, ...library.batch.filter((p) => p !== currentPath)] : [];
-  useEffect(() => setKeywordsAt(null), [currentPath]);
+  useEffect(() => {
+    setKeywordsAt(null);
+    setTextAt(null);
+  }, [currentPath]);
   /** Sets `groups` from `source` on the ticked photos other than the open one. */
   const applyToTicked = async (source: EditRecipe, groups: string[]) => {
     const targets = library.batch.filter((p) => p !== currentPath);
@@ -369,12 +375,32 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
                 <TagIcon />
               </button>
             )}
+            {image && currentPath && (
+              <button
+                className="icon-button history-button"
+                onClick={(e) => setTextAt(textAt ? null : e.currentTarget)}
+                aria-expanded={textAt !== null}
+                aria-label="Title and caption"
+                title="Title, caption, creator and copyright"
+              >
+                <CaptionIcon />
+              </button>
+            )}
+            {textAt && keywordTargets.length > 0 && (
+              <PhotoTextEditor
+                paths={keywordTargets}
+                anchor={textAt}
+                onClose={() => setTextAt(null)}
+                onChanged={library.wordsChanged}
+                onError={editor.reportError}
+              />
+            )}
             {keywordsAt && keywordTargets.length > 0 && (
               <KeywordsEditor
                 paths={keywordTargets}
                 anchor={keywordsAt}
                 onClose={() => setKeywordsAt(null)}
-                onChanged={library.keywordsChanged}
+                onChanged={library.wordsChanged}
                 onError={editor.reportError}
               />
             )}

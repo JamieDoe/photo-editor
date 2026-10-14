@@ -1417,3 +1417,64 @@ fn keywords_are_shared_found_by_search_and_smart_rules_and_follow_moves() {
     assert_eq!(photo, a);
     assert_eq!(l.cat.photo_keywords(photo).unwrap(), ["Heron"]);
 }
+
+#[test]
+fn titles_captions_and_credits_are_kept_per_photo_and_found_by_search() {
+    use crate::TextField;
+    let l = library("cat-text");
+    let rec = |name: &str, seed: u8| {
+        l.cat
+            .record_file(
+                l.folder,
+                &write(&l.root.join(name), &photo_bytes(seed)),
+                ScanId(1),
+            )
+            .unwrap()
+            .0
+    };
+    let (a, b) = (rec("a.nef", 51), rec("b.nef", 52));
+    l.cat
+        .set_photo_text(&[a, b], TextField::Caption, "  Heron fishing\n\n\nat dawn ")
+        .unwrap();
+    l.cat
+        .set_photo_text(&[a], TextField::Title, "Patience")
+        .unwrap();
+    l.cat
+        .set_photo_text(&[b], TextField::Copyright, "© 2026 Someone Else")
+        .unwrap();
+    let text = l.cat.photo_text(&[a, b, PhotoId(9999)]).unwrap();
+    assert_eq!(text[0].title.as_deref(), Some("Patience"));
+    assert_eq!(text[0].caption.as_deref(), Some("Heron fishing\n\nat dawn"));
+    assert_eq!(text[0].copyright, None);
+    assert_eq!(text[1].title, None);
+    assert_eq!(text[1].copyright.as_deref(), Some("© 2026 Someone Else"));
+    assert_eq!(text[2], crate::PhotoText::default(), "no such photo");
+
+    // Search finds titles and captions.
+    assert_eq!(l.cat.search("fishing").unwrap().len(), 2);
+    assert_eq!(l.cat.search("patience").unwrap().len(), 1);
+
+    // Empty (or only spaces) clears it.
+    l.cat
+        .set_photo_text(&[a, b], TextField::Caption, "   ")
+        .unwrap();
+    assert!(l.cat.search("fishing").unwrap().is_empty());
+
+    // A moved photo keeps its words.
+    let moved = l.root.join("Moved/a.nef");
+    std::fs::create_dir_all(moved.parent().unwrap()).unwrap();
+    std::fs::rename(l.root.join("a.nef"), &moved).unwrap();
+    let (photo, _) = l
+        .cat
+        .record_file(
+            l.folder,
+            &SourceIdentity::from_path(&moved).unwrap(),
+            ScanId(2),
+        )
+        .unwrap();
+    assert_eq!(photo, a);
+    assert_eq!(
+        l.cat.photo_text(&[photo]).unwrap()[0].title.as_deref(),
+        Some("Patience")
+    );
+}

@@ -989,6 +989,13 @@ button.setting-switch[aria-checked="true"] .switch { justify-content: flex-end; 
 .smart-rules { gap: 8px; }
 .smart-rules > .text-input { margin-bottom: 4px; }
 
+/* A photo's title and caption (ADR 0089): labelled fields, the credits set apart. */
+.photo-text { gap: 10px; }
+.photo-text-row { display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; color: var(--text-2); }
+.photo-text-row.credits-start { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--hairline); }
+.photo-text-row textarea.text-input { height: auto; min-height: 64px; padding: 7px 9px; resize: vertical; font: inherit; font-size: 13px; line-height: 1.4; color: var(--text); }
+.photo-text-row .text-input:disabled { opacity: 0.6; }
+
 /* Keywords (ADR 0088): chips for those the photos have, a field with suggestions. */
 .keywords-body { gap: 10px; }
 .keyword-chips { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; max-height: 168px; overflow-y: auto; }

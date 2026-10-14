@@ -404,9 +404,10 @@ export function useLibrary(remembered?: RememberedView) {
     }
   }, [refreshStatus, refreshSmartSoon]);
 
-  /** Keywords changed on some photos (ADR 0088): smart collections may count others
-   *  now, and the smart collection or search shown may hold others. */
-  const keywordsChanged = useCallback(() => {
+  /** Keywords (ADR 0088), titles or captions (ADR 0089) changed on some photos: smart
+   *  collections may count others now, and the smart collection or search shown may
+   *  hold others. */
+  const wordsChanged = useCallback(() => {
     refreshSmartSoon();
     const shown = smartRef.current;
     if (shown) {
@@ -556,7 +557,7 @@ export function useLibrary(remembered?: RememberedView) {
     neighbour,
     setMarks,
     markEdited,
-    keywordsChanged,
+    wordsChanged,
     findPhoto,
     /** Batch selection (ADR 0049): the ticked photos still in this view. */
     batch: batchInView,

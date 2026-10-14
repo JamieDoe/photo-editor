@@ -11,8 +11,10 @@
 //! original rather than the export.
 //!
 //! The photographer's own marks (ADR 0067), the star rating, a reject and the colour
-//! label, and their keywords (ADR 0088) go with them as XMP, where other photo tools
-//! read them: an APP1 segment in JPEGs, an `iTXt` chunk in PNGs, tag 700 in TIFFs.
+//! label, their keywords (ADR 0088) and the photo's title, caption, creator and
+//! copyright (ADR 0089) go with them as XMP, where other photo tools read them: an APP1
+//! segment in JPEGs, an `iTXt` chunk in PNGs, tag 700 in TIFFs. The caption, creator
+//! and copyright are also EXIF's ImageDescription, Artist and Copyright.
 
 use crate::colour::ExportColourSpace;
 
@@ -67,6 +69,30 @@ pub struct Judgements {
     pub label: Option<LabelName>,
     /// Written as `dc:subject`, in this order.
     pub keywords: Vec<String>,
+    /// Exports only: sidecars don't carry it.
+    pub description: Description,
+}
+
+/// What an export says about the photo (ADR 0089): its title and caption, who made it
+/// and its copyright notice; `None` where there is nothing to say.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Description {
+    /// `dc:title`.
+    pub title: Option<String>,
+    /// `dc:description` and EXIF ImageDescription.
+    pub caption: Option<String>,
+    /// `dc:creator` and EXIF Artist.
+    pub creator: Option<String>,
+    /// `dc:rights` and EXIF Copyright.
+    pub copyright: Option<String>,
+}
+
+impl Description {
+    fn is_empty(&self) -> bool {
+        [&self.title, &self.caption, &self.creator, &self.copyright]
+            .into_iter()
+            .all(|v| text(v).is_none())
+    }
 }
 
 /// The Dublin Core namespace, which holds keywords (`dc:subject`).
@@ -82,13 +108,43 @@ pub(crate) fn escape_xml(text: &str) -> String {
 /// `keywords` as a `dc:subject` element (with the namespace bound to `prefix`), each
 /// line after the first starting with `indent`.
 pub(crate) fn subject_element(prefix: &str, keywords: &[String], indent: &str) -> String {
-    let items: String = keywords
+    list_element(&format!("{prefix}:subject"), "Bag", keywords, indent)
+}
+
+/// An XMP array property: `name` holding an `rdf:{kind}` (Bag, Seq or Alt) of `items`.
+/// An Alt's one item is the default language's (`xml:lang="x-default"`).
+fn list_element(name: &str, kind: &str, items: &[String], indent: &str) -> String {
+    let lang = if kind == "Alt" {
+        " xml:lang=\"x-default\""
+    } else {
+        ""
+    };
+    let items: String = items
         .iter()
-        .map(|k| format!("{indent}  <rdf:li>{}</rdf:li>\n", escape_xml(k)))
+        .map(|k| format!("{indent}  <rdf:li{lang}>{}</rdf:li>\n", escape_xml(k)))
         .collect();
-    format!(
-        "<{prefix}:subject>\n{indent} <rdf:Bag>\n{items}{indent} </rdf:Bag>\n{indent}</{prefix}:subject>"
-    )
+    format!("<{name}>\n{indent} <rdf:{kind}>\n{items}{indent} </rdf:{kind}>\n{indent}</{name}>")
+}
+
+/// The Dublin Core elements for `judgements`' description and keywords, each starting
+/// a line at `indent`.
+fn dc_elements(judgements: &Judgements, indent: &str) -> Vec<String> {
+    let d = &judgements.description;
+    let mut out = Vec::new();
+    for (name, kind, value) in [
+        ("dc:title", "Alt", &d.title),
+        ("dc:description", "Alt", &d.caption),
+        ("dc:creator", "Seq", &d.creator),
+        ("dc:rights", "Alt", &d.copyright),
+    ] {
+        if let Some(v) = text(value) {
+            out.push(list_element(name, kind, &[v.to_owned()], indent));
+        }
+    }
+    if !judgements.keywords.is_empty() {
+        out.push(subject_element("dc", &judgements.keywords, indent));
+    }
+    out
 }
 
 /// A colour label, by the names Lightroom and Bridge write and read.
@@ -130,7 +186,11 @@ pub fn xmp_packet(judgements: &Judgements) -> Option<String> {
     } else {
         (judgements.rating > 0).then(|| i32::from(judgements.rating.min(5)))
     };
-    if rating.is_none() && judgements.label.is_none() && judgements.keywords.is_empty() {
+    if rating.is_none()
+        && judgements.label.is_none()
+        && judgements.keywords.is_empty()
+        && judgements.description.is_empty()
+    {
         return None;
     }
     let mut properties = String::new();
@@ -140,15 +200,14 @@ pub fn xmp_packet(judgements: &Judgements) -> Option<String> {
     if let Some(l) = judgements.label {
         properties.push_str(&format!(" xmp:Label=\"{}\"", l.as_str()));
     }
-    // Keywords are an element inside the description, which otherwise closes itself.
-    let close = if judgements.keywords.is_empty() {
+    // Keywords and the description are elements inside the rdf:Description, which
+    // otherwise closes itself.
+    let elements = dc_elements(judgements, "   ");
+    let close = if elements.is_empty() {
         "/>".to_owned()
     } else {
         properties.push_str(&format!(" xmlns:dc=\"{DC_NAMESPACE}\""));
-        format!(
-            ">\n   {}\n  </rdf:Description>",
-            subject_element("dc", &judgements.keywords, "   ")
-        )
+        format!(">\n   {}\n  </rdf:Description>", elements.join("\n   "))
     };
     Some(format!(
         "<?xpacket begin=\"\u{feff}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n\
@@ -198,9 +257,12 @@ pub struct Entries {
 }
 
 pub mod tag {
+    pub const IMAGE_DESCRIPTION: u16 = 270;
     pub const MAKE: u16 = 271;
     pub const MODEL: u16 = 272;
     pub const ORIENTATION: u16 = 274;
+    pub const ARTIST: u16 = 315;
+    pub const COPYRIGHT: u16 = 33432;
     pub const EXIF_IFD: u16 = 0x8769;
     pub const GPS_IFD: u16 = 0x8825;
     pub const EXPOSURE_TIME: u16 = 33434;
@@ -242,6 +304,17 @@ pub fn entries(
     }
     // The pixels are written upright.
     main.push((tag::ORIENTATION, Value::Short(1)));
+    // The photo's words (ADR 0089), as EXIF has room for them.
+    let d = &judgements.description;
+    for (t, value) in [
+        (tag::IMAGE_DESCRIPTION, &d.caption),
+        (tag::ARTIST, &d.creator),
+        (tag::COPYRIGHT, &d.copyright),
+    ] {
+        if let Some(v) = text(value) {
+            main.push((t, Value::Ascii(v.to_owned())));
+        }
+    }
 
     let mut exif = vec![(tag::EXIF_VERSION, Value::Undefined(b"0232".to_vec()))];
     if let Some(t) = facts.shutter_seconds.and_then(exposure_time) {
@@ -487,6 +560,7 @@ mod tests {
                 rejected,
                 label,
                 keywords: Vec::new(),
+                description: Default::default(),
             })
         };
         assert_eq!(packet(0, false, None), None, "nothing to say");
@@ -505,6 +579,64 @@ mod tests {
         );
         let label_only = packet(0, false, Some(LabelName::Green)).unwrap();
         assert!(!label_only.contains("xmp:Rating") && label_only.contains(r#"xmp:Label="Green""#));
+    }
+
+    #[test]
+    fn the_description_is_written_as_xmp_and_exif() {
+        let judgements = Judgements {
+            description: Description {
+                title: Some("Patience".into()),
+                caption: Some("Heron <fishing> at dawn".into()),
+                creator: Some("Jamie Doe".into()),
+                copyright: Some("© 2026 Jamie Doe".into()),
+            },
+            keywords: vec!["Heron".into()],
+            ..Default::default()
+        };
+        let p = xmp_packet(&judgements).expect("a description makes a packet");
+        for part in [
+            "<dc:title>",
+            r#"<rdf:li xml:lang="x-default">Patience</rdf:li>"#,
+            r#"<rdf:li xml:lang="x-default">Heron &lt;fishing&gt; at dawn</rdf:li>"#,
+            "<rdf:Seq>",
+            "<rdf:li>Jamie Doe</rdf:li>",
+            r#"<rdf:li xml:lang="x-default">© 2026 Jamie Doe</rdf:li>"#,
+            "<rdf:li>Heron</rdf:li>",
+        ] {
+            assert!(p.contains(part), "no {part} in {p}");
+        }
+        assert_eq!(p.matches("xmlns:dc=").count(), 1, "{p}");
+        // Blank parts say nothing.
+        let blank = Judgements {
+            description: Description {
+                title: Some("  ".into()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert_eq!(xmp_packet(&blank), None);
+
+        let e = entries(
+            &facts(),
+            &judgements,
+            MetadataChoice::WithoutLocation,
+            60,
+            40,
+            ExportColourSpace::Srgb,
+        )
+        .unwrap();
+        let exif = read(&exif_block(&e));
+        let field = |t: exif::Tag| {
+            exif.get_field(t, exif::In::PRIMARY)
+                .map(|f| f.display_value().to_string())
+        };
+        assert_eq!(
+            field(exif::Tag::ImageDescription).as_deref(),
+            Some("\"Heron <fishing> at dawn\"")
+        );
+        assert_eq!(field(exif::Tag::Artist).as_deref(), Some("\"Jamie Doe\""));
+        assert!(field(exif::Tag::Copyright).is_some_and(|c| c.contains("2026 Jamie Doe")));
+        assert_eq!(field(exif::Tag::Model).as_deref(), Some("\"NIKON Z 6\""));
     }
 
     #[test]

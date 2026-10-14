@@ -114,6 +114,8 @@ fn main() {
             commands::albums::add_to_album,
             commands::albums::remove_from_album,
             commands::albums::album_photos,
+            commands::photo_text::photo_text,
+            commands::photo_text::set_photo_text,
             commands::keywords::list_keywords,
             commands::keywords::photo_keywords,
             commands::keywords::add_keywords,
