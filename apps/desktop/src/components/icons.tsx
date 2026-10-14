@@ -279,6 +279,13 @@ export const SearchIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** A smart collection (ADR 0084): a filter's narrowing lines. */
+export const SmartIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M2.5 4h11M4.5 8h7M6.5 12h3" />
+  </Icon>
+);
+
 /** An album (ADR 0055): two photos stacked. */
 export const AlbumIcon = (p: IconProps) => (
   <Icon {...p}>

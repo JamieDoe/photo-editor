@@ -79,7 +79,7 @@ impl ColourLabel {
         Self::Purple,
     ];
 
-    fn to_db(self) -> i64 {
+    pub(crate) fn to_db(self) -> i64 {
         match self {
             Self::None => 0,
             Self::Red => 1,
@@ -90,7 +90,7 @@ impl ColourLabel {
         }
     }
 
-    fn from_db(v: i64) -> Self {
+    pub(crate) fn from_db(v: i64) -> Self {
         match v {
             1 => Self::Red,
             2 => Self::Yellow,

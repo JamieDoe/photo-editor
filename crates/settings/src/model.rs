@@ -134,8 +134,8 @@ impl<'de> Deserialize<'de> for LibrarySettings {
     }
 }
 
-/// A place the Library shows (ADR 0065): a folder, a library-wide collection, or an
-/// album.
+/// A place the Library shows (ADR 0065): a folder, a library-wide collection, an album
+/// or a smart collection (ADR 0084).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export))]
@@ -148,6 +148,11 @@ pub enum LibraryPlace {
     },
     Album {
         // Album ids are small; a JS number holds them exactly.
+        #[cfg_attr(feature = "ts", ts(type = "number"))]
+        id: i64,
+    },
+    /// A smart collection (ADR 0084).
+    SmartCollection {
         #[cfg_attr(feature = "ts", ts(type = "number"))]
         id: i64,
     },
@@ -624,8 +629,12 @@ mod tests {
                 r#"{"kind":"album","id":7}"#,
                 Some(LibraryPlace::Album { id: 7 }),
             ),
+            (
+                r#"{"kind":"smartCollection","id":3}"#,
+                Some(LibraryPlace::SmartCollection { id: 3 }),
+            ),
             // From a newer version, or damaged: no place, and the rest still loads.
-            (r#"{"kind":"smartCollection","id":3}"#, None),
+            (r#"{"kind":"map","id":3}"#, None),
             (r#"{"kind":"collection","collection":"flagged"}"#, None),
             (r#""somewhere""#, None),
         ] {

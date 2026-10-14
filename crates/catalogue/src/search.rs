@@ -14,7 +14,7 @@ const MAX_TERMS: usize = 8;
 
 /// One word of a query, as matched.
 #[derive(Debug, Clone, PartialEq, Eq)]
-enum Term {
+pub(crate) enum Term {
     /// In the file's path, the camera or the lens.
     Text(String),
     /// A capture year, or text.
@@ -42,7 +42,7 @@ const MONTHS: [&str; 12] = [
     "december",
 ];
 
-fn terms(query: &str) -> Vec<Term> {
+pub(crate) fn terms(query: &str) -> Vec<Term> {
     query
         .split_whitespace()
         .map(|w| {
@@ -106,7 +106,7 @@ fn anywhere(w: &str) -> String {
 
 /// The SQL condition (over `p` and `f`) for `terms`, all of which must match, and its
 /// parameters in order.
-fn condition(terms: &[Term]) -> (String, Vec<String>) {
+pub(crate) fn condition(terms: &[Term]) -> (String, Vec<String>) {
     let mut params = Vec::new();
     let text = |w: &str, params: &mut Vec<String>| {
         params.push(anywhere(w));

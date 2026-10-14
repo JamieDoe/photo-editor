@@ -8,15 +8,20 @@ pub const MAX_ALBUM_NAME: usize = 60;
 /// `name` with runs of spaces closed up and trimmed, at most [`MAX_ALBUM_NAME`]
 /// characters; an error if nothing is left.
 pub fn clean_album_name(name: &str) -> Result<String, EngineError> {
-    let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ");
-    if name.is_empty() {
-        return Err(EngineError::new(
+    tidy(name).ok_or_else(|| {
+        EngineError::new(
             ErrorKind::InvalidInput,
             "Give the album a name.",
             "empty album name",
-        ));
-    }
-    Ok(name.chars().take(MAX_ALBUM_NAME).collect())
+        )
+    })
+}
+
+/// `name` with runs of spaces closed up and trimmed, at most [`MAX_ALBUM_NAME`]
+/// characters; `None` if nothing is left.
+pub(crate) fn tidy(name: &str) -> Option<String> {
+    let name: String = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!name.is_empty()).then(|| name.chars().take(MAX_ALBUM_NAME).collect())
 }
 
 /// The album no longer exists (deleted elsewhere, or a stale view).

@@ -9,6 +9,8 @@ import { emit } from "@tauri-apps/api/event";
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { createRoot } from "react-dom/client";
 import { App } from "../src/app/App";
+import { matchesMarks } from "../src/features/library/smart";
+import type { SmartRulesDto } from "../src/ipc/generated/SmartRulesDto";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 import "../src/styles.css";
@@ -62,6 +64,22 @@ const albumDto = (id: number) => {
   return { id, name: a.name, count: a.paths.length, cover: a.paths[0] ?? null };
 };
 const albumList = () => [...mockAlbums.keys()].map(albumDto).sort((x, y) => x.name.localeCompare(y.name));
+/** Dev-only smart collections (ADR 0084): name and rules, by id; matched like the
+ *  catalogue on marks, and on file paths for words. */
+const mockSmart = new Map<number, { name: string; rules: SmartRulesDto }>([
+  [1, { name: "Best of Iceland", rules: { rating: 4, flag: null, label: null, edited: null, words: "iceland" } }],
+]);
+let nextSmart = 2;
+const smartMatches = (rules: SmartRulesDto) => {
+  const words = rules.words.toLowerCase().split(/\s+/).filter(Boolean);
+  return (lastListing ?? mockListing("/Users/me/Photos/2026 Iceland")).photos
+    .map((p, i) => ({ ...p, marks: marksOf(p.path, i) }))
+    .filter((p) => matchesMarks(p, rules) && words.every((w) => p.path.toLowerCase().includes(w)));
+};
+const smartDto = (id: number) => {
+  const c = mockSmart.get(id)!;
+  return { id, name: c.name, rules: c.rules, count: smartMatches(c.rules).length };
+};
 const marksOf = (path: string, i: number) =>
   mockMarks.get(path) ?? {
     rating: i % 9 === 0 ? 4 : i % 13 === 0 ? 2 : 0,
@@ -445,6 +463,27 @@ mockIPC((cmd, payload) => {
       const all = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");
       const members = new Set(mockAlbums.get(id)!.paths);
       return { album: albumDto(id), photos: all.photos.map((p, i) => ({ ...p, marks: marksOf(p.path, i) })).filter((p) => members.has(p.path)) };
+    }
+    case "list_smart_collections":
+      return [...mockSmart.keys()].map(smartDto).sort((x, y) => x.name.localeCompare(y.name));
+    case "create_smart_collection": {
+      const { name, rules } = payload as { name: string; rules: SmartRulesDto };
+      mockSmart.set(nextSmart, { name: name.trim(), rules });
+      return smartDto(nextSmart++);
+    }
+    case "update_smart_collection": {
+      const { id, name, rules } = payload as { id: number; name: string; rules: SmartRulesDto };
+      mockSmart.set(id, { name: name.trim(), rules });
+      return smartDto(id);
+    }
+    case "delete_smart_collection":
+      mockSmart.delete((payload as { id: number }).id);
+      return null;
+    case "count_smart_rules":
+      return smartMatches((payload as { rules: SmartRulesDto }).rules).length;
+    case "smart_collection_photos": {
+      const { id } = payload as { id: number };
+      return { collection: smartDto(id), photos: smartMatches(mockSmart.get(id)!.rules) };
     }
     case "search_library": {
       // Dev-only stand-in: file names containing every word.

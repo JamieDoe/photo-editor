@@ -573,6 +573,66 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       !albums.listedAfterDelete &&
       albums.photosKept === 3;
 
+    // Smart collections (ADR 0084) through the real commands and catalogue: a photo
+    // labelled purple in the fixtures folder is found by a label rule with the folder's
+    // name; rules without anything to match, and names without letters, are refused; a
+    // changed rule changes what matches; the place is remembered; deleting keeps the
+    // photo. The photo's label is put back after.
+    const smartCheck = await (async () => {
+      if (!indexing) return null;
+      const photo = (await ipc.listFolder(indexing.folder)).photos[0];
+      if (!photo) return null;
+      const word = indexing.folder.split(/[\\/]/).filter(Boolean).pop() ?? "";
+      const before = photo.marks.label;
+      await ipc.setPhotoMarks([photo.path], { type: "label", label: "purple" });
+      const rules = { rating: null, flag: null, label: "purple" as const, edited: null, words: word };
+      const refused = async (f: () => Promise<unknown>) => f().then(() => false, () => true);
+      const noRules = await refused(() => ipc.createSmartCollection("x", { rating: null, flag: null, label: null, edited: null, words: "  " }));
+      const noName = await refused(() => ipc.createSmartCollection("   ", rules));
+      const counted = await ipc.countSmartRules(rules);
+      const made = await ipc.createSmartCollection("  Self-test   smart ", rules);
+      const listed = await ipc.smartCollectionPhotos(made.id);
+      // Five stars as well: the photo (unrated here) no longer matches.
+      const narrowed = await ipc.updateSmartCollection(made.id, "Narrowed", { ...rules, rating: 5 });
+      await ipc.rememberPlace({ kind: "smartCollection", id: made.id });
+      const place = (await ipc.getSettings()).settings.library.lastPlace;
+      const wasListed = (await ipc.listSmartCollections()).some((c) => c.id === made.id);
+      await ipc.deleteSmartCollection(made.id);
+      const after = (await ipc.listSmartCollections()).some((c) => c.id === made.id);
+      const kept = (await ipc.listFolder(indexing.folder)).photos.some((p) => p.path === photo.path);
+      await ipc.setPhotoMarks([photo.path], { type: "label", label: before });
+      return {
+        name: made.name,
+        noRulesRefused: noRules,
+        noNameRefused: noName,
+        counted,
+        count: made.count,
+        found: listed.photos.some((p) => p.path === photo.path),
+        rulesKept: listed.collection.rules.label === "purple" && listed.collection.rules.words === word,
+        narrowed: { name: narrowed.name, count: narrowed.count, rated: photo.marks.rating },
+        place,
+        listedBefore: wasListed,
+        listedAfterDelete: after,
+        photoKept: kept,
+      };
+    })();
+    const smartOk =
+      smartCheck !== null &&
+      smartCheck.name === "Self-test smart" &&
+      smartCheck.noRulesRefused &&
+      smartCheck.noNameRefused &&
+      smartCheck.counted >= 1 &&
+      smartCheck.count === smartCheck.counted &&
+      smartCheck.found &&
+      smartCheck.rulesKept &&
+      smartCheck.narrowed.name === "Narrowed" &&
+      // Unless the photo already had five stars.
+      (smartCheck.narrowed.rated === 5 || smartCheck.narrowed.count < smartCheck.count) &&
+      smartCheck.place?.kind === "smartCollection" &&
+      smartCheck.listedBefore &&
+      !smartCheck.listedAfterDelete &&
+      smartCheck.photoKept;
+
     // Search and Recently imported (ADR 0056) through the real commands and catalogue:
     // the fixtures folder's name, the test photo's camera and capture year find it; a
     // nonsense word finds nothing; the photos just indexed are recently imported.
@@ -1955,6 +2015,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       allPhotosAndView: allPhotosOk,
       lastPlace: lastPlaceOk,
       albums: albumsOk,
+      smartCollections: smartOk,
       search: searchOk,
       savedEdits: editsOk,
       toneCurve: toneCurveOk,
@@ -2037,6 +2098,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       marks,
       allPhotos,
       albums,
+      smartCollections: smartCheck,
       search: searchCheck,
       edits,
       detailFrame: { size: `${detail.frame.width}x${detail.frame.height}`, rustRenderMs: detail.frame.renderMs, roundTripMs: detail.info.roundTripMs },

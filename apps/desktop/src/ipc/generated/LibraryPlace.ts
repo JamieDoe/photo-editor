@@ -2,7 +2,7 @@
 import type { LibraryCollection } from "./LibraryCollection";
 
 /**
- * A place the Library shows (ADR 0065): a folder, a library-wide collection, or an
- * album.
+ * A place the Library shows (ADR 0065): a folder, a library-wide collection, an album
+ * or a smart collection (ADR 0084).
  */
-export type LibraryPlace = { "kind": "folder", path: string, } | { "kind": "collection", collection: LibraryCollection, } | { "kind": "album", id: number, };
+export type LibraryPlace = { "kind": "folder", path: string, } | { "kind": "collection", collection: LibraryCollection, } | { "kind": "album", id: number, } | { "kind": "smartCollection", id: number, };

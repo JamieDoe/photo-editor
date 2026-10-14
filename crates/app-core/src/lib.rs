@@ -17,6 +17,7 @@ mod presets;
 mod previews;
 mod session;
 pub mod sidecars;
+mod smart;
 mod thumbnails;
 mod types;
 
@@ -27,6 +28,7 @@ pub use catalogue::{
     CollectionCounts, CollectionEntry, ColourLabel, FileStatus, Flag, MarkChange, Marks,
     PhotoDetails, PhotoId, PresetId, Rating, SourceIdentity, StoredEdit, newest_valid,
 };
+pub use catalogue::{FlagRule, RatingRule, SmartCollection, SmartCollectionId, SmartRules};
 pub use catalogue::{SCHEMA_VERSION, schema_version_of};
 pub use config::EngineConfig;
 pub use edits::{SavedEdit, load_edit, paste_onto, save_edit, upright_of};
@@ -37,6 +39,9 @@ pub use presets::{
     ImportedPreset, MAX_PRESET_NAME, PRESET_FILE_EXTENSION, Preset, PresetRef, create_preset,
     delete_preset, export_preset_file, import_preset_file, list_presets, preset_file_name,
     rename_preset, update_preset,
+};
+pub use smart::{
+    MAX_SMART_WORDS, checked_rules, clean_smart_collection_name, smart_collection_not_found,
 };
 pub use thumbnails::{
     BatchSummary, Pregenerated, THUMBNAIL_LONG_EDGE, Thumbnail, ThumbnailBatch, ThumbnailSource,

@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::CatalogueError;
 
 /// Schema version this build creates and understands.
-pub const SCHEMA_VERSION: i64 = 9;
+pub const SCHEMA_VERSION: i64 = 10;
 
 const MIGRATIONS: &[&str] = &[
     // 1: library folders, photos, files.
@@ -124,6 +124,23 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE photos ADD COLUMN label INTEGER NOT NULL DEFAULT 0 CHECK (label BETWEEN 0 AND 5);
     CREATE INDEX photos_by_label ON photos(label) WHERE label <> 0;
+    "#,
+    // 10: smart collections (ADR 0084): named rules, all of which a photo must match.
+    // Each rule is NULL for "any": rating 0 unrated, 1-5 at least that many stars;
+    // flag 1 picked, -1 rejected, 0 unflagged, 2 not rejected; label 0 none, 1-5 a
+    // colour; edited 1 or 0; words as the search box takes them ('' for none).
+    r#"
+    CREATE TABLE smart_collections (
+        id            INTEGER PRIMARY KEY,
+        name          TEXT NOT NULL,
+        rating        INTEGER CHECK (rating BETWEEN 0 AND 5),
+        flag          INTEGER CHECK (flag BETWEEN -1 AND 2),
+        label         INTEGER CHECK (label BETWEEN 0 AND 5),
+        edited        INTEGER CHECK (edited IN (0, 1)),
+        words         TEXT NOT NULL DEFAULT '',
+        created_at_ms INTEGER NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+    );
     "#,
 ];
 

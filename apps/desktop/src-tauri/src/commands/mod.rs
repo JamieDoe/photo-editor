@@ -13,6 +13,7 @@ pub mod marks;
 pub mod presets;
 pub mod selftest;
 pub mod settings;
+pub mod smart;
 pub mod system;
 
 use app_core::{EngineError, JobHandle};
