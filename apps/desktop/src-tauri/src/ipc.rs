@@ -928,6 +928,97 @@ pub struct AlbumListingDto {
     pub photos: Vec<PhotoEntryDto>,
 }
 
+/// Which flags a smart collection's rule takes (ADR 0084).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum FlagRuleDto {
+    Picked,
+    Rejected,
+    Unflagged,
+    /// Picked or unflagged.
+    NotRejected,
+}
+
+/// A smart collection's rules (ADR 0084): every one given must match; null matches
+/// every photo.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SmartRulesDto {
+    /// 0: unrated; 1–5: at least that many stars.
+    pub rating: Option<u8>,
+    pub flag: Option<FlagRuleDto>,
+    /// A colour label, or "none" for photos without one.
+    pub label: Option<ColourLabelDto>,
+    /// Edited (true) or not (false).
+    pub edited: Option<bool>,
+    /// Words as the search box takes them: folders, cameras, lenses, dates.
+    pub words: String,
+}
+
+impl From<app_core::SmartRules> for SmartRulesDto {
+    fn from(r: app_core::SmartRules) -> Self {
+        Self {
+            rating: r.rating.map(|r| match r {
+                app_core::RatingRule::Unrated => 0,
+                app_core::RatingRule::AtLeast(stars) => stars.stars(),
+            }),
+            flag: r.flag.map(|f| match f {
+                app_core::FlagRule::Picked => FlagRuleDto::Picked,
+                app_core::FlagRule::Rejected => FlagRuleDto::Rejected,
+                app_core::FlagRule::Unflagged => FlagRuleDto::Unflagged,
+                app_core::FlagRule::NotRejected => FlagRuleDto::NotRejected,
+            }),
+            label: r.label.map(ColourLabelDto::from),
+            edited: r.edited,
+            words: r.words,
+        }
+    }
+}
+
+impl From<SmartRulesDto> for app_core::SmartRules {
+    fn from(r: SmartRulesDto) -> Self {
+        Self {
+            rating: r.rating.map(|n| match app_core::Rating::new(n.min(5)) {
+                Some(stars) if stars.stars() > 0 => app_core::RatingRule::AtLeast(stars),
+                _ => app_core::RatingRule::Unrated,
+            }),
+            flag: r.flag.map(|f| match f {
+                FlagRuleDto::Picked => app_core::FlagRule::Picked,
+                FlagRuleDto::Rejected => app_core::FlagRule::Rejected,
+                FlagRuleDto::Unflagged => app_core::FlagRule::Unflagged,
+                FlagRuleDto::NotRejected => app_core::FlagRule::NotRejected,
+            }),
+            label: r.label.map(app_core::ColourLabel::from),
+            edited: r.edited,
+            words: r.words,
+        }
+    }
+}
+
+/// A smart collection (ADR 0084) as the library shows it.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SmartCollectionDto {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub name: String,
+    pub rules: SmartRulesDto,
+    /// Present photos matching it.
+    pub count: usize,
+}
+
+/// A smart collection and the photos matching it.
+#[derive(Debug, Clone, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SmartCollectionListingDto {
+    pub collection: SmartCollectionDto,
+    pub photos: Vec<PhotoEntryDto>,
+}
+
 /// Photo details read from file headers during indexing.
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

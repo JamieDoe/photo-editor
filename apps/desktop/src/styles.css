@@ -963,3 +963,11 @@ button.setting-switch[aria-checked="true"] .switch { justify-content: flex-end; 
 .export-watermark .text-input { flex: 1 1 auto; min-width: 0; height: 32px; }
 .export-watermark .segmented.small > button { padding: 0 8px; }
 
+
+/* Smart collections (ADR 0084): one rule a row, its name then its choices. */
+.smart-rules { gap: 8px; }
+.smart-rules > .text-input { margin-bottom: 4px; }
+.rule-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); }
+.rule-row .text-input { height: 30px; font-size: 12.5px; }
+select.rule-select { height: 30px; width: 100%; padding: 0 24px 0 9px; border-radius: 7px; background: var(--canvas); border: 1px solid var(--hairline); color: var(--text); font-size: 12.5px; }
+.smart-rules .popover-actions { margin-top: 6px; }

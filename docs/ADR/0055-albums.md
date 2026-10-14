@@ -100,4 +100,5 @@ Recorded in ADR 0016:
 - **Not built yet:** the sidebar's **Search** ("places, cameras, dates") and **Recently
   imported** are the next steps.
 - **Later:** colour labels and sort orders (in PRODUCT §3.1, not in the design), smart
-  albums, and nested albums.
+  albums, and nested albums. Labels and sort came with ADR 0064, and smart albums as
+  smart collections with ADR 0084.

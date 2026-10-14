@@ -946,3 +946,304 @@ fn search_finds_photos_by_folder_camera_lens_and_date() {
     assert_eq!(found("photos").len(), 3);
     let _ = undated;
 }
+
+#[test]
+fn smart_collections_match_every_rule_and_fill_themselves() {
+    use crate::{FlagRule, RatingRule, SmartRules};
+    let l = library("cat-smart");
+    let rec = |name: &str, seed: u8| {
+        l.cat
+            .record_file(
+                l.folder,
+                &write(&l.root.join(name), &photo_bytes(seed)),
+                ScanId(1),
+            )
+            .unwrap()
+            .0
+    };
+    let a = rec("2026 Iceland/a.nef", 21);
+    let b = rec("2026 Iceland/b.nef", 22);
+    let c = rec("Paris/c.nef", 23);
+    let d = rec("d.nef", 24);
+    l.cat.set_marks(&[a], rate(4)).unwrap();
+    l.cat.set_marks(&[a], MarkChange::Flag(Flag::Pick)).unwrap();
+    l.cat
+        .set_marks(&[a], MarkChange::Label(ColourLabel::Red))
+        .unwrap();
+    l.cat.set_marks(&[b], rate(2)).unwrap();
+    l.cat
+        .set_marks(&[b], MarkChange::Flag(Flag::Reject))
+        .unwrap();
+    l.cat.set_marks(&[c], rate(5)).unwrap();
+    l.cat
+        .set_marks(&[c], MarkChange::Label(ColourLabel::Green))
+        .unwrap();
+    l.cat.set_edit(c, Some((32, "{}"))).unwrap();
+
+    let names = |rules: SmartRules| -> Vec<String> {
+        let found = l.cat.matching(&rules).unwrap();
+        assert_eq!(l.cat.count_matching(&rules).unwrap(), found.len());
+        let mut n: Vec<String> = found
+            .iter()
+            .map(|e| e.path.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        n.sort();
+        n
+    };
+    let stars = |n| Some(RatingRule::AtLeast(crate::Rating::new(n).unwrap()));
+    assert_eq!(
+        names(SmartRules::default()),
+        ["a.nef", "b.nef", "c.nef", "d.nef"]
+    );
+    assert_eq!(
+        names(SmartRules {
+            rating: stars(3),
+            ..Default::default()
+        }),
+        ["a.nef", "c.nef"]
+    );
+    assert_eq!(
+        names(SmartRules {
+            rating: Some(RatingRule::Unrated),
+            ..Default::default()
+        }),
+        ["d.nef"]
+    );
+    for (flag, expected) in [
+        (FlagRule::Picked, vec!["a.nef"]),
+        (FlagRule::Rejected, vec!["b.nef"]),
+        (FlagRule::Unflagged, vec!["c.nef", "d.nef"]),
+        (FlagRule::NotRejected, vec!["a.nef", "c.nef", "d.nef"]),
+    ] {
+        let rules = SmartRules {
+            flag: Some(flag),
+            ..Default::default()
+        };
+        assert_eq!(names(rules), expected, "{flag:?}");
+    }
+    assert_eq!(
+        names(SmartRules {
+            label: Some(ColourLabel::None),
+            ..Default::default()
+        }),
+        ["b.nef", "d.nef"]
+    );
+    assert_eq!(
+        names(SmartRules {
+            edited: Some(true),
+            ..Default::default()
+        }),
+        ["c.nef"]
+    );
+    assert_eq!(
+        names(SmartRules {
+            edited: Some(false),
+            ..Default::default()
+        }),
+        ["a.nef", "b.nef", "d.nef"]
+    );
+    // Words are the search box's, and every rule must match.
+    let iceland_best = SmartRules {
+        rating: stars(3),
+        words: " iceland ".into(),
+        ..Default::default()
+    };
+    assert_eq!(names(iceland_best.clone()), ["a.nef"]);
+
+    // Stored, listed by name with counts, changed and deleted.
+    let best = l
+        .cat
+        .add_smart_collection("best of Iceland", &iceland_best)
+        .unwrap();
+    let rejects = l
+        .cat
+        .add_smart_collection(
+            "Rejects",
+            &SmartRules {
+                flag: Some(FlagRule::Rejected),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    let all = l.cat.smart_collections().unwrap();
+    let listed: Vec<_> = all.iter().map(|s| (s.name.as_str(), s.count)).collect();
+    assert_eq!(listed, [("best of Iceland", 1), ("Rejects", 1)]);
+    // Words are kept trimmed.
+    assert_eq!(all[0].rules.words, "iceland");
+    // They fill themselves: b gains stars and loses its reject.
+    l.cat.set_marks(&[b], rate(3)).unwrap();
+    l.cat.set_marks(&[b], MarkChange::Flag(Flag::None)).unwrap();
+    assert_eq!(l.cat.smart_collection(best).unwrap().unwrap().count, 2);
+    assert_eq!(l.cat.smart_collection(rejects).unwrap().unwrap().count, 0);
+    let wider = SmartRules {
+        words: "paris".into(),
+        ..Default::default()
+    };
+    assert!(
+        l.cat
+            .update_smart_collection(best, "Paris", &wider)
+            .unwrap()
+    );
+    let changed = l.cat.smart_collection(best).unwrap().unwrap();
+    assert_eq!((changed.name.as_str(), changed.count), ("Paris", 1));
+    assert_eq!(changed.rules, wider);
+    assert!(l.cat.delete_smart_collection(rejects).unwrap());
+    assert!(!l.cat.delete_smart_collection(rejects).unwrap());
+    assert!(l.cat.smart_collection(rejects).unwrap().is_none());
+    assert!(
+        !l.cat
+            .update_smart_collection(rejects, "x", &SmartRules::default())
+            .unwrap()
+    );
+
+    // Missing files are left out.
+    std::fs::remove_file(l.root.join("d.nef")).unwrap();
+    for name in ["2026 Iceland/a.nef", "2026 Iceland/b.nef", "Paris/c.nef"] {
+        l.cat
+            .record_file(
+                l.folder,
+                &SourceIdentity::from_path(&l.root.join(name)).unwrap(),
+                ScanId(2),
+            )
+            .unwrap();
+    }
+    l.cat.finish_scan(l.folder, ScanId(2), None).unwrap();
+    assert!(
+        names(SmartRules {
+            rating: Some(RatingRule::Unrated),
+            ..Default::default()
+        })
+        .is_empty()
+    );
+    let _ = d;
+}
+
+/// Smart collections on a 20,000-photo library (PERFORMANCE §60): run with
+/// `cargo test --release -p catalogue smart_collections_at_scale -- --ignored --nocapture`.
+#[test]
+#[ignore = "a measurement; run in release"]
+fn smart_collections_at_scale() {
+    use crate::{FlagRule, RatingRule, SmartRules};
+    let l = library("cat-smart-scale");
+    let n = 20_000u64;
+    let ids: Vec<SourceIdentity> = (0..n)
+        .map(|i| SourceIdentity {
+            canonical_path: l
+                .root
+                .join(format!("{}/Trip {}/DSC_{i:05}.NEF", 2019 + i % 7, i / 25)),
+            size: 20_000_000 + i,
+            modified_unix_ns: 1_700_000_000_000_000_000 + u128::from(i),
+            fingerprint: i.wrapping_mul(0x9E37_79B9_7F4A_7C15),
+        })
+        .collect();
+    let photos: Vec<PhotoId> = l
+        .cat
+        .record_files(l.folder, &ids, ScanId(1))
+        .unwrap()
+        .into_iter()
+        .map(|(p, _)| p)
+        .collect();
+    let details: Vec<_> = photos
+        .iter()
+        .enumerate()
+        .map(|(i, &p)| {
+            (
+                p,
+                Some(crate::PhotoDetails {
+                    camera_make: Some("Nikon".into()),
+                    camera_model: Some(if i % 3 == 0 { "Z 6" } else { "Z 8" }.into()),
+                    lens: Some("NIKKOR Z 24-70mm f/4 S".into()),
+                    captured_at: Some(format!(
+                        "{}-{:02}-{:02}T10:00:00",
+                        2019 + i % 7,
+                        1 + i % 12,
+                        1 + i % 28
+                    )),
+                    ..Default::default()
+                }),
+            )
+        })
+        .collect();
+    l.cat.set_details(&details).unwrap();
+    for (i, p) in photos.iter().enumerate() {
+        if i % 4 == 0 {
+            l.cat.set_marks(&[*p], rate((i % 5) as u8 + 1)).unwrap();
+        }
+        if i % 7 == 0 {
+            l.cat
+                .set_marks(&[*p], MarkChange::Flag(Flag::Pick))
+                .unwrap();
+        }
+        if i % 11 == 0 {
+            l.cat
+                .set_marks(&[*p], MarkChange::Label(ColourLabel::Red))
+                .unwrap();
+        }
+        if i % 13 == 0 {
+            l.cat.set_edit(*p, Some((32, "{}"))).unwrap();
+        }
+    }
+    let stars = |n| Some(RatingRule::AtLeast(crate::Rating::new(n).unwrap()));
+    let cases = [
+        (
+            "★ 4 and up",
+            SmartRules {
+                rating: stars(4),
+                ..Default::default()
+            },
+        ),
+        (
+            "Picked, red",
+            SmartRules {
+                flag: Some(FlagRule::Picked),
+                label: Some(ColourLabel::Red),
+                ..Default::default()
+            },
+        ),
+        (
+            "Not edited, unrated",
+            SmartRules {
+                edited: Some(false),
+                rating: Some(RatingRule::Unrated),
+                ..Default::default()
+            },
+        ),
+        (
+            "★ 3 and up, \"z 6 2023\"",
+            SmartRules {
+                rating: stars(3),
+                words: "z 6 2023".into(),
+                ..Default::default()
+            },
+        ),
+        (
+            "\"trip 42\"",
+            SmartRules {
+                words: "trip 42".into(),
+                ..Default::default()
+            },
+        ),
+    ];
+    let median = |f: &dyn Fn() -> usize| {
+        let mut times: Vec<f64> = (0..7)
+            .map(|_| {
+                let t = std::time::Instant::now();
+                std::hint::black_box(f());
+                t.elapsed().as_secs_f64() * 1000.0
+            })
+            .collect();
+        times.sort_by(f64::total_cmp);
+        times[3]
+    };
+    for (name, rules) in &cases {
+        let found = l.cat.matching(rules).unwrap().len();
+        let count = median(&|| l.cat.count_matching(rules).unwrap());
+        let list = median(&|| l.cat.matching(rules).unwrap().len());
+        eprintln!("{name}: {found} photos, count {count:.1} ms, list {list:.1} ms");
+    }
+    for (name, rules) in &cases {
+        l.cat.add_smart_collection(name, rules).unwrap();
+    }
+    let all = median(&|| l.cat.smart_collections().unwrap().len());
+    eprintln!("the sidebar's five smart collections with counts: {all:.1} ms");
+}

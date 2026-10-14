@@ -15,6 +15,9 @@ import type { CollectionCountsDto } from "./generated/CollectionCountsDto";
 import type { CollectionKindDto } from "./generated/CollectionKindDto";
 import type { AlbumDto } from "./generated/AlbumDto";
 import type { AlbumListingDto } from "./generated/AlbumListingDto";
+import type { SmartCollectionDto } from "./generated/SmartCollectionDto";
+import type { SmartCollectionListingDto } from "./generated/SmartCollectionListingDto";
+import type { SmartRulesDto } from "./generated/SmartRulesDto";
 import type { CollectionListingDto } from "./generated/CollectionListingDto";
 import type { SearchResultsDto } from "./generated/SearchResultsDto";
 import type { DiagnosticsDto } from "./generated/DiagnosticsDto";
@@ -208,6 +211,19 @@ export const deleteAlbum = (id: number) => invoke<void>("delete_album", { id });
 export const addToAlbum = (id: number, paths: string[]) => invoke<AlbumDto>("add_to_album", { id, paths });
 export const removeFromAlbum = (id: number, paths: string[]) => invoke<AlbumDto>("remove_from_album", { id, paths });
 export const albumPhotos = (id: number) => invoke<AlbumListingDto>("album_photos", { id });
+
+/** Smart collections (ADR 0084): named rules, filled from the catalogue each time. */
+export const listSmartCollections = () => invoke<SmartCollectionDto[]>("list_smart_collections");
+export const createSmartCollection = (name: string, rules: SmartRulesDto) =>
+  invoke<SmartCollectionDto>("create_smart_collection", { name, rules });
+export const updateSmartCollection = (id: number, name: string, rules: SmartRulesDto) =>
+  invoke<SmartCollectionDto>("update_smart_collection", { id, name, rules });
+/** Deletes a smart collection; its photos are untouched. */
+export const deleteSmartCollection = (id: number) => invoke<void>("delete_smart_collection", { id });
+/** How many photos `rules` match, while they are chosen. */
+export const countSmartRules = (rules: SmartRulesDto) => invoke<number>("count_smart_rules", { rules });
+export const smartCollectionPhotos = (id: number) =>
+  invoke<SmartCollectionListingDto>("smart_collection_photos", { id });
 /** The library's photos matching every word of `query` (ADR 0056): file and folder
  *  names, camera, lens, capture date. */
 export const searchLibrary = (query: string) => invoke<SearchResultsDto>("search_library", { query });

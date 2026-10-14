@@ -11,6 +11,9 @@ import type { CollectionListingDto } from "../../ipc/generated/CollectionListing
 import type { FolderListingDto } from "../../ipc/generated/FolderListingDto";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { SearchResultsDto } from "../../ipc/generated/SearchResultsDto";
+import type { SmartCollectionDto } from "../../ipc/generated/SmartCollectionDto";
+import type { SmartCollectionListingDto } from "../../ipc/generated/SmartCollectionListingDto";
+import type { SmartRulesDto } from "../../ipc/generated/SmartRulesDto";
 import type { PhotoEntryDto } from "../../ipc/generated/PhotoEntryDto";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { LibraryStatusDto } from "../../ipc/generated/LibraryStatusDto";
@@ -25,10 +28,14 @@ import {
   type LibraryFilter,
   type LibrarySort,
 } from "./marks";
+import { matchesMarks } from "./smart";
 
 export type IndexProgress = Extract<IndexEvent, { type: "progress" }>;
 export type IndexFinished = Extract<IndexEvent, { type: "finished" }>;
 export type { LibraryLayout } from "../../ipc/generated/LibraryLayout";
+
+/** How long marks and edits rest before smart collections are counted again. */
+const SMART_REFRESH_DELAY_MS = 400;
 
 const DEFAULT_VIEW: LibraryViewSettings = { layout: "grid", filter: "all", label: null, sort: "captured" };
 
@@ -100,6 +107,9 @@ export function useLibrary(remembered?: RememberedView) {
   /** The albums (ADR 0055), and the one being viewed instead of a folder. */
   const [albums, setAlbums] = useState<AlbumDto[]>([]);
   const [album, setAlbum] = useState<AlbumListingDto | null>(null);
+  /** The smart collections (ADR 0084), and the one being viewed instead of a folder. */
+  const [smartCollections, setSmartCollections] = useState<SmartCollectionDto[]>([]);
+  const [smart, setSmart] = useState<SmartCollectionListingDto | null>(null);
   /** A search of the whole library (ADR 0056): what is typed, and its results, shown
    *  over whatever view is underneath until cleared. */
   const [query, setQuery] = useState("");
@@ -144,10 +154,22 @@ export function useLibrary(remembered?: RememberedView) {
   const refreshAlbums = useCallback(() => {
     ipc.listAlbums().then(setAlbums, () => undefined);
   }, []);
+  /** Smart collections' counts change with marks, edits and indexing. */
+  const refreshSmart = useCallback(() => {
+    ipc.listSmartCollections().then(setSmartCollections, () => undefined);
+  }, []);
+  /** After marks or edits: once a burst of them settles, as counting a large library's
+   *  smart collections takes up to a tenth of a second (PERFORMANCE §60). */
+  const smartTimer = useRef<number | undefined>(undefined);
+  const refreshSmartSoon = useCallback(() => {
+    window.clearTimeout(smartTimer.current);
+    smartTimer.current = window.setTimeout(refreshSmart, SMART_REFRESH_DELAY_MS);
+  }, [refreshSmart]);
 
   useEffect(() => {
     refreshStatus();
     refreshAlbums();
+    refreshSmart();
     const unlisten = ipc
       .onIndexEvent((e) => {
         if (e.type === "progress") {
@@ -159,6 +181,7 @@ export function useLibrary(remembered?: RememberedView) {
           setLastIndex(e);
           refreshStatus();
           refreshAlbums();
+          refreshSmart();
           // The open folder may have gained or lost photos.
           const open = listingRef.current;
           if (open && open.breadcrumbs[0]?.path === e.root) void load(() => ipc.listFolder(open.path));
@@ -168,7 +191,7 @@ export function useLibrary(remembered?: RememberedView) {
       })
       .catch(() => () => {});
     return () => void unlisten.then((u) => u());
-  }, [load, refreshStatus, refreshAlbums]);
+  }, [load, refreshStatus, refreshAlbums, refreshSmart]);
 
   const chooseFolder = useCallback(async () => {
     const result = await load(ipc.chooseFolder);
@@ -204,6 +227,7 @@ export function useLibrary(remembered?: RememberedView) {
       if (result) {
         setCollection(null);
         setAlbum(null);
+        setSmart(null);
         clearSearch();
         remember({ kind: "folder", path: result.path });
       }
@@ -219,6 +243,7 @@ export function useLibrary(remembered?: RememberedView) {
     try {
       setCollection(await ipc.libraryCollection(kind));
       setAlbum(null);
+      setSmart(null);
       clearSearch();
       setError(null);
       remember({ kind: "collection", collection: kind });
@@ -239,6 +264,7 @@ export function useLibrary(remembered?: RememberedView) {
       const listing = await ipc.albumPhotos(id);
       setAlbum(listing);
       setCollection(null);
+      setSmart(null);
       clearSearch();
       setAlbums((all) => all.map((a) => (a.id === id ? listing.album : a)));
       setError(null);
@@ -252,6 +278,29 @@ export function useLibrary(remembered?: RememberedView) {
       setLoading(false);
     }
   }, [refreshAlbums, clearSearch]);
+
+  /** Opens a smart collection; whether it opened (it may have been deleted). */
+  const openSmart = useCallback(async (id: number): Promise<boolean> => {
+    setLoading(true);
+    requestRef.current++; // a folder listing still in flight must not replace this view
+    try {
+      const listing = await ipc.smartCollectionPhotos(id);
+      setSmart(listing);
+      setCollection(null);
+      setAlbum(null);
+      clearSearch();
+      setSmartCollections((all) => all.map((c) => (c.id === id ? listing.collection : c)));
+      setError(null);
+      remember({ kind: "smartCollection", id });
+      return true;
+    } catch (e) {
+      setError(await toAppError(e));
+      refreshSmart();
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }, [refreshSmart, clearSearch]);
 
   /** Runs an album change; the albums (and the album shown, if it is the one changed)
    *  are refreshed after. Errors are shown; returns the album, or null. */
@@ -273,17 +322,20 @@ export function useLibrary(remembered?: RememberedView) {
 
   /** The photos of the current view (search, album, collection or folder), before
    *  filtering. */
-  const unsorted: PhotoEntryDto[] = search?.photos ?? album?.photos ?? collection?.photos ?? listing?.photos ?? [];
-  const ownOrder = !search && !album && keepsOwnOrder(collection?.kind ?? null);
+  const unsorted: PhotoEntryDto[] = search?.photos ?? album?.photos ?? smart?.photos ?? collection?.photos ?? listing?.photos ?? [];
+  const ownOrder = !search && !album && !smart && keepsOwnOrder(collection?.kind ?? null);
   const photos = useMemo(() => (ownOrder ? unsorted : sortPhotos(unsorted, sort)), [unsorted, sort, ownOrder]);
-  const shownCollection = search || album ? null : (collection?.kind ?? null);
+  const shownCollection = search || album || smart ? null : (collection?.kind ?? null);
+  /** The smart collection's rules while it is shown, unless a search covers it. */
+  const shownRules = search ? null : (smart?.collection.rules ?? null);
   const photosRef = useRef(photos);
   photosRef.current = photos;
   /** What the grid shows: the view's photos in order, after the filters (and collection membership). */
-  const visible = useMemo(
-    () => visiblePhotos(photos, filter, shownCollection, labelFilter),
-    [photos, filter, shownCollection, labelFilter],
-  );
+  const visible = useMemo(() => {
+    const shown = visiblePhotos(photos, filter, shownCollection, labelFilter);
+    // A photo marked out of a smart collection leaves it at once, as from Picks.
+    return shownRules ? shown.filter((p) => matchesMarks(p, shownRules)) : shown;
+  }, [photos, filter, shownCollection, labelFilter, shownRules]);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
 
@@ -311,17 +363,19 @@ export function useLibrary(remembered?: RememberedView) {
       setListing((l) => (l ? { ...l, photos: update(l.photos) } : l));
       setCollection((c) => (c ? { ...c, photos: update(c.photos) } : c));
       setAlbum((a) => (a ? { ...a, photos: update(a.photos) } : a));
+      setSmart((c) => (c ? { ...c, photos: update(c.photos) } : c));
       setSearch((s) => (s ? { ...s, photos: update(s.photos) } : s));
       try {
         const collections = await ipc.setPhotoMarks(paths, change);
         setStatus((s) => (s ? { ...s, collections } : s));
+        refreshSmartSoon();
       } catch (e) {
         setError(await toAppError(e));
         const open = listingRef.current;
         if (open) void load(() => ipc.listFolder(open.path));
       }
     },
-    [load],
+    [load, refreshSmartSoon],
   );
 
   /** A photo's edit was saved (or reset): update its "edited" state in the view, and
@@ -331,17 +385,20 @@ export function useLibrary(remembered?: RememberedView) {
     setListing((l) => (l ? { ...l, photos: update(l.photos) } : l));
     setCollection((c) => (c ? { ...c, photos: update(c.photos) } : c));
     setAlbum((a) => (a ? { ...a, photos: update(a.photos) } : a));
+    setSmart((c) => (c ? { ...c, photos: update(c.photos) } : c));
     setSearch((s) => (s ? { ...s, photos: update(s.photos) } : s));
     setThumbRevs((r) => ({ ...r, [path]: (r[path] ?? 0) + 1 }));
-    // Recently edited (ADR 0079): its count, and its photos and order when shown.
+    // Recently edited (ADR 0079): its count, and its photos and order when shown;
+    // smart collections that ask for edited photos.
     refreshStatus();
+    refreshSmartSoon();
     if (collectionRef.current?.kind === "edited") {
       ipc.libraryCollection("edited").then(
         (c) => setCollection((now) => (now?.kind === "edited" ? c : now)),
         () => undefined,
       );
     }
-  }, [refreshStatus]);
+  }, [refreshStatus, refreshSmartSoon]);
 
   /** Ticks or unticks a photo for batch editing. */
   const toggleBatch = useCallback((path: string) => {
@@ -421,6 +478,43 @@ export function useLibrary(remembered?: RememberedView) {
       refreshAlbums();
     },
     addToAlbum: (id: number, paths: string[]) => albumChange(() => ipc.addToAlbum(id, paths)),
+    smartCollections,
+    smart,
+    openSmart,
+    /** A new smart collection, opened once made; null (with the error shown) if not. */
+    createSmart: async (name: string, rules: SmartRulesDto): Promise<SmartCollectionDto | null> => {
+      try {
+        const made = await ipc.createSmartCollection(name, rules);
+        refreshSmart();
+        void openSmart(made.id);
+        return made;
+      } catch (e) {
+        setError(await toAppError(e));
+        return null;
+      }
+    },
+    /** Renames a smart collection and replaces its rules; reloaded if shown. */
+    updateSmart: async (id: number, name: string, rules: SmartRulesDto): Promise<SmartCollectionDto | null> => {
+      try {
+        const changed = await ipc.updateSmartCollection(id, name, rules);
+        refreshSmart();
+        if (smart?.collection.id === id) void openSmart(id);
+        return changed;
+      } catch (e) {
+        setError(await toAppError(e));
+        refreshSmart();
+        return null;
+      }
+    },
+    deleteSmart: async (id: number) => {
+      try {
+        await ipc.deleteSmartCollection(id);
+        setSmart((shown) => (shown?.collection.id === id ? null : shown));
+      } catch (e) {
+        setError(await toAppError(e));
+      }
+      refreshSmart();
+    },
     /** Takes `paths` out of an album; out of the view too when it is the one shown. */
     removeFromAlbum: async (id: number, paths: string[]) => {
       const changed = await albumChange(() => ipc.removeFromAlbum(id, paths));

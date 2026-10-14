@@ -6,6 +6,10 @@ import { formatDateRange } from "../../lib/format";
 import { hasCommandModifier, isTextEntry } from "../../lib/keyboard";
 import type { SettingsApi } from "../settings/useSettings";
 import { AddToAlbum, AlbumSettings, AlbumsNav, photosText, setDraggedPaths } from "./Albums";
+import { SmartCollectionEditor, SmartCollectionsNav } from "./SmartCollections";
+import { NO_RULES, rulesSummary } from "./smart";
+import type { SmartCollectionDto } from "../../ipc/generated/SmartCollectionDto";
+import type { SmartRulesDto } from "../../ipc/generated/SmartRulesDto";
 import { indexStatusText } from "./indexStatus";
 import { NavGroup } from "./NavGroup";
 import { LabelFilter } from "../../components/ColourLabels";
@@ -46,7 +50,9 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
             ? (await library.openFolder(last.path)) !== null
             : last.kind === "collection"
               ? await library.openCollection(last.collection)
-              : await library.openAlbum(last.id);
+              : last.kind === "album"
+                ? await library.openAlbum(last.id)
+                : await library.openSmart(last.id);
       if (!reopened && s.library.defaultFolder) await library.openFolder(s.library.defaultFolder);
     })();
   }, [s, listing, library]);
@@ -76,7 +82,14 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
   // A search shows over the view underneath, which comes back when it is cleared.
   const collection = search ? null : library.collection;
   const albumShown = search ? null : album;
-  const [popover, setPopover] = useState<{ kind: "add" | "album"; anchor: HTMLElement } | null>(null);
+  const smartShown = search ? null : library.smart;
+  /** Something other than a folder fills the view. */
+  const covered = Boolean(collection || albumShown || smartShown || search);
+  const [popover, setPopover] = useState<
+    | { kind: "add" | "album"; anchor: HTMLElement }
+    | { kind: "smart"; anchor: HTMLElement; editing: SmartCollectionDto | null; start?: { name: string; rules: SmartRulesDto } }
+    | null
+  >(null);
   const ticked = new Set(library.batch);
   const targets = library.targets();
   /** ⌘-click ticks a photo, ⇧-click the range to it (the filmstrip's ticks, ADR 0049);
@@ -192,7 +205,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
               <button
                 key={f}
                 className="nav-row"
-                aria-current={!collection && !albumShown && !search && currentRoot === f ? "true" : undefined}
+                aria-current={!covered && currentRoot === f ? "true" : undefined}
                 title={f}
                 onClick={() => void library.openFolder(f)}
               >
@@ -207,6 +220,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
             ))}
           </NavGroup>
           <AlbumsNav library={library} notify={notify} />
+          <SmartCollectionsNav library={library} onNew={(anchor) => setPopover({ kind: "smart", anchor, editing: null })} />
         </div>
         <div className="sidebar-footer">
           <button className="block" onClick={() => void choose()}>
@@ -222,7 +236,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
 
       <section className="library-main">
         {library.status?.notice && <p className="notice library-notice">{library.status.notice}</p>}
-        {!listing && !collection && !album && !search ? (
+        {!listing && !collection && !album && !library.smart && !search ? (
           <div className="empty-state">
             {loading ? (
               <p>Loading…</p>
@@ -241,7 +255,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
           <>
             <header className="page-header">
               <div className="page-title">
-                {!collection && !albumShown && !search && listing && listing.breadcrumbs.length > 1 && (
+                {!covered && listing && listing.breadcrumbs.length > 1 && (
                   <nav className="crumbs" aria-label="Folder">
                     {listing.breadcrumbs.slice(0, -1).map((c) => (
                       <span key={c.path}>
@@ -255,13 +269,20 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                 )}
                 {(collection || search) && <span className="crumbs">{search ? "Search · across all folders" : "Across all folders"}</span>}
                 {albumShown && <span className="crumbs">Album</span>}
+                {smartShown && (
+                  <span className="crumbs" title="Photos matching every rule">
+                    {["Smart collection", rulesSummary(smartShown.collection.rules)].filter(Boolean).join(" · ")}
+                  </span>
+                )}
                 <div className="page-title-row">
                   <h1>
                     {search
                       ? `“${search.query.trim()}”`
                       : albumShown
                         ? albumShown.album.name
-                        : collection
+                        : smartShown
+                          ? smartShown.collection.name
+                          : collection
                           ? COLLECTION_NAMES[collection.kind]
                           : listing?.name}
                   </h1>
@@ -306,6 +327,34 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                     Add to album
                   </button>
                 )}
+                {search && (
+                  <button
+                    className="ghost"
+                    title="Keep this search in the sidebar, with other rules if you like"
+                    aria-expanded={popover?.kind === "smart"}
+                    onClick={(e) =>
+                      setPopover({
+                        kind: "smart",
+                        anchor: e.currentTarget,
+                        editing: null,
+                        start: { name: search.query.trim(), rules: { ...NO_RULES, words: search.query.trim() } },
+                      })
+                    }
+                  >
+                    Save as smart collection
+                  </button>
+                )}
+                {smartShown && (
+                  <button
+                    className="icon-button"
+                    aria-label="Change the rules, rename or delete this smart collection"
+                    title="Change the rules, rename or delete"
+                    aria-expanded={popover?.kind === "smart"}
+                    onClick={(e) => setPopover({ kind: "smart", anchor: e.currentTarget, editing: smartShown.collection })}
+                  >
+                    <MoreIcon />
+                  </button>
+                )}
                 {albumShown && (
                   <button
                     className="icon-button"
@@ -317,7 +366,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                     <MoreIcon />
                   </button>
                 )}
-                {!collection && !albumShown && !search && listing && (
+                {!covered && listing && (
                   <>
                     <button className="ghost" onClick={() => void library.refresh()}>
                       <RefreshIcon />
@@ -372,9 +421,19 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
             <div
               className="library-scroll scroll"
               ref={scrollRef}
-              key={search ? "search" : albumShown ? `album:${albumShown.album.id}` : collection ? `collection:${collection.kind}` : listing?.path}
+              key={
+                search
+                  ? "search"
+                  : albumShown
+                    ? `album:${albumShown.album.id}`
+                    : smartShown
+                      ? `smart:${smartShown.collection.id}`
+                      : collection
+                        ? `collection:${collection.kind}`
+                        : listing?.path
+              }
             >
-              {!collection && !albumShown && !search && listing && listing.folders.length > 0 && (
+              {!covered && listing && listing.folders.length > 0 && (
                 <div className="chips">
                   {listing.folders.map((f) => (
                     <button key={f.path} className="chip" onClick={() => void library.openFolder(f.path)}>
@@ -393,6 +452,10 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                     : albumShown
                     ? library.photos.length === 0
                       ? "Nothing here yet. Drag photos onto the album in the sidebar, or select some and use Add to album."
+                      : "No photos match this filter."
+                    : smartShown
+                    ? library.photos.length === 0
+                      ? "No photos match these rules yet. They show here as soon as they do."
                       : "No photos match this filter."
                     : emptyMessage(library.photos.length, library.filter, collection?.kind ?? null, library.labelFilter)}
                 </p>
@@ -418,7 +481,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                   onDrag={drag}
                 />
               )}
-              {!collection && !albumShown && !search && listing && listing.skipped > 0 && (
+              {!covered && listing && listing.skipped > 0 && (
                 <p className="muted">{listing.skipped} item(s) couldn’t be read and are not shown.</p>
               )}
             </div>
@@ -430,6 +493,15 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
       )}
       {popover?.kind === "album" && albumShown && (
         <AlbumSettings library={library} album={albumShown.album} anchor={popover.anchor} onClose={() => setPopover(null)} />
+      )}
+      {popover?.kind === "smart" && (
+        <SmartCollectionEditor
+          library={library}
+          editing={popover.editing}
+          start={popover.start}
+          anchor={popover.anchor}
+          onClose={() => setPopover(null)}
+        />
       )}
     </div>
   );

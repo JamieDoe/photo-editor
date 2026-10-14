@@ -1209,3 +1209,24 @@ three rounds of five on the noisy machine:
 Red and blue are each sampled through the profile's curve at the pixel's radius (a
 square root and two cubic Hermite lookups), once per framing change. Previews and
 exports then reuse the framed image.
+
+## 60. Smart collections (ADR 0084)
+
+In-memory catalogue of 20,000 photos (paths like `2023/Trip 42/DSC_01234.NEF`, with
+camera, lens, capture time, marks on about a quarter and edits on one in thirteen),
+release build, median of 7. `cargo test --release -p catalogue
+smart_collections_at_scale -- --ignored --nocapture`.
+
+| Rules | Photos | Count | List |
+|---|---|---|---|
+| ★ 4 and up | 2,000 | 2.5 ms | 5.3 ms |
+| Picked, red | 260 | 1.1 ms | 2.7 ms |
+| Not edited, unrated | 13,846 | 6.9 ms | 29.3 ms |
+| ★ 3 and up, "z 6 2023" | 276 | 11.5 ms | 11.5 ms |
+| "trip 42" | 1,045 | 84.6 ms | 85.5 ms |
+| The sidebar's five, with counts | — | 107 ms | — |
+
+Rules on marks and edits are indexed columns and cost a few milliseconds. Words cost what
+a search does (§38, a `LIKE` scan of each photo's path, camera and lens). Counts run on a
+blocking thread when the sidebar refreshes: at start, after indexing, and 400 ms after a
+burst of marks or edits settles, so rating with the keys costs no more than before.
