@@ -286,6 +286,13 @@ export const SmartIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** A photo's title and caption (ADR 0089): lines of text. */
+export const CaptionIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M3 4h10M3 7.33h10M3 10.67h6.5" />
+  </Icon>
+);
+
 /** Keywords (ADR 0088): a luggage tag. */
 export const TagIcon = (p: IconProps) => (
   <Icon {...p}>

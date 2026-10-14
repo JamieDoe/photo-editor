@@ -8,7 +8,7 @@ use rusqlite::Connection;
 use crate::CatalogueError;
 
 /// Schema version this build creates and understands.
-pub const SCHEMA_VERSION: i64 = 11;
+pub const SCHEMA_VERSION: i64 = 12;
 
 const MIGRATIONS: &[&str] = &[
     // 1: library folders, photos, files.
@@ -156,6 +156,14 @@ const MIGRATIONS: &[&str] = &[
     ) WITHOUT ROWID;
     CREATE INDEX photo_keywords_by_keyword ON photo_keywords(keyword_id);
     ALTER TABLE smart_collections ADD COLUMN keyword TEXT;
+    "#,
+    // 12: a photo's title and caption, and its own creator and copyright (ADR 0089);
+    // NULL for none (the creator and copyright then come from the settings).
+    r#"
+    ALTER TABLE photos ADD COLUMN title TEXT;
+    ALTER TABLE photos ADD COLUMN caption TEXT;
+    ALTER TABLE photos ADD COLUMN creator TEXT;
+    ALTER TABLE photos ADD COLUMN copyright TEXT;
     "#,
 ];
 

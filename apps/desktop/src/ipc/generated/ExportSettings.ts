@@ -48,4 +48,13 @@ longEdge: number | null,
  * The export preset last chosen ("web", "social", "full"), if the settings still
  * match it.
  */
-preset: string | null, };
+preset: string | null, 
+/**
+ * Who made the photos, written into every export unless a photo has its own
+ * (ADR 0089); none while empty.
+ */
+creator: string, 
+/**
+ * Their copyright notice ("© 2026 Jamie Doe"), likewise.
+ */
+copyright: string, };

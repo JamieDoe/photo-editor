@@ -1,5 +1,6 @@
 //! Searching the library (ADR 0056): the photos whose file (name or folders), camera,
-//! lens, keywords (ADR 0088) or capture date match every word of a query.
+//! lens, keywords (ADR 0088), title or caption (ADR 0089) or capture date match every
+//! word of a query.
 //!
 //! Folder names are where places usually are ("2026 Iceland/Day 1"), so a place finds
 //! its photos without location data. Dates are found by year ("2026"), month name
@@ -15,7 +16,7 @@ const MAX_TERMS: usize = 8;
 /// One word of a query, as matched.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Term {
-    /// In the file's path, the camera, the lens or a keyword.
+    /// In the file's path, the camera, the lens, a keyword, the title or the caption.
     Text(String),
     /// A capture year, or text.
     Year(u16, String),
@@ -114,6 +115,7 @@ pub(crate) fn condition(terms: &[Term]) -> (String, Vec<String>) {
         format!(
             "({BELOW_LIBRARY} LIKE ?{n} ESCAPE '\\' OR p.camera_make LIKE ?{n} ESCAPE '\\' \
              OR p.camera_model LIKE ?{n} ESCAPE '\\' OR p.lens LIKE ?{n} ESCAPE '\\' \
+             OR p.title LIKE ?{n} ESCAPE '\\' OR p.caption LIKE ?{n} ESCAPE '\\' \
              OR p.id IN (SELECT pk.photo_id FROM keywords k JOIN photo_keywords pk \
                          ON pk.keyword_id = k.id WHERE k.name LIKE ?{n} ESCAPE '\\'))"
         )

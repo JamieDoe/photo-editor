@@ -1287,3 +1287,17 @@ works out once per word over the keywords (hundreds or thousands) rather than on
 photo. A first version asked per photo (`EXISTS`): words then cost 30% more than before,
 and a keyword rule 9 ms. Searches run off the main thread after typing pauses (§38).
 
+## 64. Titles and captions in search (ADR 0089)
+
+The catalogue of §63, release build, median of 7, three runs each, alternated on the
+same machine, with and without the two extra `LIKE`s on the title and caption:
+
+| Words | Without | With |
+|---|---|---|
+| "nothing-here" | 46.5–47.7 ms | 47.9–48.5 ms |
+| "trip 42" | 88.8–89.0 ms | 91.2–91.4 ms |
+
+About 2% more: most photos have neither, and a `LIKE` on an empty column is quick.
+(Both are slower than §63's figures because the machine was busier; the comparison is
+within one sitting.)
+

@@ -677,6 +677,39 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       keywordsCheck.shared.includes("Self-test loch:" + keywordsCheck.photos) &&
       keywordsCheck.left === 0;
 
+    // A photo's words (ADR 0089) through the real commands and catalogue: two photos of
+    // the fixtures folder take a caption together and one a title and its own
+    // copyright; shared fields read as shared, differing ones as mixed; search finds
+    // the caption; cleared again, nothing is left.
+    const textCheck = await (async () => {
+      if (!indexing) return null;
+      const photos = (await ipc.listFolder(indexing.folder)).photos.slice(0, 2).map((p) => p.path);
+      if (photos.length < 2) return null;
+      const [one] = photos;
+      await ipc.setPhotoText(photos, "caption", "  Self-test   heron\n\n\nfishing ");
+      await ipc.setPhotoText([one!], "title", "Self-test patience");
+      const own = await ipc.setPhotoText([one!], "copyright", "© 2026 Self-test");
+      const both = await ipc.photoText(photos);
+      const found = (await ipc.searchLibrary("self-test heron")).photos.filter((p) => photos.includes(p.path)).length;
+      for (const field of ["caption", "title", "copyright"] as const) await ipc.setPhotoText(photos, field, "  ");
+      const cleared = await ipc.photoText(photos);
+      return {
+        caption: both.caption,
+        title: both.title,
+        ownCopyright: own.copyright.value,
+        found,
+        cleared: [cleared.title, cleared.caption, cleared.copyright].every((f) => f.value === null && !f.mixed),
+      };
+    })();
+    const textOk =
+      textCheck !== null &&
+      textCheck.caption.value === "Self-test heron\n\nfishing" &&
+      !textCheck.caption.mixed &&
+      textCheck.title.mixed &&
+      textCheck.ownCopyright === "© 2026 Self-test" &&
+      textCheck.found === 2 &&
+      textCheck.cleared;
+
     // Search and Recently imported (ADR 0056) through the real commands and catalogue:
     // the fixtures folder's name, the test photo's camera and capture year find it; a
     // nonsense word finds nothing; the photos just indexed are recently imported.
@@ -2124,6 +2157,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       albums: albumsOk,
       smartCollections: smartOk,
       keywords: keywordsOk,
+      titlesAndCaptions: textOk,
       search: searchOk,
       savedEdits: editsOk,
       toneCurve: toneCurveOk,
@@ -2211,6 +2245,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       albums,
       smartCollections: smartCheck,
       keywords: keywordsCheck,
+      titlesAndCaptions: textCheck,
       thirdPartyNotices: { libraries: libraries.length, texts: Object.keys(notices?.texts ?? {}).length },
       search: searchCheck,
       edits,

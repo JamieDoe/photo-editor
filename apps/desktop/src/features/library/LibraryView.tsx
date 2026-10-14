@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
-import { AlbumIcon, CloseIcon, FolderIcon, SearchIcon, ImportIcon, MoreIcon, PencilIcon, PhotosIcon, PickIcon, RatingStar, RefreshIcon, RejectIcon, StarIcon, TagIcon } from "../../components/icons";
+import { AlbumIcon, CloseIcon, FolderIcon, SearchIcon, ImportIcon, MoreIcon, PencilIcon, PhotosIcon, PickIcon, RatingStar, RefreshIcon, RejectIcon, StarIcon, TagIcon, CaptionIcon } from "../../components/icons";
 import type { CollectionKindDto } from "../../ipc/generated/CollectionKindDto";
 import * as ipc from "../../ipc/client";
 import { formatDateRange } from "../../lib/format";
@@ -7,6 +7,7 @@ import { hasCommandModifier, isTextEntry } from "../../lib/keyboard";
 import type { SettingsApi } from "../settings/useSettings";
 import { AddToAlbum, AlbumSettings, AlbumsNav, photosText, setDraggedPaths } from "./Albums";
 import { KeywordsEditor } from "./KeywordsEditor";
+import { PhotoTextEditor } from "./PhotoTextEditor";
 import { SmartCollectionEditor, SmartCollectionsNav } from "./SmartCollections";
 import { NO_RULES, rulesSummary } from "./smart";
 import type { SmartCollectionDto } from "../../ipc/generated/SmartCollectionDto";
@@ -87,7 +88,7 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
   /** Something other than a folder fills the view. */
   const covered = Boolean(collection || albumShown || smartShown || search);
   const [popover, setPopover] = useState<
-    | { kind: "add" | "album" | "keywords"; anchor: HTMLElement }
+    | { kind: "add" | "album" | "keywords" | "text"; anchor: HTMLElement }
     | { kind: "smart"; anchor: HTMLElement; editing: SmartCollectionDto | null; start?: { name: string; rules: SmartRulesDto } }
     | null
   >(null);
@@ -353,6 +354,17 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
                     Keywords
                   </button>
                 )}
+                {targets.length > 0 && (
+                  <button
+                    className="ghost"
+                    aria-expanded={popover?.kind === "text"}
+                    title="Title, caption, creator and copyright of the selected or ticked photos"
+                    onClick={(e) => setPopover({ kind: "text", anchor: e.currentTarget })}
+                  >
+                    <CaptionIcon />
+                    Caption
+                  </button>
+                )}
                 {search && (
                   <button
                     className="ghost"
@@ -522,7 +534,16 @@ export function LibraryView({ library, settings, onOpenPhoto, notify }: Props) {
           paths={targets}
           anchor={popover.anchor}
           onClose={() => setPopover(null)}
-          onChanged={library.keywordsChanged}
+          onChanged={library.wordsChanged}
+          onError={(e) => void library.reportError(e)}
+        />
+      )}
+      {popover?.kind === "text" && (
+        <PhotoTextEditor
+          paths={targets}
+          anchor={popover.anchor}
+          onClose={() => setPopover(null)}
+          onChanged={library.wordsChanged}
           onError={(e) => void library.reportError(e)}
         />
       )}

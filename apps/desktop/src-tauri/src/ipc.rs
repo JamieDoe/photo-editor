@@ -1020,6 +1020,52 @@ impl From<app_core::KeywordUse> for KeywordUseDto {
     }
 }
 
+/// One of a photo's words (ADR 0089).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub enum TextFieldDto {
+    Title,
+    Caption,
+    Creator,
+    Copyright,
+}
+
+impl From<TextFieldDto> for app_core::TextField {
+    fn from(f: TextFieldDto) -> Self {
+        match f {
+            TextFieldDto::Title => Self::Title,
+            TextFieldDto::Caption => Self::Caption,
+            TextFieldDto::Creator => Self::Creator,
+            TextFieldDto::Copyright => Self::Copyright,
+        }
+    }
+}
+
+/// One word field across some photos: their value when they share one (null for none),
+/// or `mixed` when they differ.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct SharedTextDto {
+    pub value: Option<String>,
+    pub mixed: bool,
+}
+
+/// Some photos' words (ADR 0089). A creator or copyright of null means the photos use
+/// the settings' (`defaultCreator`, `defaultCopyright`, null when empty).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct PhotoTextDto {
+    pub title: SharedTextDto,
+    pub caption: SharedTextDto,
+    pub creator: SharedTextDto,
+    pub copyright: SharedTextDto,
+    pub default_creator: Option<String>,
+    pub default_copyright: Option<String>,
+}
+
 /// A smart collection (ADR 0084) as the library shows it.
 #[derive(Debug, Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

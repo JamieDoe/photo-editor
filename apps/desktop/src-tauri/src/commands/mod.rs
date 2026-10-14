@@ -11,6 +11,7 @@ pub mod images;
 pub mod keywords;
 pub mod library;
 pub mod marks;
+pub mod photo_text;
 pub mod presets;
 pub mod selftest;
 pub mod settings;

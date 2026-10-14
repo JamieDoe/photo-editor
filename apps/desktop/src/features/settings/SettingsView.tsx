@@ -156,6 +156,38 @@ export function SettingsView({ api }: { api: SettingsApi }) {
                 }}
               />
             </div>
+            <label className="setting stacked">
+              <span className="setting-text">
+                <span className="setting-name">Creator</span>
+                <small>Who made your photos. Written into every export, unless a photo has its own.</small>
+              </span>
+              <input
+                className="text-input"
+                maxLength={200}
+                placeholder="Your name"
+                value={s.export.creator}
+                onChange={(e) => {
+                  const creator = e.currentTarget.value;
+                  update((x) => ({ ...x, export: { ...x.export, creator } }));
+                }}
+              />
+            </label>
+            <label className="setting stacked">
+              <span className="setting-text">
+                <span className="setting-name">Copyright</span>
+                <small>Your copyright notice, written into every export the same way.</small>
+              </span>
+              <input
+                className="text-input"
+                maxLength={200}
+                placeholder={`© ${new Date().getFullYear()} Your name`}
+                value={s.export.copyright}
+                onChange={(e) => {
+                  const copyright = e.currentTarget.value;
+                  update((x) => ({ ...x, export: { ...x.export, copyright } }));
+                }}
+              />
+            </label>
           </div>
         </section>
 

@@ -511,6 +511,7 @@ mod tests {
             rejected,
             label,
             keywords: Vec::new(),
+            description: Default::default(),
         }
     }
 

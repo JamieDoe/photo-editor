@@ -49,11 +49,12 @@ pub async fn export_image(
         }
     };
 
+    let credits = Credits::from_settings(&state.settings.get().export);
     let judgements = state
         .engine
         .image_path(ImageId(request.image_id))
-        .map(|path| marks_at(&state.catalogue, &path))
-        .unwrap_or_default();
+        .map(|path| marks_at(&state.catalogue, &path, &credits))
+        .unwrap_or_else(|| credits.judgements(None));
     let job_id = state.next_export_id.fetch_add(1, Ordering::Relaxed);
     let progress_app = app.clone();
     let handle = state.engine.export(
@@ -129,24 +130,70 @@ pub(crate) fn output_sharpening(s: settings::OutputSharpening) -> app_core::Outp
 }
 
 /// The colour space for the remembered settings' choice (ADR 0062).
-/// The marks (ADR 0067) and keywords (ADR 0088) of the photo whose file is at `path`,
-/// as an export writes them; none for a file outside the library or when the catalogue
-/// cannot say.
-fn marks_at(catalogue: &app_core::Catalogue, path: &std::path::Path) -> app_core::Judgements {
+/// The photographer's usual creator and copyright, from the settings (ADR 0089).
+struct Credits {
+    creator: Option<String>,
+    copyright: Option<String>,
+}
+
+impl Credits {
+    fn from_settings(export: &settings::ExportSettings) -> Self {
+        let given = |s: &str| Some(s.trim().to_owned()).filter(|s| !s.is_empty());
+        Self {
+            creator: given(&export.creator),
+            copyright: given(&export.copyright),
+        }
+    }
+
+    /// What an export writes about a photo with `text` (none for a photo outside the
+    /// library): its title and caption, and its own creator and copyright where it has
+    /// them, these otherwise.
+    fn judgements(&self, text: Option<app_core::PhotoText>) -> app_core::Judgements {
+        let text = text.unwrap_or_default();
+        app_core::Judgements {
+            description: app_core::Description {
+                title: text.title,
+                caption: text.caption,
+                creator: text.creator.or_else(|| self.creator.clone()),
+                copyright: text.copyright.or_else(|| self.copyright.clone()),
+            },
+            ..Default::default()
+        }
+    }
+}
+
+/// The marks (ADR 0067), keywords (ADR 0088) and words (ADR 0089) of the photo whose
+/// file is at `path`, as an export writes them; only the usual credits for a file
+/// outside the library or when the catalogue cannot say.
+fn marks_at(
+    catalogue: &app_core::Catalogue,
+    path: &std::path::Path,
+    credits: &Credits,
+) -> app_core::Judgements {
     let found = catalogue
         .photo_at(path)
         .and_then(|photo| {
             photo
-                .map(|p| Ok((catalogue.marks(p)?, catalogue.photo_keywords(p)?)))
+                .map(|p| {
+                    Ok((
+                        catalogue.marks(p)?,
+                        catalogue.photo_keywords(p)?,
+                        catalogue.photo_text(&[p])?.pop(),
+                    ))
+                })
                 .transpose()
         })
         .unwrap_or_else(|e| {
             log::warn!("marks lookup failed for {}: {e}", path.display());
             None
         });
-    found
-        .map(|(marks, keywords)| app_core::judgements(&marks, keywords))
-        .unwrap_or_default()
+    match found {
+        Some((marks, keywords, text)) => app_core::Judgements {
+            description: credits.judgements(text).description,
+            ..app_core::judgements(&marks, keywords)
+        },
+        None => credits.judgements(None),
+    }
 }
 
 fn watermark_position(p: settings::WatermarkPosition) -> app_core::WatermarkPosition {
@@ -329,6 +376,7 @@ pub async fn start_export(
         )
     });
     let catalogue = std::sync::Arc::clone(&state.catalogue);
+    let credits = Credits::from_settings(&state.settings.get().export);
     let resolved: Vec<Result<(PathBuf, EditRecipe, app_core::Judgements), FileFailureDto>> = batch
         .items
         .into_iter()
@@ -361,7 +409,7 @@ pub async fn start_export(
                         .unwrap_or_default()
                 }
             };
-            let judgements = marks_at(&catalogue, &source);
+            let judgements = marks_at(&catalogue, &source, &credits);
             Ok((source, recipe, judgements))
         })
         .collect();

@@ -1528,6 +1528,7 @@ pub fn judgements(marks: &catalogue::Marks, keywords: Vec<String>) -> export::me
     use export::metadata::LabelName;
     export::metadata::Judgements {
         keywords,
+        description: Default::default(),
         rating: marks.rating.stars(),
         rejected: marks.flag == catalogue::Flag::Reject,
         label: match marks.label {

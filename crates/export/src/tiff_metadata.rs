@@ -66,7 +66,7 @@ fn write_fields<W: Write + Seek>(
         align(dir)?;
         let tag = Tag::from_u16_exhaustive(*tag);
         match value {
-            Value::Ascii(s) => dir.write_tag(tag, s.as_str())?,
+            Value::Ascii(s) => dir.write_tag(tag, Text(s))?,
             Value::Byte(b) => dir.write_tag(tag, &b[..])?,
             Value::Short(v) => dir.write_tag(tag, *v)?,
             Value::Long(v) => dir.write_tag(tag, *v)?,
@@ -124,5 +124,25 @@ impl TiffValue for Undefined<'_> {
 
     fn data(&self) -> Cow<'_, [u8]> {
         Cow::Borrowed(self.0)
+    }
+}
+
+/// An ASCII field written as UTF-8, as JPEG and PNG EXIF carry it (the crate's own
+/// refuses anything beyond ASCII, such as a copyright notice's ©). Readers take these
+/// fields as UTF-8.
+struct Text<'a>(&'a str);
+
+impl TiffValue for Text<'_> {
+    const BYTE_LEN: u8 = 1;
+    const FIELD_TYPE: Type = Type::ASCII;
+
+    fn count(&self) -> usize {
+        self.0.len() + 1
+    }
+
+    fn data(&self) -> Cow<'_, [u8]> {
+        let mut bytes = self.0.as_bytes().to_vec();
+        bytes.push(0);
+        Cow::Owned(bytes)
     }
 }
