@@ -15,6 +15,11 @@ extern "C" {
  * libraw_close(). Returns NULL when out of memory. */
 libraw_data_t *pe_libraw_new(void);
 
+/* With `on`, an X-Trans demosaic makes one Markesteijn pass instead of three: about
+ * twice as fast, for views that are replaced or refined anyway (ADR 0092). `lr` must
+ * come from pe_libraw_new. Other sensors are unaffected. */
+void pe_libraw_quick_demosaic(libraw_data_t *lr, int on);
+
 #ifdef __cplusplus
 }
 #endif

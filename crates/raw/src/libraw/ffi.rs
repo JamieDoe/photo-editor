@@ -96,6 +96,8 @@ pub const LIBRAW_FILE_UNSUPPORTED: c_int = -2;
 pub const LIBRAW_UNSUFFICIENT_MEMORY: c_int = -100_007;
 pub const LIBRAW_IO_ERROR: c_int = -100_009;
 pub const LIBRAW_CANCELLED_BY_CALLBACK: c_int = -100_010;
+/// `pe_raw_decode` flag: a one-pass X-Trans demosaic (ADR 0092).
+pub const PE_RAW_QUICK_DEMOSAIC: u32 = 1;
 pub const LIBRAW_TOO_BIG: c_int = -100_012;
 
 unsafe extern "C" {
@@ -103,6 +105,7 @@ unsafe extern "C" {
         path: *const c_char,
         min_long_edge: u32,
         max_threads: u32,
+        flags: u32,
         cancel: PeCancelFn,
         cancel_ctx: *mut c_void,
         out_ctx: *mut *mut PeRawCtx,

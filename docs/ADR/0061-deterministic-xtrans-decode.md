@@ -128,3 +128,8 @@ per-pixel and unaffected by this change)
 - **Revisit when we build our own LibRaw** (ADR 0003): the fix belongs upstream.
   Ordering `copy_bayer` and giving `xtrans_interpolate` read-only context would
   remove the need for the subclass. Report both races to LibRaw.
+
+**Later (ADR 0092):** the editor's full-resolution decode, for zoom, can ask for one
+Markesteijn pass instead of three, about twice as fast. Output is still identical for
+any thread count.
+

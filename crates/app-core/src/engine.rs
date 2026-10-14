@@ -1225,7 +1225,12 @@ impl Shared {
         let t0 = Instant::now();
         let decoded = self.decoders.decode(
             &open.path,
-            DecodeOptions::new(DecodeScale::Full).with_max_threads(rayon::current_num_threads()),
+            // For zoom and removals' fills: the quicker X-Trans demosaic gets 100%
+            // there twice as fast, and is nearly identical; exports decode their own,
+            // with the full one (ADR 0092).
+            DecodeOptions::new(DecodeScale::Full)
+                .with_max_threads(rayon::current_num_threads())
+                .with_quick_demosaic(),
             token,
         )?;
         if token.is_cancelled() {

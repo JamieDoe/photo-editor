@@ -187,6 +187,9 @@ class PeLibRaw : public LibRaw {
   public:
     PeLibRaw() { callbacks.interpolate_xtrans_cb = &PeLibRaw::interpolate_xtrans; }
 
+    /* See pe_libraw_quick_demosaic. */
+    bool quick_demosaic = false;
+
   protected:
     void copy_bayer(unsigned short cblack[4], unsigned short *dmaxp) override {
         if (imgdata.idata.filters == LIBRAW_XTRANS && libraw_internal_data.internal_output_params.shrink &&
@@ -238,8 +241,10 @@ class PeLibRaw : public LibRaw {
         static_cast<PeLibRaw *>(static_cast<LibRaw *>(self))->xtrans_blocked();
     }
 
-    /* Same pass count as dcraw_process (the shim never sets user_qual). */
+    /* Same pass count as dcraw_process (the shim never sets user_qual), or one pass
+     * when asked for a quick demosaic. */
     int xtrans_passes() const {
+        if (quick_demosaic) return 1;
         int quality = 2 + !libraw_internal_data.internal_output_params.fuji_width;
         if (imgdata.params.user_qual >= 0) quality = imgdata.params.user_qual;
         return quality > 2 ? 3 : 1;
@@ -303,6 +308,11 @@ class PeLibRaw : public LibRaw {
 };
 
 } // namespace
+
+extern "C" void pe_libraw_quick_demosaic(libraw_data_t *lr, int on) {
+    /* parent_class is the LibRaw object; pe_libraw_new made it a PeLibRaw. */
+    static_cast<PeLibRaw *>(static_cast<LibRaw *>(lr->parent_class))->quick_demosaic = on != 0;
+}
 
 extern "C" libraw_data_t *pe_libraw_new(void) {
     try {

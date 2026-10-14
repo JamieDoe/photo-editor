@@ -321,3 +321,60 @@ fn fujifilm_xtrans_decodes_are_deterministic() {
         assert_identical(&first, &second, &format!("{scale:?}"));
     }
 }
+
+#[test]
+fn a_quick_xtrans_demosaic_is_deterministic_close_and_only_for_xtrans() {
+    let dir = fixtures::TempDir::new("libraw-xtrans-quick");
+    let path = synthetic_xtrans(dir.path());
+    let decode = |quick: bool, threads: Option<usize>| {
+        let mut opts = DecodeOptions::new(DecodeScale::Full);
+        if quick {
+            opts = opts.with_quick_demosaic();
+        }
+        if let Some(n) = threads {
+            opts = opts.with_max_threads(n);
+        }
+        LibRawDecoder
+            .decode(&path, opts, &NeverCancel)
+            .unwrap()
+            .image
+            .data()
+            .to_vec()
+    };
+    let best = decode(false, None);
+    let quick = decode(true, None);
+    // One pass, for any thread count, gives the same bytes every time.
+    for threads in [None, Some(1), Some(3)] {
+        assert_identical(&quick, &decode(true, threads), &format!("{threads:?}"));
+    }
+    // A different demosaic, but close: most samples within a few levels of 65535.
+    assert_ne!(quick, best, "one pass is not three");
+    let close = quick
+        .iter()
+        .zip(&best)
+        .filter(|(a, b)| a.abs_diff(**b) <= 1024)
+        .count();
+    assert!(
+        close as f64 / best.len() as f64 > 0.97,
+        "{close} of {} within 1024",
+        best.len()
+    );
+    // A Bayer sensor has no quick demosaic: identical either way.
+    let bayer = dir.path().join("bayer.dng");
+    std::fs::write(&bayer, fixtures::chart_dng(640, 480)).unwrap();
+    let bayer_decode = |quick: bool| {
+        let opts = DecodeOptions::new(DecodeScale::Full);
+        let opts = if quick {
+            opts.with_quick_demosaic()
+        } else {
+            opts
+        };
+        LibRawDecoder
+            .decode(&bayer, opts, &NeverCancel)
+            .unwrap()
+            .image
+            .data()
+            .to_vec()
+    };
+    assert_identical(&bayer_decode(false), &bayer_decode(true), "Bayer");
+}
