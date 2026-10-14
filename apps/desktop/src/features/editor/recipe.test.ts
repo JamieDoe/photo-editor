@@ -24,6 +24,9 @@ describe("recipe helpers", () => {
     expect(isIdentity({ ...r, profileCorrections: true })).toBe(true);
     expect(geometryEdited({ ...r, profileCorrections: false })).toBe(true);
     expect(isIdentity({ ...r, profileCorrections: false })).toBe(false);
+    // An older edit's profile without its chromatic aberration (ADR 0083) renders
+    // differently, so it is an edit too.
+    expect(isIdentity({ ...r, profileWithoutChromaticAberration: true })).toBe(false);
   });
 
   it("defaults to the Standard look with neutral adjustments", () => {

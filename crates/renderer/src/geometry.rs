@@ -494,8 +494,10 @@ pub fn resample(source: &LinearImage, geometry: &Geometry) -> LinearImage {
 }
 
 /// [`resample`], also undoing the lens's distortion (ADR 0075) and lining red and
-/// blue up with green where the lens spread them (ADR 0035). Both are about the
-/// source's centre (the lens's), before any crop, straighten or perspective.
+/// blue up with green where the lens spread them. Both are about the source's centre
+/// (the lens's), before any crop, straighten or perspective. Red and blue follow the
+/// photo's measured correction `ca` while there is one (ADR 0035), else the lens
+/// profile's (ADR 0083): both correct the same fringes, so never both.
 pub fn resample_corrected(
     source: &LinearImage,
     geometry: &Geometry,
@@ -504,6 +506,16 @@ pub fn resample_corrected(
 ) -> LinearImage {
     let (w, h) = (source.width(), source.height());
     let lens = lens.copied();
+    let radial = ca
+        .filter(|c| !c.is_identity())
+        .map(|c| Radial::new(c, w as f32, h as f32));
+    let fringes = match (&radial, lens) {
+        (Some(r), _) => Some(Fringes::Measured(*r)),
+        (None, Some(l)) if l.has_chromatic_aberration() => {
+            Some(Fringes::Profile(Box::new(l.at(w as f32, h as f32))))
+        }
+        _ => None,
+    };
     // Vignetting lifted here, divided by the headroom the plan multiplies back.
     let vignetting = lens
         .filter(LensCorrection::has_vignetting)
@@ -514,13 +526,10 @@ pub fn resample_corrected(
     let g = geometry.sanitized();
     let mut data = vec![0u16; ow as usize * oh as usize * 3];
     let row_len = ow as usize * 3;
-    let radial = ca
-        .filter(|c| !c.is_identity())
-        .map(|c| Radial::new(c, w as f32, h as f32));
     if g.straighten == 0.0
         && !g.has_perspective()
         && g.is_upright()
-        && radial.is_none()
+        && fringes.is_none()
         && lens.is_none()
         && vignetting.is_none()
     {
@@ -541,10 +550,10 @@ pub fn resample_corrected(
                 for (i, px) in out.as_chunks_mut::<3>().0.iter_mut().enumerate() {
                     let vx = crop.x + (i as f32 + 0.5) / ow as f32 * crop.w;
                     let (sx, sy) = map.source(vx, vy);
-                    *px = match &radial {
+                    *px = match &fringes {
                         None => bilinear(source, sx - 0.5, sy - 0.5),
-                        Some(r) => {
-                            let [(rx, ry), (bx, by)] = r.sample_points(sx, sy);
+                        Some(f) => {
+                            let [(rx, ry), (bx, by)] = f.sample_points(sx, sy);
                             [
                                 bilinear_channel(source, rx - 0.5, ry - 0.5, 0),
                                 bilinear_channel(source, sx - 0.5, sy - 0.5, 1),
@@ -560,6 +569,23 @@ pub fn resample_corrected(
             });
     }
     LinearImage::new(ow, oh, data).expect("dimensions match the buffer")
+}
+
+/// Where red and blue are sampled: from the photo's measurement or the lens profile.
+enum Fringes {
+    Measured(Radial),
+    /// Boxed: it carries the profile's curves, and is made once per framing.
+    Profile(Box<LensAt>),
+}
+
+impl Fringes {
+    #[inline]
+    fn sample_points(&self, x: f32, y: f32) -> [(f32, f32); 2] {
+        match self {
+            Self::Measured(r) => r.sample_points(x, y),
+            Self::Profile(l) => l.fringe_points(x, y),
+        }
+    }
 }
 
 /// Auto level (ADR 0033): the straighten angle that levels the photo, or `None` when
@@ -1105,6 +1131,33 @@ mod tests {
             None,
         );
         assert_eq!(none.data(), src.data());
+    }
+
+    #[test]
+    fn a_profiles_chromatic_aberration_is_corrected_unless_measured() {
+        let src = gradient(200, 100);
+        let knots: Vec<f32> = (0..16).map(|i| i as f32 / 15.0).collect();
+        // Red 0.4 % larger than green everywhere: as the measured correction above.
+        let (red, flat) = (vec![1.004; 16], vec![1.0; 16]);
+        let lens = LensCorrection::new(&knots, None, None, Some([&red, &flat])).unwrap();
+        assert!(lens.has_chromatic_aberration());
+        let measured_like = ChromaticAberration {
+            red: [0.004, 0.0],
+            blue: [0.0, 0.0],
+        };
+        let by_profile = resample_corrected(&src, &Geometry::default(), None, Some(&lens));
+        let by_measure = resample_corrected(&src, &Geometry::default(), Some(&measured_like), None);
+        assert_eq!(by_profile.data(), by_measure.data());
+        // A measurement replaces it: here only blue moves, so red is a plain copy.
+        let blue_only = ChromaticAberration {
+            red: [0.0, 0.0],
+            blue: [0.004, 0.0],
+        };
+        let both = resample_corrected(&src, &Geometry::default(), Some(&blue_only), Some(&lens));
+        let (o, s) = (both.data(), src.data());
+        assert!((0..o.len()).step_by(3).all(|i| o[i] == s[i]));
+        // Without its chromatic aberration a profile with nothing else is none.
+        assert!(lens.without_chromatic_aberration().is_none());
     }
 
     fn turned(rotation: u8, flip: bool) -> Geometry {

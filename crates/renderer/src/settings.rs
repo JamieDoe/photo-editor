@@ -81,6 +81,7 @@ pub fn setting_groups() -> Vec<SettingGroup> {
                 "geometry",
                 "chromaticAberration",
                 "profileCorrections",
+                "profileWithoutChromaticAberration",
                 "unoriented",
             ],
             false,
@@ -196,6 +197,7 @@ mod tests {
             }),
             chromatic_aberration: Some(Default::default()),
             profile_corrections: false,
+            profile_without_chromatic_aberration: true,
             unoriented: true,
             red_eyes: vec![Default::default()],
             colour_grading: Some(crate::ops::colour_grading::ColourGrading {

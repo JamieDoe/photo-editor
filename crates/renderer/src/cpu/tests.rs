@@ -561,7 +561,7 @@ fn lens_profile(
     let curve = |f: fn(f32) -> f32| knots.iter().map(|&r| f(r)).collect::<Vec<_>>();
     let (dc, vc) = (d.map(curve), v.map(curve));
     let _ = (w, h);
-    crate::lens::LensCorrection::new(&knots, dc.as_deref(), vc.as_deref()).unwrap()
+    crate::lens::LensCorrection::new(&knots, dc.as_deref(), vc.as_deref(), None).unwrap()
 }
 
 #[test]

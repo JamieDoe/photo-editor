@@ -7,8 +7,10 @@ const SUBTITLE = "Cleans colour fringing on edges";
 
 /**
  * The design's "Lens correction" switch (ADR 0075): the lens's own corrections,
- * distortion and vignetting, from the profile the camera recorded in the file. On
- * unless turned off; without a profile there is nothing to apply.
+ * distortion, vignetting and chromatic aberration (ADR 0083), from the profile the
+ * camera recorded in the file. On unless turned off; without a profile there is
+ * nothing to apply. Turning it off or on again clears an older edit's
+ * `profileWithoutChromaticAberration`, so it then gets the whole profile.
  */
 export function LensCorrectionToggle({
   recipe,
@@ -28,7 +30,9 @@ export function LensCorrectionToggle({
       className="lens-toggle"
       aria-pressed={on}
       disabled={disabled || lens === null}
-      onClick={() => onChange({ ...recipe, profileCorrections: on ? false : undefined })}
+      onClick={() =>
+        onChange({ ...recipe, profileCorrections: on ? false : undefined, profileWithoutChromaticAberration: undefined })
+      }
     >
       <span className="lens-toggle-text">
         <span className="lens-toggle-label">Lens correction</span>
