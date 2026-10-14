@@ -68,8 +68,8 @@ static void copy_str(char *dst, const char *src, size_t n) {
     dst[n - 1] = '\0';
 }
 
-int pe_raw_decode(const char *path, uint32_t min_long_edge, uint32_t max_threads, pe_cancel_fn cancel,
-                  void *cancel_ctx, pe_raw_ctx **out_ctx, pe_raw_info *info) {
+int pe_raw_decode(const char *path, uint32_t min_long_edge, uint32_t max_threads, uint32_t flags,
+                  pe_cancel_fn cancel, void *cancel_ctx, pe_raw_ctx **out_ctx, pe_raw_info *info) {
     *out_ctx = NULL;
     memset(info, 0, sizeof(*info));
 
@@ -85,6 +85,7 @@ int pe_raw_decode(const char *path, uint32_t min_long_edge, uint32_t max_threads
         return LIBRAW_UNSUFFICIENT_MEMORY;
     }
     libraw_data_t *lr = ctx->lr;
+    pe_libraw_quick_demosaic(lr, (flags & PE_RAW_QUICK_DEMOSAIC) != 0);
     libraw_set_progress_handler(lr, progress_cb, ctx);
     limit_openmp_threads(max_threads);
 

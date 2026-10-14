@@ -58,6 +58,11 @@ pub struct DecodeOptions {
     /// regions). `None` leaves the decoder's default. Background jobs pass their
     /// compute-pool size so decodes stay within the lane's CPU budget.
     pub max_threads: Option<usize>,
+    /// A quicker demosaic where a sensor has one, for views that are refined or
+    /// replaced anyway: X-Trans (Fujifilm) makes one Markesteijn pass instead of three,
+    /// about twice as fast and nearly identical (ADR 0092). Other sensors are
+    /// unaffected.
+    pub quick_demosaic: bool,
 }
 
 impl DecodeOptions {
@@ -65,7 +70,13 @@ impl DecodeOptions {
         Self {
             scale,
             max_threads: None,
+            quick_demosaic: false,
         }
+    }
+
+    pub fn with_quick_demosaic(mut self) -> Self {
+        self.quick_demosaic = true;
+        self
     }
 
     pub fn with_max_threads(mut self, threads: usize) -> Self {

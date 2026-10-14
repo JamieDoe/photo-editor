@@ -1462,3 +1462,24 @@ fresh from the system.
 
 **The floor is LibRaw's decode, about 16 bytes a pixel.**
 
+## 67. Fujifilm X-Trans at full size (ADR 0092)
+
+A full X-T3 decode, median of 3 (`DecodeScale::Full`):
+
+| Threads | Three passes (exports) | One pass (zoom) |
+|---|---|---|
+| 4 | 3,684 ms | 1,992 ms |
+| 2 | 6,828 ms | 3,623 ms |
+
+About 90% of a full decode is the demosaic (profiled with `sample` on 4 threads). The
+blocks keep the threads busy, so the passes are the cost.
+
+**In the self-test, on the 4-thread stand-in,** zooming to 100% (the full decode in the
+background lane, 2 threads) went from 7,027 to 3,916 ms. Full-size exports keep three
+passes.
+
+**The difference between the two,** at a viewer's exposure:
+- mean 0.22 levels in 8-bit sRGB;
+- 0.94% of pixels differ by more than 2 levels;
+- the largest difference is 32.
+

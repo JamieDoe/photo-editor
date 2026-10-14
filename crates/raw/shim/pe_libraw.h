@@ -39,11 +39,15 @@ typedef struct pe_raw_ctx pe_raw_ctx;
  * If `min_long_edge` > 0 and a half-size decode still has a long edge >= it, LibRaw's
  * fast half-size mode is used. `cancel` is polled at LibRaw progress stages.
  * If `max_threads` > 0 and LibRaw was built with OpenMP, its parallel regions started
- * from the calling thread use at most that many threads.
+ * from the calling thread use at most that many threads. `flags` holds PE_RAW_* bits.
  * Returns 0 on success (then *out_ctx must be released) or a LibRaw error code.
  */
-int pe_raw_decode(const char *path, uint32_t min_long_edge, uint32_t max_threads, pe_cancel_fn cancel,
-                  void *cancel_ctx, pe_raw_ctx **out_ctx, pe_raw_info *info);
+int pe_raw_decode(const char *path, uint32_t min_long_edge, uint32_t max_threads, uint32_t flags,
+                  pe_cancel_fn cancel, void *cancel_ctx, pe_raw_ctx **out_ctx, pe_raw_info *info);
+
+/* pe_raw_decode flags. */
+/* One-pass X-Trans demosaic, about twice as fast (ADR 0092). */
+#define PE_RAW_QUICK_DEMOSAIC 1u
 
 /* Copies width*height*3 samples into dst. Returns 0 on success. */
 int pe_raw_copy_rgb16(const pe_raw_ctx *ctx, uint16_t *dst, size_t samples);

@@ -132,6 +132,11 @@ impl Decoder for LibRawDecoder {
                 options
                     .max_threads
                     .map_or(0, |n| u32::try_from(n).unwrap_or(u32::MAX)),
+                if options.quick_demosaic {
+                    ffi::PE_RAW_QUICK_DEMOSAIC
+                } else {
+                    0
+                },
                 Some(cancel_trampoline),
                 cancel_ctx,
                 &mut ctx,
