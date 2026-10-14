@@ -42,7 +42,10 @@ that downloads it asks to allow it in System Settings → Privacy & Security.
 The app opens in **Library**: choose a folder, browse its subfolders and photos, and
 click a photo to open it in **Edit**. There you can adjust exposure, contrast,
 temperature and saturation, and export a JPEG. **Settings** holds the theme, preview
-memory, background processing and export quality.
+memory, background processing and export quality, and About lists every
+third-party library the app is built with and its licence. Every dev and build run
+writes that list (`scripts/third-party-notices.mjs`, ADR 0087); it needs the Rust
+toolchain, and fails if a shipped JavaScript package's licence isn't allowed.
 
 Files the app keeps (macOS):
 

@@ -84,8 +84,9 @@ before distribution.
   notarised.
 - **Still before release:**
   - legal confirmation of the LGPL route (ADR 0003);
-  - a third-party notices page in the app, covering the Rust and npm dependencies;
   - Developer ID signing and notarisation;
   - the product's name and identifier.
+
+  The third-party notices page, also listed here at first, is done (ADR 0087).
 - **Windows** needs its own build of the same libraries (DLLs beside the executable),
   as part of the Windows milestone.

@@ -10,6 +10,7 @@ import type { ExportEvent } from "../../ipc/generated/ExportEvent";
 import type { IndexEvent } from "../../ipc/generated/IndexEvent";
 import type { SelfTestConfigDto } from "../../ipc/generated/SelfTestConfigDto";
 import { fitCropFor } from "../editor/cropGeometry";
+import { loadNotices } from "../settings/notices";
 import { applyPreset } from "../editor/presets";
 import { beforeRecipe, mixerOf, neutralRecipe } from "../editor/recipe";
 import type { DisplayedFrame, Editor } from "../editor/useEditor";
@@ -2049,6 +2050,15 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
     const histogram = { frames: frames.length, withHistogram: histogramChecked.filter(Boolean).length };
     const histogramOk = frames.length > 0 && histogramChecked.every(Boolean);
 
+    // Third-party notices (ADR 0087): written into the build, each library with its texts.
+    const notices = await loadNotices();
+    const libraries = notices?.groups.flatMap((g) => g.entries) ?? [];
+    const noticesOk =
+      notices !== null &&
+      libraries.length > 100 &&
+      libraries.some((e) => e.name === "LibRaw" && e.note !== undefined) &&
+      libraries.every((e) => e.texts.length > 0 && e.texts.every((id) => (notices.texts[id] ?? "").length > 0));
+
     const stats = driver.editor().schedulerStats();
     const checks = {
       exportFinished: finished.type === "finished",
@@ -2100,6 +2110,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       rangeMasks: rangeOk,
       chromaticAberration: chromaticAberrationOk,
       histogram: histogramOk,
+      thirdPartyNotices: noticesOk,
       autoLevel: autoLevelOk,
     };
     // Named so that a failing run explains itself.
@@ -2155,6 +2166,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       allPhotos,
       albums,
       smartCollections: smartCheck,
+      thirdPartyNotices: { libraries: libraries.length, texts: Object.keys(notices?.texts ?? {}).length },
       search: searchCheck,
       edits,
       detailFrame: { size: `${detail.frame.width}x${detail.frame.height}`, rustRenderMs: detail.frame.renderMs, roundTripMs: detail.info.roundTripMs },

@@ -1,7 +1,10 @@
+import { useEffect, useState } from "react";
+import * as ipc from "../../ipc/client";
 import type { BackgroundIntensity } from "../../ipc/generated/BackgroundIntensity";
 import type { Theme } from "../../ipc/generated/Theme";
 import { sliderTrack } from "../editor/sliderTrack";
 import { BackupSettings } from "./BackupSettings";
+import { ThirdPartyNotices } from "./ThirdPartyNotices";
 import type { SettingsApi } from "./useSettings";
 
 const THEMES: Array<[Theme, string]> = [
@@ -21,6 +24,19 @@ const CACHE_SIZES_MB = [128, 256, 512, 1024, 2048];
 /** Settings that change behaviour today. Values are validated and stored by Rust. */
 export function SettingsView({ api }: { api: SettingsApi }) {
   const { view, update } = api;
+  const [showNotices, setShowNotices] = useState(false);
+  const [version, setVersion] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void ipc
+      .diagnostics()
+      .then((d) => live && setVersion(d.appVersion))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (showNotices) return <ThirdPartyNotices onBack={() => setShowNotices(false)} />;
   if (!view) return <p className="empty-state">Loading settings…</p>;
   const s = view.settings;
   return (
@@ -180,6 +196,25 @@ export function SettingsView({ api }: { api: SettingsApi }) {
                   <span className="switch-knob" />
                 </span>
               </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="settings-group">
+          <h2>About</h2>
+          <div className="settings-card">
+            <div className="setting">
+              <div className="setting-text">
+                <span className="setting-name">Version</span>
+                <small>{version ?? "…"}</small>
+              </div>
+            </div>
+            <div className="setting">
+              <div className="setting-text">
+                <span className="setting-name">Third-party notices</span>
+                <small>The open-source software the app is built with, and its licences.</small>
+              </div>
+              <button onClick={() => setShowNotices(true)}>View</button>
             </div>
           </div>
         </section>

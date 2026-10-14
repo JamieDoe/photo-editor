@@ -45,13 +45,17 @@ LibRaw 0.22 is dual-licensed **LGPL-2.1 OR CDDL-1.0**. For a proprietary app:
 bundled LibRaw build per platform (macOS `.app` Frameworks, Windows DLL). The macOS
 build is done (ADR 0086): LibRaw 0.22.2 built from source for macOS 13, with LLVM's
 OpenMP and libjpeg-turbo, linked dynamically and shipped in the app's Frameworks with
-its licence texts. The legal confirmation and Windows remain.
+its licence texts. The app lists every third-party library with its licence texts in
+Settings → About (ADR 0087), including LibRaw's notice that it can be replaced. The
+legal confirmation and Windows remain.
 
 Rust dependencies are checked with `cargo deny check` (`deny.toml`: permissive
 licences only). Tauri itself brings in five MPL-2.0 crates (`cssparser`,
 `cssparser-macros`, `selectors`, `dtoa-short`, `option-ext`). They are allowed as
 named exceptions pending the same legal review; any new MPL/GPL dependency fails the
-check. Bundled npm runtime dependencies are MIT/Apache-2.0.
+check. Bundled npm runtime dependencies are MIT/Apache-2.0, and the bundled fonts are
+OFL-1.1. `scripts/third-party-notices.mjs` fails the build if a shipped JavaScript
+package's licence isn't allowed (ADR 0087).
 
 Other new dependencies: `zune-jpeg` (MIT/Apache-2.0/Zlib), `jpeg-encoder`
 ((MIT OR Apache-2.0) AND IJG, which requires the IJG acknowledgement in docs),
