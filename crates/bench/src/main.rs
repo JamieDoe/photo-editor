@@ -14,6 +14,7 @@
 mod auto_bench;
 mod dust_bench;
 mod estimate_bench;
+mod export_memory;
 mod index_bench;
 mod look;
 mod measure;
@@ -40,6 +41,7 @@ fn main() {
     let mut look = false;
     let mut args_flat = false;
     let mut cpus: Option<usize> = None;
+    let mut export_memory: Option<PathBuf> = None;
     let mut inputs = Vec::new();
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
@@ -98,6 +100,7 @@ fn main() {
                 return;
             }
             "--flat" => args_flat = true,
+            "--export-memory" => export_memory = it.next().map(PathBuf::from),
             "--cpus" => {
                 cpus = it.next().and_then(|v| v.parse().ok()).filter(|&n| n > 0);
                 if let Some(n) = cpus {
@@ -116,6 +119,12 @@ fn main() {
         }
     }
 
+    if let Some(path) = export_memory {
+        // The rest of the arguments are its options.
+        let options: Vec<String> = inputs.iter().map(|p| p.display().to_string()).collect();
+        println!("{}", export_memory::run(&path, &options));
+        return;
+    }
     if look {
         let recipe = if args_flat {
             app_core::EditRecipe {

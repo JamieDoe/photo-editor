@@ -471,22 +471,27 @@ fn ms(t: Instant) -> f64 {
     t.elapsed().as_secs_f64() * 1000.0
 }
 
-fn name(path: &Path) -> String {
+pub(crate) fn name(path: &Path) -> String {
     path.file_name().map_or_else(
         || path.display().to_string(),
         |n| n.to_string_lossy().into_owned(),
     )
 }
 
-fn peak_rss_mb() -> f64 {
-    // SAFETY: getrusage writes into the provided struct only.
-    let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
-    unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
-    let max = usage.ru_maxrss as f64;
-    // macOS reports bytes, Linux kilobytes.
-    if cfg!(target_os = "macos") {
-        max / 1e6
-    } else {
-        max / 1e3
+/// The process's peak memory in MB: on macOS its physical footprint, what the system
+/// counts (resident size there includes freed pages the allocator keeps); its maximum
+/// resident size elsewhere.
+pub(crate) fn peak_rss_mb() -> f64 {
+    #[cfg(target_os = "macos")]
+    {
+        crate::export_memory::footprint_mb().1
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // SAFETY: getrusage writes into the provided struct only.
+        let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
+        unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
+        // Linux reports kilobytes.
+        usage.ru_maxrss as f64 / 1e3
     }
 }

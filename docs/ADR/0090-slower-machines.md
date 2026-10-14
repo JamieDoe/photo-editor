@@ -58,5 +58,7 @@ mainly in how many cores do the work.
   - lowering the full-size peak needs the lens correction made in bands rather than as
     a full-size copy, and the detail stage's full-size plane removed. That is its own
     change.
+  - **Since done differently (ADR 0091):** the peak was mostly the allocator keeping
+    freed memory. Exports now peak at LibRaw's decode.
 - **The per-pixel pass** (already parallel) is now about two thirds of a frame. Making
   it cheaper (SIMD, or the GPU) is the next step if drags need to be faster still.

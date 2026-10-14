@@ -1379,6 +1379,8 @@ From `bench --cpus 4 --memory` and `--decode-peak`.
   - Exports sized for the web decode at half size and need far less.
 - **Next steps:** make the lens correction in bands, and drop the detail plane. Until
   then, a 61 MP full-size export on an 8 GB Mac will push other apps into swap.
+- **Since measured properly (§66):** most of this was the allocator keeping freed
+  memory. Exports now peak at LibRaw's decode: 396 MB for 24 MP, 981 MB for 61 MP.
 
 ### Against §8's targets (4 threads)
 
@@ -1403,4 +1405,60 @@ Both are left for their own changes:
 - **Fujifilm X-T3:** fails the self-test's zoom check (§62).
 - **Sony A7R IV (61 MP):** fails four checks on `main` too: render errors, calibration,
   the generated subject mask and masks.
+
+## 66. Export memory (ADR 0091)
+
+Physical footprint, what macOS counts against the machine, measured stage by stage
+during one full-size export in a fresh process: `bench --cpus 4 --export-memory FILE
+[heavy] [tiff]`, where *heavy* adds clarity, texture, noise reduction, dehaze and
+grain. Resident size overstates it on macOS, because the allocator's kept pages count
+there too.
+
+| Export | Before: peak / left after | After: peak / left after | Peak stage after |
+|---|---|---|---|
+| Nikon Z 6 (24 MP), JPEG | 637 / 637 MB | **396 / 3 MB** | decoding |
+| Nikon Z 6, heavy, JPEG | 734 / 734 MB | **396 / 7 MB** | decoding |
+| Nikon Z 6, TIFF (16-bit) | 901 / 901 MB | **396 / 3 MB** | decoding |
+| Sony A7R IV (61 MP), JPEG | 1,767 / 1,767 MB | **981 / 3 MB** | decoding |
+| Sony A7R IV, heavy, JPEG | 1,961 / 1,961 MB | **981 / 7 MB** | decoding |
+| Sony A7R IV, TIFF | 2,512 / 2,512 MB | **981 / 3 MB** | decoding |
+
+After the change, the stages below the decode's peak (Sony A7R IV, TIFF) are:
+- rendering: 735 MB (the decode, briefly, and its framed copy);
+- encoding: 369 MB.
+
+What did it, in order of effect:
+1. **`MallocLargeCache=0`:** 637 → 396 MB for the 24 MP JPEG, and nothing kept after.
+2. **The 61 MP lens-corrected render** at the decode's peak, by dropping the decode
+   once framed.
+3. **The TIFF peak** at the decode's, by encoding straight into the file.
+
+The no-op copies in sharpening and conversion went too.
+
+**With a photo open in the editor,** its previews rendered, then exported at full size
+(`bench --cpus 4 --memory`):
+
+| File | Before | After |
+|---|---|---|
+| Nikon Z 6 | 716 MB | **477 MB** |
+| Sony A7R IV | 2,088 MB | **1,262 MB** |
+
+**The whole self-test on 4 threads** (peak resident size over every check, exports
+included):
+
+| Camera | Before | After |
+|---|---|---|
+| Canon EOS R6 | 1.43 GB | 0.81 GB |
+| Nikon Z 6 | 1.67 GB | 1.01 GB |
+| Sony A7R IV | 2.96 GB | 1.64 GB |
+
+**What it costs** (4 threads, Nikon Z 6, alternated): each new large buffer now comes
+fresh from the system.
+- **Interactive render:** 53 → 58–60 ms (about +10%).
+- **Detail render:** 212 → 223–226 ms (+6%).
+- **Full-size export:** 2.94 → 3.02 s (+3%).
+- **In the self-test,** a heavy drag still shows every frame, at 22 ms per round trip
+  instead of 20.
+
+**The floor is LibRaw's decode, about 16 bytes a pixel.**
 
