@@ -184,6 +184,7 @@ pub async fn render_preview(
             quality: request.quality,
             target_long_edge: request.target_long_edge,
             window: request.window.map(|[x, y, w, h]| (x, y, w, h)),
+            catching_up: request.catching_up,
         },
         request.slot.into(),
     );

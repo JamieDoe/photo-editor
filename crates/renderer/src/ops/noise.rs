@@ -16,6 +16,8 @@
 //! The luminance part is a gain in stops (hue-stable); the colour part sets the
 //! ratios and keeps luminance.
 
+use rayon::prelude::*;
+
 use super::dehaze::DehazeModel;
 use super::detail::{BlurScratch, box_plane};
 
@@ -265,22 +267,27 @@ impl ChromaMap {
     ) -> Self {
         let (w, h) = (unit.width, unit.height);
         let gains = Self::effective_gains(gains, dehaze.is_some());
-        let mut guide = Vec::with_capacity(w * h);
-        let mut rr = Vec::with_capacity(w * h);
-        let mut rb = Vec::with_capacity(w * h);
-        for (k, c) in unit.rgb.iter().enumerate() {
-            let mut c = [c[0] * gains[0], c[1] * gains[1], c[2] * gains[2]];
-            if let Some(d) = dehaze {
-                // The dehaze model's map covers the whole image; the cells stand in
-                // for pixels of a w x h image.
-                let t = d.map().value_at(k % w, k / w, w, h, d.guide(luma(c)));
-                c = d.apply(c, t);
-            }
-            guide.push(super::detail::fast_log2(luma(c)));
-            let (r, b) = ratios(c);
-            rr.push(r);
-            rb.push(b);
-        }
+        // Every cell on its own, in parallel (PERFORMANCE §65).
+        let cells: Vec<(f32, f32, f32)> = unit
+            .rgb
+            .par_iter()
+            .with_min_len(super::scene::PAR_CELLS)
+            .enumerate()
+            .map(|(k, c)| {
+                let mut c = [c[0] * gains[0], c[1] * gains[1], c[2] * gains[2]];
+                if let Some(d) = dehaze {
+                    // The dehaze model's map covers the whole image; the cells stand in
+                    // for pixels of a w x h image.
+                    let t = d.map().value_at(k % w, k / w, w, h, d.guide(luma(c)));
+                    c = d.apply(c, t);
+                }
+                let (r, b) = ratios(c);
+                (super::detail::fast_log2(luma(c)), r, b)
+            })
+            .collect();
+        let guide: Vec<f32> = cells.iter().map(|c| c.0).collect();
+        let rr: Vec<f32> = cells.iter().map(|c| c.1).collect();
+        let rb: Vec<f32> = cells.iter().map(|c| c.2).collect();
         // The guide's statistics once, then both channels in parallel.
         let eps = p.chroma_eps();
         let mut sr = GuidedScratch::default();

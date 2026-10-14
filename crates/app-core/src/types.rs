@@ -82,6 +82,9 @@ pub struct PreviewRequest {
     /// one the full resolution, once [`Engine::prepare_full`](crate::Engine::prepare_full)
     /// has decoded it (and for detail quality).
     pub window: Option<(u32, u32, u32, u32)>,
+    /// Changes are arriving faster than they render (a drag): an interactive render may
+    /// then come from a smaller level, to keep up (PERFORMANCE §65).
+    pub catching_up: bool,
 }
 
 /// A rendered preview (RGBA8, sRGB).

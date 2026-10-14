@@ -442,6 +442,11 @@ pub struct PreviewRequestDto {
     #[serde(default)]
     #[ts(optional, as = "Option<[u32; 4]>")]
     pub window: Option<[u32; 4]>,
+    /// Changes are arriving faster than they render (a drag): the engine may then
+    /// render an interactive preview smaller, to keep up (PERFORMANCE §65).
+    #[serde(default)]
+    #[ts(optional, as = "Option<bool>")]
+    pub catching_up: bool,
 }
 
 /// Which view a preview is for: each cancels only its own earlier renders.

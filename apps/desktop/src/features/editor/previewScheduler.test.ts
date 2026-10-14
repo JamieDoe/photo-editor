@@ -9,6 +9,7 @@ const recipe = (exposure: number): EditRecipe => ({ ...neutralRecipe(1), exposur
 interface Call {
   recipe: EditRecipe;
   quality: PreviewQuality;
+  catchingUp: boolean;
   resolve: (v: string) => void;
   reject: (e: unknown) => void;
 }
@@ -20,7 +21,8 @@ function harness() {
   const timers = new Map<number, () => void>();
   let nextTimer = 1;
   const deps: SchedulerDeps<string> = {
-    render: (r, q) => new Promise((resolve, reject) => calls.push({ recipe: r, quality: q, resolve, reject })),
+    render: (r, q, catchingUp) =>
+      new Promise((resolve, reject) => calls.push({ recipe: r, quality: q, catchingUp, resolve, reject })),
     isCancellation: (e) => e === "cancelled",
     onFrame: (f, info) => shown.push([f, info]),
     onError: () => {},
@@ -69,6 +71,34 @@ describe("PreviewScheduler", () => {
     h.calls[1]!.resolve("third");
     await h.settle();
     expect(h.shown.map(([f]) => f)).toEqual(["first", "third"]);
+  });
+
+  it("says when a render catches up with changes that piled up, and only then", async () => {
+    const h = harness();
+    // A single change: not catching up.
+    h.s.request(recipe(1));
+    h.tick();
+    // Changes while it renders (a drag): the next render catches up.
+    h.s.request(recipe(2));
+    h.tick();
+    h.calls[0]!.resolve("first");
+    await h.settle();
+    h.tick();
+    // The drag stops; its last render returns with nothing waiting.
+    h.calls[1]!.resolve("second");
+    await h.settle();
+    // A later single change, and the settled detail render: not catching up.
+    h.s.request(recipe(3));
+    h.tick();
+    h.calls[2]!.resolve("third");
+    await h.settle();
+    h.fireTimers();
+    expect(h.calls.map((c) => [c.recipe.exposure, c.quality, c.catchingUp])).toEqual([
+      [1, "interactive", false],
+      [2, "interactive", true],
+      [3, "interactive", false],
+      [3, "detail", false],
+    ]);
   });
 
   it("keeps showing frames when renders are slower than frames", async () => {

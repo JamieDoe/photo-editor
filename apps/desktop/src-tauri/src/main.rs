@@ -18,6 +18,7 @@ pub use state::AppState;
 fn main() {
     logging::install_panic_hook();
     let self_test = std::env::var_os("PE_SELF_TEST").map(PathBuf::from);
+    let cpu_threads = cpu_threads(self_test.is_some());
 
     let mut builder = tauri::Builder::default();
     // Must be first: a second launch hands over to the running app and exits. Self-test
@@ -83,6 +84,7 @@ fn main() {
                 mask_dir,
                 backups_dir,
                 self_test.clone(),
+                cpu_threads,
             ));
             if self_test.is_none() {
                 backups::start(app.handle().clone());
@@ -179,4 +181,28 @@ fn main() {
         }
     };
     app.run(lifecycle::on_run_event);
+}
+
+/// The hardware threads the app sizes its work for. A self-test run can stand in for a
+/// smaller machine with `PE_SELF_TEST_CPUS=<n>` (PERFORMANCE §65): every pool (rayon's,
+/// the job lanes', LibRaw's) then uses at most `n` threads.
+fn cpu_threads(self_test: bool) -> usize {
+    let available = std::thread::available_parallelism().map_or(4, |n| n.get());
+    let Some(n) = self_test
+        .then(|| std::env::var("PE_SELF_TEST_CPUS").ok())
+        .flatten()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|&n| n > 0)
+    else {
+        return available;
+    };
+    if let Err(e) = rayon::ThreadPoolBuilder::new()
+        .num_threads(n)
+        .build_global()
+    {
+        log::warn!("self-test: threads not limited to {n}: {e}");
+        return available;
+    }
+    eprintln!("self-test: standing in for a machine with {n} threads");
+    n
 }

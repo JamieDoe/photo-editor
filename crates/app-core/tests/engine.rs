@@ -36,6 +36,7 @@ fn preview(
             quality,
             target_long_edge: 1000,
             window: None,
+            catching_up: false,
         })
         .wait()
         .unwrap()
@@ -80,6 +81,7 @@ fn preview_qualities_pick_different_levels() {
         quality,
         target_long_edge: 4000,
         window: None,
+        catching_up: false,
     };
     let thumb = engine
         .render_preview(request(PreviewQuality::Thumbnail))
@@ -152,6 +154,7 @@ fn newer_preview_supersedes_older_ones() {
                 quality: PreviewQuality::Detail,
                 target_long_edge: 4000,
                 window: None,
+                catching_up: false,
             })
         })
         .collect();
@@ -237,6 +240,7 @@ fn compare_renders_have_their_own_slot() {
         quality: PreviewQuality::Detail,
         target_long_edge: 4000,
         window: None,
+        catching_up: false,
     };
     // The before image, then the live edit changing while it renders: the edit's
     // requests supersede each other, not the before image.
@@ -398,6 +402,7 @@ fn closed_or_unknown_images_report_not_open() {
             quality: PreviewQuality::Interactive,
             target_long_edge: 500,
             window: None,
+            catching_up: false,
         })
         .wait()
         .unwrap_err();
@@ -459,6 +464,7 @@ fn open_images_are_bounded() {
             quality: PreviewQuality::Interactive,
             target_long_edge: 500,
             window: None,
+            catching_up: false,
         })
         .wait();
     assert!(err.is_err(), "oldest image should have been evicted");
@@ -496,6 +502,7 @@ fn long_drag_does_not_evict_settled_renders() {
         quality: PreviewQuality::Detail,
         target_long_edge: 1600,
         window: None,
+        catching_up: false,
     };
     assert!(
         !engine
@@ -516,6 +523,7 @@ fn long_drag_does_not_evict_settled_renders() {
             quality: PreviewQuality::Interactive,
             target_long_edge: 1600,
             window: None,
+            catching_up: false,
         };
         engine.render_preview(req).wait().unwrap();
     }
@@ -663,6 +671,7 @@ fn windows_show_their_part_of_the_photo_at_full_resolution() {
                 quality,
                 target_long_edge: 3200,
                 window: Some(window),
+                catching_up: false,
             })
             .wait()
             .unwrap()
@@ -744,6 +753,7 @@ fn removals_show_one_full_resolution_fill_at_every_size() {
         // Fit in an 800 px view; a window at 100 %.
         target_long_edge: if window.is_some() { 1600 } else { 800 },
         window,
+        catching_up: false,
     };
 
     // Before the full-resolution fill: filled at the preview's size, and said so.
@@ -826,6 +836,7 @@ fn windows_come_from_the_smallest_source_sharp_enough_for_the_zoom() {
                 quality: PreviewQuality::Detail,
                 target_long_edge: long_edge,
                 window: Some((1000, 600, 600, 400)),
+                catching_up: false,
             })
             .wait()
             .unwrap()

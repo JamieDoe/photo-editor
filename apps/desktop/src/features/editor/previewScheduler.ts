@@ -12,9 +12,12 @@ import type { PreviewQuality } from "../../ipc/generated/PreviewQuality";
  *   than a frame: none ever finished. ADR 0030.)
  * - Responses older than the newest displayed frame are dropped (stale).
  * - Once changes settle, one detail-quality render refines the preview.
+ * - A render sent because changes piled up while the last one rendered (a drag faster
+ *   than the machine renders) says so (`catchingUp`): the engine may render it smaller
+ *   to keep up (PERFORMANCE §65). A single change never is.
  */
 export interface SchedulerDeps<F> {
-  render(recipe: EditRecipe, quality: PreviewQuality): Promise<F>;
+  render(recipe: EditRecipe, quality: PreviewQuality, catchingUp: boolean): Promise<F>;
   isCancellation(error: unknown): boolean;
   onFrame(frame: F, info: FrameInfo): void;
   onError(error: unknown): void;
@@ -46,6 +49,8 @@ export class PreviewScheduler<F> {
   private frameRequested = false;
   /** An interactive render has been sent and has not returned. */
   private interactiveInFlight = false;
+  /** A change was waiting when the last interactive render returned. */
+  private catchingUp = false;
   private settleTimer: number | null = null;
   private disposed = false;
   private readonly counters: SchedulerStats = { requested: 0, shown: 0, superseded: 0, stale: 0, errors: 0 };
@@ -92,25 +97,28 @@ export class PreviewScheduler<F> {
     if (this.interactiveInFlight) return;
     const recipe = this.pending;
     this.pending = null;
-    if (recipe !== null && !this.disposed) this.send(recipe, "interactive");
+    const catchingUp = this.catchingUp;
+    this.catchingUp = false;
+    if (recipe !== null && !this.disposed) this.send(recipe, "interactive", catchingUp);
   }
 
   /** An interactive render returned: send the newest waiting change, if any. */
   private interactiveDone(): void {
     this.interactiveInFlight = false;
+    if (this.pending !== null) this.catchingUp = true;
     if (this.pending !== null && !this.disposed && !this.frameRequested) {
       this.frameRequested = true;
       this.deps.requestFrame(() => this.flush());
     }
   }
 
-  private send(recipe: EditRecipe, quality: PreviewQuality): void {
+  private send(recipe: EditRecipe, quality: PreviewQuality, catchingUp = false): void {
     const seq = ++this.seq;
     const start = this.deps.now();
     this.counters.requested++;
     const interactive = quality === "interactive";
     if (interactive) this.interactiveInFlight = true;
-    this.deps.render(recipe, quality).then(
+    this.deps.render(recipe, quality, catchingUp).then(
       (frame) => {
         if (interactive) this.interactiveDone();
         if (this.disposed) return;

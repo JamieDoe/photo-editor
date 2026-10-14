@@ -199,6 +199,10 @@ Same plan and pixels (max difference 1 code). ms, median of 10 runs after warm-u
 A reference low-end machine (e.g. 4-core x86 laptop, 8 GB RAM, integrated GPU,
 Windows) should be chosen and added to this document before targets are finalised.
 
+**Chosen (ADR 0090):** for the first release (macOS 13+, Apple Silicon), an M1 MacBook
+Air with 8 GB, stood in for by limiting the app to 4 threads. §65 measures against these
+targets. Windows will need its own reference machine.
+
 ## 9. After Phase 0 hardening: embedded preview and libjpeg-turbo
 
 Measured after the baseline above. Single `bench` run (5 iterations) plus in-app
@@ -1300,4 +1304,103 @@ same machine, with and without the two extra `LIKE`s on the title and caption:
 About 2% more: most photos have neither, and a `LIKE` on an empty column is quick.
 (Both are slower than §63's figures because the machine was busier; the comparison is
 within one sitting.)
+
+## 65. Slower machines (ADR 0090)
+
+The reference machine is an M1 MacBook Air, 8 GB. It is stood in for on the M1 Max by
+limiting every pool to 4 threads: the self-test with `PE_SELF_TEST_CPUS=4`, the
+benchmark with `--cpus 4`. That is the M1's performance cores without its efficiency
+cores, so it errs on the slow side. Throttling and the M1's memory bandwidth aren't
+modelled. The renderer uses no GPU, so the GPU doesn't differ.
+
+The self-test's drags set a heavy edit on every frame: clarity, texture, noise
+reduction, dehaze, grain, vignette, the colour mixer and white balance. The webview
+paced them at 30 Hz (the window wasn't frontmost), so 30 frames a second is the most
+they can show.
+
+### Self-test, after this change (4 threads → all 10)
+
+| File | First frame | Drag: shown, round trip p50 / p95 | During export: shown (of 90), p50 / p95 | Export, full size JPEG | Thumbnails (all) | Peak RSS (whole run) |
+|---|---|---|---|---|---|---|
+| Canon EOS R6 (20 MP) | 154 → 150 ms | 118/118, 18 / 19 → 119/119, 14 / 16 ms | 88, 19 / 20 → 87, 13 / 21 ms | 1.16 → 0.68 s | 434 → 222 ms | 1.4–1.5 GB |
+| Nikon Z 6 (24 MP) | 456 → 449 ms | 118/118, 20 / 21 → 118/118, 14 / 17 ms | 88, 20 / 21 → 88, 14 / 23 ms | 1.57 → 1.04 s | 432 → 221 ms | 1.7 GB |
+| Fujifilm X-T3 (26 MP) | 483 → 280 ms | 118/118, 21 / 23 → 118/118, 15 / 18 ms | 88, 21 / 24 → 81, 24 / 41 ms | **7.7** → 3.6 s | 440 → 223 ms | 1.7 GB |
+| Sony A7R IV (61 MP) | 482 → 428 ms | 118/118, 14 / 16 → 118/118, 14 / 19 ms | 88, 14 / 15 → 84, 19 / 38 ms | 6.2 → 3.1 s | 431 → 222 ms | 3.0–3.5 GB |
+
+### The drag, before and after (Nikon Z 6)
+
+| | 4 threads | All 10 |
+|---|---|---|
+| Before: frames shown, round trip p50 / p95 | 59 of 120 steps, 53 / 54 ms | 77, 34 / 44 ms |
+| After | 118/118, 20 / 21 ms | 118/118, 14 / 17 ms |
+| Sony A7R IV, before (`main`) → after, all 10 | — | 113 shown, 26 / 35 ms → 118, 14 / 19 ms |
+
+Two changes:
+- **Drags render from the next level down** while they can't keep up (ADR 0090). They
+  do so only when changes pile up, and only when the normal level is predicted to take
+  over 14 ms. A heavy drag on 4 threads goes from 1516×1010 at 45 ms to 758×505.
+- **The edge-aware maps are built in parallel.** These are the tone base, the dehaze
+  model and the colour-noise map. A heavy frame at 758×505 on 4 threads went from
+  21.8 ms to 16.4 ms, and at 1516×1010 from 45.5 to 40.3 ms. With all cores at
+  1516×1010 it went from 30 to 23 ms. Results are bit-identical; the golden images are
+  unchanged.
+
+**What a heavy frame costs now** (4 threads, 758×505, profiled with `sample`):
+- **The per-pixel pass, already parallel:** about two thirds.
+- **The maps:** about a third. The colour-noise map's guided filter is the largest
+  part; it works at a fixed 512-cell size, whatever the preview's.
+
+### Benchmark, per stage (Nikon Z 6, heavy recipe, renderer only, ms)
+
+| Stage | 1516×1010, 4 threads | 758×505, 4 threads | 1516×1010, all |
+|---|---|---|---|
+| Decode, convert, encode | 1.6 | 0.5 | 0.9 |
+| Dehaze | 1.7 | 0.6 | 0.9 |
+| Tone | 4.9 | 1.7 | 2.5 |
+| Detail (clarity, texture, noise reduction) | 18.8 | 5.9 | 9.7 |
+| Colour mixer | 5.4 | 1.2 | 2.2 |
+| Grain | 6.1 | 2.3 | 3.6 |
+| Everything | 45.5 | 14.6 | 23.5 |
+
+### Memory against 8 GB
+
+| File | After open | + previews | + full-size export | Full decode alone |
+|---|---|---|---|---|
+| Nikon Z 6 (24 MP) | 159 MB | 230 MB | **867 MB** | 431 MB (17 B/px) |
+| Sony A7R IV (61 MP) | 379 MB | 546 MB | **2,473 MB** | 1,016 MB |
+
+From `bench --cpus 4 --memory` and `--decode-peak`.
+- **Editing fits:** 230 MB for 24 MP, within §8's 300 MB.
+- **Full-size exports don't yet meet §8's 400 MB:**
+  - LibRaw's decode peaks at about 17 bytes a pixel (it already frees its own
+    buffers before the hand-over).
+  - The render then holds the decoded photo, a full-size copy when the camera's lens
+    corrections apply, the detail stage's full-size plane, and the output.
+  - Exports sized for the web decode at half size and need far less.
+- **Next steps:** make the lens correction in bands, and drop the detail plane. Until
+  then, a 61 MP full-size export on an 8 GB Mac will push other apps into swap.
+
+### Against §8's targets (4 threads)
+
+| Metric | Target | Measured |
+|---|---|---|
+| Interactive round trip p95 | ≤ 16 ms | 16–23 ms with a heavy edit (16–19 ms rendering); light edits well under |
+| Frames shown during a drag | ≥ 95% | 100% |
+| Interactive p95 while exporting | ≤ 2× idle | 1.0–1.1× |
+| First image after open | ≤ 600 ms | 150–480 ms |
+| 24 MP export | ≤ 3 s | 1.2–1.6 s; the Fujifilm X-T3 **7.7 s** (X-Trans decoding) |
+| Editing memory, 24 MP | ≤ 300 MB | 230 MB |
+| Export peak memory, 24 MP | ≤ 400 MB | **867 MB** |
+
+**Still open:**
+- export memory;
+- X-Trans decoding on few cores;
+- a heavy frame's per-pixel pass (SIMD, or the GPU).
+
+### Failures found along the way, from before this change
+
+Both are left for their own changes:
+- **Fujifilm X-T3:** fails the self-test's zoom check (§62).
+- **Sony A7R IV (61 MP):** fails four checks on `main` too: render errors, calibration,
+  the generated subject mask and masks.
 

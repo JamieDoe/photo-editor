@@ -25,7 +25,7 @@ pub fn run(files: &[PathBuf], camera_files: &[PathBuf]) -> Value {
             "one_worker": screen(files, Some(1), false),
         })
     } else {
-        let default_workers = EngineConfig::default().jobs.browse.workers;
+        let default_workers = crate::measure::engine_config().jobs.browse.workers;
         json!({
             "thumbnails": SCREENFUL,
             "default_workers": default_workers,
@@ -43,7 +43,7 @@ fn file(path: &Path) -> Value {
     let path = path.canonicalize().expect("fixture path");
 
     // Cold: no cache, so every request generates.
-    let engine = Engine::new(EngineConfig::default());
+    let engine = Engine::new(crate::measure::engine_config());
     let mut cold = Vec::new();
     let mut last = None;
     for _ in 0..5 {
@@ -61,7 +61,7 @@ fn file(path: &Path) -> Value {
     let dir = fixtures::TempDir::new("thumb-bench");
     let engine = Engine::new(EngineConfig {
         thumbnail_cache_dir: Some(dir.path().join("thumbs")),
-        ..EngineConfig::default()
+        ..crate::measure::engine_config()
     });
     engine.thumbnail(path.clone(), None).wait().expect("first");
     let mut hits = Vec::new();
@@ -78,7 +78,7 @@ fn file(path: &Path) -> Value {
     };
     let mut edited_ms = Vec::new();
     for _ in 0..3 {
-        let engine = Engine::new(EngineConfig::default());
+        let engine = Engine::new(crate::measure::engine_config());
         let t = Instant::now();
         let _ = engine.thumbnail(path.clone(), Some(edited.clone())).wait();
         edited_ms.push(ms(t));
@@ -98,7 +98,7 @@ fn file(path: &Path) -> Value {
 fn screen(camera_files: &[PathBuf], workers: Option<usize>, while_indexing: bool) -> Value {
     let dir = fixtures::TempDir::new("thumb-screen");
     let links = make_links(dir.path(), "Screen", camera_files, SCREENFUL);
-    let mut config = EngineConfig::default();
+    let mut config = crate::measure::engine_config();
     if let Some(w) = workers {
         config.jobs.browse.workers = w;
         config.jobs.browse.compute_threads = Some(w);
@@ -169,7 +169,7 @@ fn pregeneration(camera_files: &[PathBuf]) -> Value {
     let visible = make_links(dir.path(), "Visible", camera_files, 1).remove(0);
     let engine = Engine::new(EngineConfig {
         thumbnail_cache_dir: Some(dir.path().join("thumbs")),
-        ..EngineConfig::default()
+        ..crate::measure::engine_config()
     });
     let t = Instant::now();
     let batch =

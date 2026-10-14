@@ -96,12 +96,12 @@ export function useEditor() {
 
   useEffect(() => {
     const scheduler = new PreviewScheduler<RenderedPreview>({
-      render: async (r, quality) => {
+      render: async (r, quality, catchingUp) => {
         const img = imageRef.current;
         if (!img) throw ipc.staleError();
         const window = viewWindowRef.current ?? undefined;
         const targetLongEdge = window ? zoomedEdgeRef.current : targetEdgeRef.current;
-        const frame = await ipc.renderPreview({ imageId: img.id, recipe: r, quality, targetLongEdge, window });
+        const frame = await ipc.renderPreview({ imageId: img.id, recipe: r, quality, targetLongEdge, window, catchingUp });
         // A different image was opened while this rendered, or zoom went back to Fit.
         if (imageRef.current?.id !== img.id) throw ipc.staleError();
         if (frame.window && viewWindowRef.current === null) throw ipc.staleError();

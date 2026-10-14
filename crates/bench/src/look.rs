@@ -46,6 +46,7 @@ fn compare(path: &PathBuf, recipe: EditRecipe) -> Value {
             quality: PreviewQuality::Interactive,
             target_long_edge: 1024,
             window: None,
+            catching_up: false,
         })
         .wait()
         .expect("render");

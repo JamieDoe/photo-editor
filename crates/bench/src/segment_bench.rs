@@ -58,6 +58,7 @@ fn one(path: &Path, out: Option<&Path>) -> Value {
                 quality: PreviewQuality::Detail,
                 target_long_edge: 1200,
                 window: None,
+                catching_up: false,
             })
             .wait()
             .expect("render")

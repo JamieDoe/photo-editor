@@ -13,6 +13,24 @@ use renderer::{CpuRenderer, RenderBackend, RenderPlan, Stage};
 use serde_json::{Value, json};
 
 /// A representative edit: every stage active.
+/// The threads a smaller machine has (`--cpus`); all of this one's when unset.
+static CPUS: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+
+pub fn set_cpus(n: usize) {
+    let _ = CPUS.set(n);
+}
+
+/// The engine's configuration for the machine stood in for.
+pub(crate) fn engine_config() -> EngineConfig {
+    match CPUS.get() {
+        Some(&n) => EngineConfig {
+            jobs: app_core::JobSystemConfig::for_cores(n),
+            ..EngineConfig::default()
+        },
+        None => EngineConfig::default(),
+    }
+}
+
 fn bench_recipe(i: usize) -> EditRecipe {
     // Vary exposure slightly so repeated renders never hit the preview cache. Callers
     // use disjoint seed ranges (< 10_000) so recipes never repeat or reach a clamp.
@@ -49,7 +67,7 @@ pub fn file(path: &Path, iterations: usize) -> Value {
     let iterations = iterations.max(1);
     let file_bytes = std::fs::metadata(path).map_or(0, |m| m.len());
     let registry = DecoderRegistry::with_defaults();
-    let config = EngineConfig::default();
+    let config = engine_config();
 
     // --- Decode (preview resolution, as used when opening) ---
     let preview_opts = DecodeOptions::new(DecodeScale::AtLeast(config.preview_source_min_edge));
@@ -90,10 +108,15 @@ pub fn file(path: &Path, iterations: usize) -> Value {
         .collect();
 
     // --- Per-stage cost on the interactive-size level (renderer only, no job overhead) ---
-    let interactive_level =
-        &pyramid.levels()[pyramid.select_index(config.limits.interactive_max_long_edge * 85 / 100)];
+    let interactive_index =
+        pyramid.select_index(config.limits.interactive_max_long_edge * 85 / 100);
+    let interactive_level = &pyramid.levels()[interactive_index];
     let full_plan = RenderPlan::from_recipe(&bench_recipe(0), as_shot_white);
+    // At the interactive level, and at the one below it that drags use when they can't
+    // keep up (PERFORMANCE §65).
+    let drag_level = &pyramid.levels()[(interactive_index + 1).min(pyramid.levels().len() - 1)];
     let mut stage_costs = Vec::new();
+    let mut drag_stage_costs = Vec::new();
     for n in 0..=full_plan.stages.len() {
         let plan = RenderPlan::new(full_plan.stages[..n].to_vec());
         let label = if n == 0 {
@@ -101,12 +124,17 @@ pub fn file(path: &Path, iterations: usize) -> Value {
         } else {
             format!("+{}", stage_name(&full_plan.stages[n - 1]))
         };
-        let (t, _) = timed_n(iterations * 4, || {
-            CpuRenderer
-                .render(&plan, interactive_level, PixelFormat::Rgba8, &NeverCancel)
-                .expect("render")
-        });
-        stage_costs.push(json!({ "stages": label, "ms": t }));
+        for (level, costs) in [
+            (interactive_level, &mut stage_costs),
+            (drag_level, &mut drag_stage_costs),
+        ] {
+            let (t, _) = timed_n(iterations * 4, || {
+                CpuRenderer
+                    .render(&plan, level, PixelFormat::Rgba8, &NeverCancel)
+                    .expect("render")
+            });
+            costs.push(json!({ "stages": label, "ms": t }));
+        }
     }
 
     // --- Engine path: open + previews at each quality (includes job dispatch) ---
@@ -123,6 +151,7 @@ pub fn file(path: &Path, iterations: usize) -> Value {
                 quality,
                 target_long_edge: target,
                 window: None,
+                catching_up: false,
             })
             .wait()
             .expect("preview");
@@ -232,6 +261,8 @@ pub fn file(path: &Path, iterations: usize) -> Value {
         "open_total_ms": open_ms,
         "previews": quality_results,
         "stage_costs_interactive": stage_costs,
+        "stage_costs_drag": drag_stage_costs,
+        "drag_level": format!("{}x{}", drag_level.width(), drag_level.height()),
         "interactive_level": format!("{}x{}", interactive_level.width(), interactive_level.height()),
         "decode_full_ms": decode_full,
         "render_full_ms": render_full,
@@ -315,6 +346,7 @@ fn interactive_under_export(engine: &Engine, id: ImageId, export: ExportRequest)
                 quality: PreviewQuality::Interactive,
                 target_long_edge: 1600,
                 window: None,
+                catching_up: false,
             })
             .wait()
             .expect("preview");
@@ -343,7 +375,7 @@ fn interactive_under_export(engine: &Engine, id: ImageId, export: ExportRequest)
 /// App-like peak memory: a fresh engine opens the file, renders previews and exports,
 /// exactly as the desktop app would. Run in its own process.
 pub fn memory(path: &Path) -> Value {
-    let engine = Engine::new(EngineConfig::default());
+    let engine = Engine::new(engine_config());
     let id = match engine.open(path).wait() {
         Ok(s) => s.id,
         Err(e) => return json!({ "file": name(path), "error": format!("{e:?}") }),
@@ -359,6 +391,7 @@ pub fn memory(path: &Path) -> Value {
             quality,
             target_long_edge: 3200,
             window: None,
+            catching_up: false,
         };
         engine.render_preview(request).wait().expect("preview");
     }
