@@ -3,7 +3,7 @@ import type { AdjustmentSpec } from "../../ipc/generated/AdjustmentSpec";
 import type { LocalAdjustments } from "../../ipc/generated/LocalAdjustments";
 import type { MaskTool } from "./MaskTool";
 import type { Combine } from "../../ipc/generated/Combine";
-import { COMBINE_MODES, FINDING, MASK_KINDS, brushSizeFromSlider, lookOf, maskName, sliderFromBrushSize } from "./masks";
+import { COMBINE_MODES, FINDING, MASK_KINDS, MAX_COLOURS, brushSizeFromSlider, lookOf, maskName, oklabCss, sliderFromBrushSize } from "./masks";
 import type { MaskShape } from "../../ipc/generated/MaskShape";
 import { Slider } from "./Slider";
 import { formatSliderValue } from "./sliderTrack";
@@ -17,6 +17,14 @@ const BRUSH_SPECS: Record<"size" | "feather" | "flow", AdjustmentSpec> = {
   size: { key: "size", label: "Size", group: "Brush", min: 1, max: 100, step: 1, default: 16, more: false, unit: "" },
   feather: { key: "feather", label: "Feather", group: "Brush", min: 0, max: 100, step: 1, default: 50, more: false, unit: "" },
   flow: { key: "flow", label: "Flow", group: "Brush", min: 1, max: 100, step: 1, default: 100, more: false, unit: "" },
+};
+/** Range masks' settings (ADR 0085): a luminance range's band and feather, a colour
+ *  range's reach. */
+const RANGE_SPECS: Record<"low" | "high" | "feather" | "range", AdjustmentSpec> = {
+  low: { key: "low", label: "Low", group: "Range", min: 0, max: 100, step: 1, default: 60, more: false, unit: "" },
+  high: { key: "high", label: "High", group: "Range", min: 0, max: 100, step: 1, default: 100, more: false, unit: "" },
+  feather: { key: "feather", label: "Feather", group: "Range", min: 0, max: 100, step: 1, default: 50, more: false, unit: "" },
+  range: { key: "range", label: "Range", group: "Range", min: 0, max: 100, step: 1, default: 50, more: false, unit: "" },
 };
 const isLocalKey = (k: string): k is keyof LocalAdjustments => (LOCAL_KEYS as readonly string[]).includes(k);
 const MODES: readonly Combine[] = ["add", "subtract", "intersect"];
@@ -239,6 +247,73 @@ export function SelectiveControls({
                   onChange={(v) => tool.setBrush({ flow: v })}
                 />
                 <p className="brush-hint">Paint on the photo. Hold Option to erase; [ and ] change the size.</p>
+              </>
+            )}
+            {shape?.kind === "luminance" && (
+              <>
+                <div className="luminance-band" aria-hidden="true" title="The brightness the mask covers">
+                  <span style={{ left: `${shape.low}%`, width: `${Math.max(shape.high - shape.low, 0.5)}%` }} />
+                </div>
+                <Slider
+                  id="luminance-low"
+                  spec={RANGE_SPECS.low}
+                  value={shape.low}
+                  shown={String(Math.round(shape.low))}
+                  zeroMark={false}
+                  disabled={disabled}
+                  onChange={(v) => tool.setLuminance({ low: Math.min(v, shape.high) })}
+                />
+                <Slider
+                  id="luminance-high"
+                  spec={RANGE_SPECS.high}
+                  value={shape.high}
+                  shown={String(Math.round(shape.high))}
+                  zeroMark={false}
+                  disabled={disabled}
+                  onChange={(v) => tool.setLuminance({ high: Math.max(v, shape.low) })}
+                />
+                <Slider
+                  id="luminance-feather"
+                  spec={RANGE_SPECS.feather}
+                  value={shape.feather}
+                  shown={String(Math.round(shape.feather))}
+                  zeroMark={false}
+                  disabled={disabled}
+                  onChange={(v) => tool.setLuminance({ feather: v })}
+                />
+              </>
+            )}
+            {shape?.kind === "colour" && (
+              <>
+                {shape.colours.length > 0 && (
+                  <div className="colour-swatches" role="group" aria-label="Picked colours">
+                    {shape.colours.map((c, i) => (
+                      <button
+                        key={i}
+                        className="colour-swatch"
+                        style={{ background: oklabCss(c) }}
+                        aria-label={`Remove colour ${i + 1}`}
+                        title="Remove this colour"
+                        disabled={disabled}
+                        onClick={() => tool.removeColour(i)}
+                      />
+                    ))}
+                  </div>
+                )}
+                <p className="range-hint">
+                  {shape.colours.length === 0
+                    ? "Click the photo to pick the colour to adjust."
+                    : `Click the photo to pick another colour instead; Shift-click to add one (up to ${MAX_COLOURS}).`}
+                </p>
+                <Slider
+                  id="colour-range"
+                  spec={RANGE_SPECS.range}
+                  value={shape.range}
+                  shown={String(Math.round(shape.range))}
+                  zeroMark={false}
+                  disabled={disabled}
+                  onChange={tool.setColourRange}
+                />
               </>
             )}
             {shape?.kind === "radial" && (

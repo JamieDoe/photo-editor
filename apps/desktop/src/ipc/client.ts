@@ -14,6 +14,8 @@ import type { ClientErrorReport } from "./generated/ClientErrorReport";
 import type { CollectionCountsDto } from "./generated/CollectionCountsDto";
 import type { CollectionKindDto } from "./generated/CollectionKindDto";
 import type { AlbumDto } from "./generated/AlbumDto";
+import type { CropRect } from "./generated/CropRect";
+import type { MaskShape } from "./generated/MaskShape";
 import type { AlbumListingDto } from "./generated/AlbumListingDto";
 import type { SmartCollectionDto } from "./generated/SmartCollectionDto";
 import type { SmartCollectionListingDto } from "./generated/SmartCollectionListingDto";
@@ -175,6 +177,24 @@ export async function maskView(imageId: number, view: MaskViewRequestDto): Promi
   const bytes = await invoke<ArrayBuffer | number[]>("mask_view", { imageId, view });
   return new Uint8Array(toArrayBuffer(bytes));
 }
+
+/** A range mask's shape (ADR 0085) as it covers `crop` of the open photo's frame that
+ *  `recipe` makes: `width` x `height` bytes (0..255), for its tint. */
+export async function rangeMaskView(
+  imageId: number,
+  recipe: EditRecipe,
+  shape: MaskShape,
+  crop: CropRect,
+  width: number,
+  height: number,
+): Promise<Uint8Array> {
+  const bytes = await invoke<ArrayBuffer | number[]>("range_mask_view", { imageId, recipe, shape, crop, width, height });
+  return new Uint8Array(toArrayBuffer(bytes));
+}
+
+/** The colour at `point` (frame fractions) as range masks see it: Oklab (ADR 0085). */
+export const pickMaskColour = (imageId: number, recipe: EditRecipe, point: [number, number]) =>
+  invoke<[number, number, number]>("pick_mask_colour", { imageId, recipe, point });
 
 /** The red eye nearest `at` (source fractions) within `radius` (a fraction of the
  *  photo's long edge), as a correction sized to it (ADR 0080); null if none. */

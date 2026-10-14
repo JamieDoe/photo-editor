@@ -1433,3 +1433,101 @@ fn red_eye_corrections_render_with_the_photo() {
     assert!(after[0] < after[1] + 15, "{after:?}");
     assert_eq!(px(&plain, 60, 40), px(&fixed, 60, 40));
 }
+
+/// A two-part image: dark on the left, bright on the right, each half one value.
+fn halves(w: u32, h: u32, dark: u16, bright: u16) -> LinearImage {
+    let data = (0..w * h)
+        .flat_map(|i| [if i % w < w / 2 { dark } else { bright }; 3])
+        .collect();
+    LinearImage::new(w, h, data).unwrap()
+}
+
+#[test]
+fn range_masks_adjust_by_lightness_and_colour() {
+    use crate::masks::{LocalAdjustments, Mask, MaskShape};
+    let img = halves(64, 32, 1500, 40000);
+    let plain = EditRecipe {
+        sharpening: 0.0,
+        ..Default::default()
+    };
+    let lift = LocalAdjustments {
+        exposure: 1.0,
+        ..Default::default()
+    };
+    let render = |r: &EditRecipe| {
+        CpuRenderer
+            .render(
+                &RenderPlan::from_recipe(r, None),
+                &img,
+                PixelFormat::Rgb8,
+                &NeverCancel,
+            )
+            .unwrap()
+    };
+    let px = |o: &image_core::OutputImage, x: usize| o.data()[(16 * 64 + x) * 3];
+    let before = render(&plain);
+    // The shadows lifted: the dark half brighter, the bright half as it was.
+    let shadows = EditRecipe {
+        masks: vec![Mask::new(
+            1,
+            MaskShape::Luminance {
+                low: 0.0,
+                high: 40.0,
+                feather: 20.0,
+            },
+            lift,
+        )],
+        ..plain.clone()
+    };
+    let lifted = render(&shadows);
+    assert!(
+        px(&lifted, 5) > px(&before, 5) + 10,
+        "{} {}",
+        px(&lifted, 5),
+        px(&before, 5)
+    );
+    assert_eq!(px(&lifted, 60), px(&before, 60));
+    // Global exposure moves what the range sees: four stops down, the bright half
+    // (lightness 85) is in the shadows too (34).
+    let darker = EditRecipe {
+        exposure: -4.0,
+        ..shadows.clone()
+    };
+    let darker_plain = EditRecipe {
+        exposure: -4.0,
+        ..plain.clone()
+    };
+    assert!(px(&render(&darker), 60) > px(&render(&darker_plain), 60));
+    // A colour picked from the bright half covers it, not the dark half.
+    let bright = crate::masks::range::lab_of([40000; 3], [1.0; 3]);
+    let colour = EditRecipe {
+        masks: vec![Mask::new(
+            1,
+            MaskShape::Colour {
+                colours: vec![bright],
+                range: 30.0,
+            },
+            LocalAdjustments {
+                exposure: -1.0,
+                ..Default::default()
+            },
+        )],
+        ..plain.clone()
+    };
+    let picked = render(&colour);
+    assert!(px(&picked, 60) < px(&before, 60) - 10);
+    assert_eq!(px(&picked, 5), px(&before, 5));
+    // With no colour picked yet it adjusts nothing.
+    let none = EditRecipe {
+        masks: vec![Mask::new(
+            1,
+            MaskShape::Colour {
+                colours: vec![],
+                range: 30.0,
+            },
+            lift,
+        )],
+        ..plain.clone()
+    };
+    assert_eq!(render(&none).data(), before.data());
+}

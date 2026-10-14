@@ -1230,3 +1230,18 @@ Rules on marks and edits are indexed columns and cost a few milliseconds. Words 
 a search does (§38, a `LIKE` scan of each photo's path, camera and lens). Counts run on a
 blocking thread when the sidebar refreshes: at start, after indexing, and 400 ms after a
 burst of marks or edits settles, so rating with the keys costs no more than before.
+
+## 61. Range masks (ADR 0085)
+
+Synthetic images with every pixel different, release build, median of 5:
+
+| Image | Luminance map | Colour map (1 colour) | Colour map (5) | Render: no mask | With a luminance mask (first) | Its sliders (map cached) |
+|---|---|---|---|---|---|---|
+| 1516×1010 (preview) | 6.0 ms | 5.7 ms | 12.7 ms | 2.1 ms | 13.3 ms | 6.8 ms |
+| 6064×4040 (export) | 69 ms | 87 ms | 189 ms | 27 ms | 179 ms | 99 ms |
+
+A range shape's coverage of the image being rendered is worked out in parallel rows (one
+Oklab conversion a pixel, then the test) and kept for the latest six shapes and images,
+so dragging a mask's own sliders, or any control after the masks, reads the map. The
+tint is drawn from the engine's view at up to 2048 px, read from a pyramid level without
+rendering.

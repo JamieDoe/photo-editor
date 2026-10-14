@@ -672,6 +672,94 @@ impl Engine {
         })
     }
 
+    /// A range shape (ADR 0085: Luminance or Colour) as it covers the shown part of
+    /// the open photo that `recipe` edits: `width` × `height` samples (0..255, row by
+    /// row) over `crop` of its frame. Read from a pyramid level near that size, as the
+    /// renderer's range masks see the photo; for drawing a mask's tint.
+    pub fn range_mask_view(
+        &self,
+        image: ImageId,
+        recipe: &EditRecipe,
+        shape: &renderer::masks::MaskShape,
+        crop: renderer::CropRect,
+        size: (u32, u32),
+    ) -> JobHandle<Vec<u8>, EngineError> {
+        use renderer::masks::range::{FrameSampler, RangeTest};
+        let Some(open) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        let Some(test) = RangeTest::new(shape) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::new(
+                    crate::ErrorKind::InvalidInput,
+                    "That mask isn't a range mask.",
+                    "range view of a shape of place",
+                ))),
+            );
+        };
+        let (w, h) = (size.0.clamp(1, 4096), size.1.clamp(1, 4096));
+        let recipe = recipe.sanitized();
+        // The level that has about the view's pixels over the crop.
+        let kept = crop.w.max(crop.h).clamp(1e-3, 1.0);
+        let level = Arc::clone(
+            &open.pyramid.levels()[open.pyramid.select_index((w.max(h) as f32 / kept) as u32)],
+        );
+        let spec = JobSpec::new(Lane::Interactive, Priority::VisiblePreview, "range-view");
+        self.jobs.submit(spec, move |_token| {
+            let (from_source, gains) = range_frame(&open, &recipe);
+            let sampler = FrameSampler::new(&level, open.full_size, from_source.as_ref(), gains);
+            let mut out = vec![0u8; (w * h) as usize];
+            use rayon::prelude::*;
+            out.par_chunks_mut(w as usize)
+                .enumerate()
+                .for_each(|(j, row)| {
+                    let v = crop.y + (j as f32 + 0.5) / h as f32 * crop.h;
+                    for (i, o) in row.iter_mut().enumerate() {
+                        let u = crop.x + (i as f32 + 0.5) / w as f32 * crop.w;
+                        *o = (test.coverage(sampler.lab(u, v)) * 255.0).round() as u8;
+                    }
+                });
+            Ok(out)
+        })
+    }
+
+    /// The colour at `point` (fractions of the frame `recipe` makes of the open photo),
+    /// averaged over a few pixels, as range masks see it (ADR 0085): Oklab, for a
+    /// colour range's picked colour.
+    pub fn pick_mask_colour(
+        &self,
+        image: ImageId,
+        recipe: &EditRecipe,
+        point: [f32; 2],
+    ) -> JobHandle<[f32; 3], EngineError> {
+        use renderer::masks::range::FrameSampler;
+        let Some(open) = self.shared.images.lock().expect("images lock").get(image) else {
+            return JobHandle::ready(
+                self.jobs.next_id(),
+                Err(jobs::JobError::Failed(EngineError::image_not_open())),
+            );
+        };
+        let recipe = recipe.sanitized();
+        let level = Arc::clone(&open.pyramid.levels()[open.pyramid.select_index(PICK_LEVEL_EDGE)]);
+        let spec = JobSpec::new(Lane::Interactive, Priority::Interactive, "pick-colour");
+        self.jobs.submit(spec, move |_token| {
+            let (from_source, gains) = range_frame(&open, &recipe);
+            let sampler = FrameSampler::new(&level, open.full_size, from_source.as_ref(), gains);
+            let [u, v] = point.map(|p| {
+                if p.is_finite() {
+                    p.clamp(0.0, 1.0)
+                } else {
+                    0.5
+                }
+            });
+            Ok(sampler.lab_around(u, v, PICK_RADIUS))
+        })
+    }
+
     /// The generated masks `recipe` names that open photo `image` can't use (ADR 0074):
     /// made on another computer or their files removed, or made from another photo (a
     /// pasted edit, a preset). They cover nothing until made again. All of them when the
@@ -1612,4 +1700,30 @@ fn reduced(image: &image_core::LinearImage, long_edge: u32) -> image_core::Linea
         out = image_core::pyramid::downsample_2x(&out);
     }
     out
+}
+
+/// A picked colour is read from the level nearest this long edge, averaged over this
+/// share of the frame's width each way (about five pixels there).
+const PICK_LEVEL_EDGE: u32 = 1024;
+const PICK_RADIUS: f32 = 0.0025;
+
+/// How the frame `recipe` makes of `open` came from the photo, and the gains its plan
+/// applies before the masks: what range masks read (ADR 0085). Without the lens's
+/// headroom: the sampler lifts vignetting itself.
+fn range_frame(
+    open: &crate::session::OpenedImage,
+    recipe: &EditRecipe,
+) -> (Option<renderer::masks::SourceFrame>, [f32; 3]) {
+    let (sw, sh) = (open.full_size.0 as f32, open.full_size.1 as f32);
+    let lens = crate::lens::applied(recipe, open.lens.as_ref().map(|(l, _)| *l));
+    let g = recipe.geometry.unwrap_or_default();
+    let from_source =
+        (!g.is_identity() || lens.is_some()).then_some(renderer::masks::SourceFrame {
+            geometry: g,
+            width: sw,
+            height: sh,
+            lens,
+        });
+    let gains = RenderPlan::from_recipe(recipe, open.as_shot_white).gains_before_masks();
+    (from_source, gains)
 }

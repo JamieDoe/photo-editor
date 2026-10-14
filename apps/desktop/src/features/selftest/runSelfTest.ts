@@ -1128,6 +1128,60 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
           }
         : null;
     const linearMaskOk = mask !== null && mask.topDarker > 5 && Math.abs(mask.bottomChange) < 0.5;
+
+    // Range masks (ADR 0085), through the real renderer and engine: a luminance range
+    // over the shadows (0–35) at +1 EV lifts the darkest pixels and leaves the
+    // brightest; a colour picked at the photo's middle, at -1 EV, darkens the pixels
+    // there; the engine's tint view of that colour covers where it was picked.
+    const range = await (async () => {
+      if (!unmaskedFrame) return null;
+      const lightOf = (f: RenderedFrame) => {
+        const { pixels } = f.frame;
+        const out = new Float32Array(pixels.length / 4);
+        for (let i = 0; i < out.length; i++) out[i] = (pixels[i * 4]! + pixels[i * 4 + 1]! + pixels[i * 4 + 2]!) / 3;
+        return out;
+      };
+      const before = lightOf(unmaskedFrame);
+      const order = [...before.keys()].sort((a, b) => before[a]! - before[b]!);
+      const tenth = Math.max(1, Math.floor(order.length / 10));
+      const change = (after: Float32Array, which: number[]) => which.reduce((sum, i) => sum + after[i]! - before[i]!, 0) / which.length;
+      const lifted = await show(
+        {
+          ...beforeCrop,
+          masks: [{ id: 1, shape: { kind: "luminance", low: 0, high: 35, feather: 20 }, adjustments: { exposure: 1, warmth: 0, clarity: 0 } }],
+        },
+        "luminance range frame",
+        unmaskedFrame,
+      );
+      const id = driver.editor().image!.id;
+      const colour = await ipc.pickMaskColour(id, beforeCrop, [0.5, 0.5]);
+      const colourShape = { kind: "colour" as const, colours: [colour], range: 40 };
+      const view = await ipc.rangeMaskView(id, beforeCrop, colourShape, { x: 0, y: 0, w: 1, h: 1 }, 65, 65);
+      const darkened = await show(
+        { ...beforeCrop, masks: [{ id: 1, shape: colourShape, adjustments: { exposure: -1, warmth: 0, clarity: 0 } }] },
+        "colour range frame",
+        unmaskedFrame,
+      );
+      if (!lifted || !darkened) return null;
+      const liftedLight = lightOf(lifted);
+      const { width, height } = darkened.frame;
+      const middle = Math.floor(height / 2) * width + Math.floor(width / 2);
+      return {
+        darkestLifted: Math.round(change(liftedLight, order.slice(0, tenth)) * 10) / 10,
+        brightestChange: Math.round(change(liftedLight, order.slice(-tenth)) * 100) / 100,
+        picked: colour.map((v) => Math.round(v * 1000) / 1000),
+        viewAtPick: view[32 * 65 + 32] ?? null,
+        middleDarker: Math.round((before[middle]! - lightOf(darkened)[middle]!) * 10) / 10,
+        renderMs: lifted.frame.renderMs,
+      };
+    })().catch(() => null);
+    const rangeOk =
+      range !== null &&
+      range.darkestLifted > 3 &&
+      Math.abs(range.brightestChange) < 0.5 &&
+      range.viewAtPick !== null &&
+      range.viewAtPick > 200 &&
+      range.middleDarker > 3;
     // An inverted radial (ADR 0041), -1 EV outside a circle in the middle: the edges
     // darker, the middle unchanged.
     const radialFrame = await show(
@@ -2043,6 +2097,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       perspective: perspectiveOk,
       turn: turnOk,
       mask: maskOk,
+      rangeMasks: rangeOk,
       chromaticAberration: chromaticAberrationOk,
       histogram: histogramOk,
       autoLevel: autoLevelOk,
@@ -2085,6 +2140,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       perspective,
       turn,
       mask,
+      rangeMasks: range,
       radial,
       brush,
       uiBrush,

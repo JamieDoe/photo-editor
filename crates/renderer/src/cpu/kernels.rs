@@ -121,6 +121,73 @@ fn source_key(source: &LinearImage) -> SourceKey {
 
 type GainBits = [u32; 3];
 
+/// The generated masks with the range masks' coverage of `source` added (ADR 0085), by
+/// their keys; `None` when no mask has a range shape.
+fn range_maps(
+    masks: &[crate::masks::LocalMask],
+    source: &LinearImage,
+    gains: [f32; 3],
+    generated: &crate::masks::GeneratedMasks,
+) -> Option<crate::masks::GeneratedMasks> {
+    let shapes: Vec<&crate::masks::MaskShape> = masks
+        .iter()
+        .flat_map(|m| std::iter::once(&m.shape).chain(m.parts.iter().map(|p| &p.shape)))
+        .filter(|s| s.is_range())
+        .collect();
+    if shapes.is_empty() {
+        return None;
+    }
+    let mut maps = generated.clone();
+    for shape in shapes {
+        let key = crate::masks::range::key(shape);
+        if let std::collections::hash_map::Entry::Vacant(e) = maps.entry(key) {
+            let map = cached_range(source, gains, shape, e.key());
+            e.insert(map);
+        }
+    }
+    Some(maps)
+}
+
+/// A range shape's coverage of `source` after `gains` (ADR 0085), for the latest few:
+/// dragging a mask's sliders, or other controls after the masks, does not work it out
+/// again.
+fn cached_range(
+    source: &LinearImage,
+    gains: [f32; 3],
+    shape: &crate::masks::MaskShape,
+    key: &str,
+) -> Arc<crate::masks::brush::CoverageMap> {
+    use crate::masks::range::{RangeTest, Reference, coverage_map};
+    type Key = (SourceKey, GainBits, String);
+    static CACHE: Mutex<Vec<(Key, Arc<crate::masks::brush::CoverageMap>)>> = Mutex::new(Vec::new());
+    const KEPT: usize = 6;
+    let k: Key = (source_key(source), gains.map(f32::to_bits), key.to_owned());
+    {
+        let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(i) = cache.iter().position(|(c, _)| *c == k) {
+            // Most recently used last.
+            let entry = cache.remove(i);
+            let map = Arc::clone(&entry.1);
+            cache.push(entry);
+            return map;
+        }
+    }
+    let test = RangeTest::new(shape).expect("a range shape");
+    let map = Arc::new(coverage_map(
+        &Reference {
+            image: source,
+            gains,
+        },
+        &test,
+    ));
+    let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    cache.push((k, Arc::clone(&map)));
+    if cache.len() > KEPT {
+        cache.remove(0);
+    }
+    map
+}
+
 /// Retouched sources for the latest removals (ADR 0066) and spots (ADR 0054): one per
 /// source, for the last two sources (the interactive and detail previews' levels take
 /// turns), so dragging other controls does not retouch (or fill) again and the caches
@@ -940,7 +1007,12 @@ pub(super) fn compile(plan: &RenderPlan, source: &LinearImage, frame: Frame) -> 
                 masks.clone(),
             )))),
             Stage::Local { masks: ref local } => {
-                let field = Arc::new(LocalField::new(local, frame, &plan.generated_masks));
+                let ranges = range_maps(local, source, gains_so_far, &plan.generated_masks);
+                let field = Arc::new(LocalField::new(
+                    local,
+                    frame,
+                    ranges.as_ref().unwrap_or(&plan.generated_masks),
+                ));
                 if field.has_gains() {
                     out.push(Kernel::Local(Arc::clone(&field)));
                 }

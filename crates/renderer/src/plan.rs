@@ -181,6 +181,21 @@ impl RenderPlan {
         self
     }
 
+    /// The channel gains the plan applies before its masks (white balance and
+    /// exposure): the light range masks see (ADR 0085).
+    pub fn gains_before_masks(&self) -> [f32; 3] {
+        let mut gains = [1.0f32; 3];
+        for stage in &self.stages {
+            match *stage {
+                Stage::Local { .. } => break,
+                Stage::WhiteBalance { gains: g } => (0..3).for_each(|c| gains[c] *= g[c]),
+                Stage::Exposure { multiplier } => gains.iter_mut().for_each(|g| *g *= multiplier),
+                _ => {}
+            }
+        }
+        gains
+    }
+
     /// The rendered size for a source of `width` x `height`.
     pub fn output_size(&self, width: u32, height: u32) -> (u32, u32) {
         match &self.geometry {

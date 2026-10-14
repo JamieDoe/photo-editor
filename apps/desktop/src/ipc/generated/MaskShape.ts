@@ -5,4 +5,4 @@ import type { Stroke } from "./Stroke";
 /**
  * Where a mask covers the photo.
  */
-export type MaskShape = { "kind": "linear", start: [number, number], end: [number, number], } | { "kind": "radial", centre: [number, number], radius: [number, number], angle: number, feather: number, } | { "kind": "brush", strokes: Array<Stroke>, } | { "kind": "generated", of: GeneratedKind, mask: string, };
+export type MaskShape = { "kind": "linear", start: [number, number], end: [number, number], } | { "kind": "radial", centre: [number, number], radius: [number, number], angle: number, feather: number, } | { "kind": "brush", strokes: Array<Stroke>, } | { "kind": "generated", of: GeneratedKind, mask: string, } | { "kind": "luminance", low: number, high: number, feather: number, } | { "kind": "colour", colours: Array<[number, number, number]>, range: number, };

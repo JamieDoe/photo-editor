@@ -37,6 +37,8 @@
   --mask-linear: #f0b45e;
   --mask-radial: #c8a0f0;
   --mask-brush: #e8a0c8;
+  --mask-luminance: #d4c47a;
+  --mask-colour: #6fc2b0;
   --mask-subject: #9fd19a;
   --mask-sky: #7fa8e8;
   --mask-people: #8fc8d8;
@@ -70,7 +72,7 @@
     --switch-off: rgb(0 0 0 / 16%);
     --hist-red: rgb(220 60 50 / 45%); --hist-green: rgb(40 160 80 / 40%); --hist-blue: rgb(50 100 230 / 45%);
     --hist-luma: rgb(0 0 0 / 50%); --hist-blend: multiply; --hist-grid: rgb(0 0 0 / 5%); --hist-grid-strong: rgb(0 0 0 / 14%);
-    --clip-shadows: #3f6fc0; --mask-linear: #c98a2e; --mask-radial: #9a6fc9; --mask-brush: #c46a9c; --mask-subject: #4f9a4a; --mask-sky: #4a78c4; --mask-people: #3f8ea3; --hist-backdrop: rgb(0 0 0 / 6%); --curve-red: #c9392f; --curve-green: #2f9a55; --curve-blue: #3767c9;
+    --clip-shadows: #3f6fc0; --mask-linear: #c98a2e; --mask-radial: #9a6fc9; --mask-brush: #c46a9c; --mask-luminance: #a8963c; --mask-colour: #2f9a86; --mask-subject: #4f9a4a; --mask-sky: #4a78c4; --mask-people: #3f8ea3; --hist-backdrop: rgb(0 0 0 / 6%); --curve-red: #c9392f; --curve-green: #2f9a55; --curve-blue: #3767c9;
     --primary-bg: #16171b; --primary-bg-hover: #000000; --primary-fg: #f8f8f9; --thumb-ring: #ffffff;
     --segment-shadow: 0 1px 2px rgb(0 0 0 / 12%);
     --photo-shadow: 0 20px 60px -20px rgb(0 0 0 / 35%), 0 0 0 1px rgb(0 0 0 / 6%);
@@ -90,7 +92,7 @@
   --switch-off: rgb(0 0 0 / 16%);
   --hist-red: rgb(220 60 50 / 45%); --hist-green: rgb(40 160 80 / 40%); --hist-blue: rgb(50 100 230 / 45%);
   --hist-luma: rgb(0 0 0 / 50%); --hist-blend: multiply; --hist-grid: rgb(0 0 0 / 5%); --hist-grid-strong: rgb(0 0 0 / 14%);
-  --clip-shadows: #3f6fc0; --mask-linear: #c98a2e; --mask-radial: #9a6fc9; --mask-brush: #c46a9c; --mask-subject: #4f9a4a; --mask-sky: #4a78c4; --mask-people: #3f8ea3; --hist-backdrop: rgb(0 0 0 / 6%); --curve-red: #c9392f; --curve-green: #2f9a55; --curve-blue: #3767c9;
+  --clip-shadows: #3f6fc0; --mask-linear: #c98a2e; --mask-radial: #9a6fc9; --mask-brush: #c46a9c; --mask-luminance: #a8963c; --mask-colour: #2f9a86; --mask-subject: #4f9a4a; --mask-sky: #4a78c4; --mask-people: #3f8ea3; --hist-backdrop: rgb(0 0 0 / 6%); --curve-red: #c9392f; --curve-green: #2f9a55; --curve-blue: #3767c9;
   --primary-bg: #16171b; --primary-bg-hover: #000000; --primary-fg: #f8f8f9; --thumb-ring: #ffffff;
   --segment-shadow: 0 1px 2px rgb(0 0 0 / 12%);
   --photo-shadow: 0 20px 60px -20px rgb(0 0 0 / 35%), 0 0 0 1px rgb(0 0 0 / 6%);
@@ -658,8 +660,9 @@ select.mask-shape-mode { height: 24px; padding: 0 6px; border-radius: 6px; backg
 .mask-combine button.ghost.small { flex: 1 1 0; }
 /* With Subject and People (ADR 0074) the kinds don't fit beside the label: they take
    their own row. */
-.mask-combine.many { flex-wrap: wrap; row-gap: 4px; }
-.mask-combine.many .mask-combine-label { flex-basis: 100%; }
+/* Many kinds (ADR 0085 added the range masks): four to a row under the label. */
+.mask-combine.many { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 2px; }
+.mask-combine.many .mask-combine-label { grid-column: 1 / -1; width: auto; }
 .mask-combine.many button.ghost.small { min-width: 0; padding: 0 4px; }
 
 /* Before / after (ADR 0045), as in the design: the photo before editing left of the
@@ -971,3 +974,14 @@ button.setting-switch[aria-checked="true"] .switch { justify-content: flex-end; 
 .rule-row .text-input { height: 30px; font-size: 12.5px; }
 select.rule-select { height: 30px; width: 100%; padding: 0 24px 0 9px; border-radius: 7px; background: var(--canvas); border: 1px solid var(--hairline); color: var(--text); font-size: 12.5px; }
 .smart-rules .popover-actions { margin-top: 6px; }
+
+/* Range masks (ADR 0085): the photo as an eyedropper for a colour range, the picked
+   colours' swatches, and the luminance band. */
+.colour-picker { position: absolute; inset: 0; cursor: crosshair; }
+.colour-pick-hint { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); padding: 5px 10px; border-radius: 999px; background: rgb(0 0 0 / 62%); color: #fff; font-size: 12px; white-space: nowrap; pointer-events: none; }
+.colour-swatches { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.colour-swatch { position: relative; width: 26px; height: 26px; padding: 0; border-radius: 7px; border: 1px solid var(--hairline-strong); }
+.colour-swatch:hover::after { content: "×"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 14px; background: rgb(0 0 0 / 35%); border-radius: 6px; }
+.range-hint { margin: 0; font-size: 11.5px; line-height: 1.45; color: var(--text-3); }
+.luminance-band { position: relative; height: 10px; border-radius: 5px; background: linear-gradient(90deg, #000, #fff); border: 1px solid var(--hairline); overflow: hidden; }
+.luminance-band span { position: absolute; top: 0; bottom: 0; background: var(--accent); opacity: 0.55; }

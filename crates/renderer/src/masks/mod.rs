@@ -13,6 +13,10 @@
 //! scene-linear gains after the white balance and exposure, Clarity in the detail
 //! stage.
 //!
+//! Range masks (ADR 0085: Luminance and Colour) cover pixels by their lightness or
+//! colour, not their place: their coverage is worked out from the image being
+//! rendered ([`range`]) and given to the renderer with the plan, like generated ones.
+//!
 //! Generated masks (ADR 0074: Subject, People, Sky) are the exception to frame
 //! coordinates: they are made from the photo as decoded, so their coverage is in its
 //! coordinates, and the frame is mapped back to it (as the crop's resampling does).
@@ -27,7 +31,9 @@ use serde::{Deserialize, Serialize};
 use crate::geometry::{CropRect, Geometry, Mapping};
 
 pub mod brush;
+pub mod range;
 pub use brush::Stroke;
+pub use range::RangeMaps;
 
 /// A mask: where, and what it changes there.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -129,6 +135,14 @@ pub enum MaskShape {
     /// content hash), made by the AI subsystem for `of`. Its coverage covers the photo
     /// as decoded, so it stays on what it covers whatever the geometry.
     Generated { of: GeneratedKind, mask: String },
+    /// A luminance range (ADR 0085): fully on where the photo's lightness (0..100,
+    /// Oklab, as it enters the local adjustments) is between `low` and `high`, fading
+    /// out beyond each end over `feather` (0..100: up to a quarter of the lightness
+    /// scale; 0 is a hard edge).
+    Luminance { low: f32, high: f32, feather: f32 },
+    /// A colour range (ADR 0085): fully on near any of `colours` (Oklab, as sampled
+    /// from the photo), fading out further away; `range` (0..100) is how far.
+    Colour { colours: Vec<[f32; 3]>, range: f32 },
 }
 
 /// What a generated mask covers (ADR 0074).
@@ -142,7 +156,9 @@ pub enum GeneratedKind {
 }
 
 /// The stored coverage of a render's generated masks, by name (ADR 0074), in the
-/// photo's coordinates as decoded. A name missing here covers nothing.
+/// photo's coordinates as decoded; and its range masks' (ADR 0085) by
+/// [`range::key`], over the image it renders (the frame's crop). A name missing here
+/// covers nothing.
 pub type GeneratedMasks = HashMap<String, Arc<brush::CoverageMap>>;
 
 /// The longest a generated mask's name may be (a SHA-256 in hex).
@@ -180,9 +196,19 @@ impl LocalAdjustments {
 const POINT_RANGE: f32 = 2.0;
 
 impl MaskShape {
-    /// Covers nothing: a brush mask with nothing painted yet.
+    /// Covers nothing: a brush mask with nothing painted yet, or a colour range with
+    /// no colour picked yet.
     pub fn is_empty(&self) -> bool {
-        matches!(self, Self::Brush { strokes } if strokes.iter().all(|s| s.points.is_empty() || s.erase))
+        match self {
+            Self::Brush { strokes } => strokes.iter().all(|s| s.points.is_empty() || s.erase),
+            Self::Colour { colours, .. } => colours.is_empty(),
+            _ => false,
+        }
+    }
+
+    /// Covers pixels by their lightness or colour (ADR 0085).
+    pub fn is_range(&self) -> bool {
+        matches!(self, Self::Luminance { .. } | Self::Colour { .. })
     }
 
     pub fn sanitized(self) -> Self {
@@ -227,6 +253,34 @@ impl MaskShape {
                     .map(Stroke::sanitized)
                     .filter(|s| !s.points.is_empty())
                     .collect(),
+            },
+            Self::Luminance { low, high, feather } => {
+                let f = |v: f32, or: f32| {
+                    if v.is_finite() {
+                        v.clamp(0.0, 100.0)
+                    } else {
+                        or
+                    }
+                };
+                let (low, high) = (f(low, 0.0), f(high, 100.0));
+                Self::Luminance {
+                    low: low.min(high),
+                    high: low.max(high),
+                    feather: f(feather, range::DEFAULT_FEATHER),
+                }
+            }
+            Self::Colour { colours, range } => Self::Colour {
+                colours: colours
+                    .into_iter()
+                    .filter(|c| c.iter().all(|v| v.is_finite()))
+                    .map(|[l, a, b]| [l.clamp(0.0, 1.0), a.clamp(-0.5, 0.5), b.clamp(-0.5, 0.5)])
+                    .take(range::MAX_COLOURS)
+                    .collect(),
+                range: if range.is_finite() {
+                    range.clamp(0.0, 100.0)
+                } else {
+                    range::DEFAULT_RANGE
+                },
             },
             // The name becomes a file name in the store: hexadecimal digits only.
             Self::Generated { of, mask } => Self::Generated {
@@ -382,6 +436,13 @@ pub enum CompiledShape {
         frame: [f32; 2],
         to_source: Option<Box<(Mapping, [f32; 2])>>,
     },
+    /// Coverage read from a range mask's map (ADR 0085), which covers the image being
+    /// rendered: `crop` of the frame. `None` when it wasn't made: it covers nothing.
+    Range {
+        map: Option<Arc<brush::CoverageMap>>,
+        frame: [f32; 2],
+        crop: CropRect,
+    },
 }
 
 impl CompiledShape {
@@ -420,6 +481,11 @@ impl CompiledShape {
                     scale: [mw as f32 / frame.width, mh as f32 / frame.height],
                 }
             }
+            shape @ (MaskShape::Luminance { .. } | MaskShape::Colour { .. }) => Self::Range {
+                map: generated.get(&range::key(&shape)).cloned(),
+                frame: [frame.width, frame.height],
+                crop: frame.crop,
+            },
             MaskShape::Generated { mask, .. } => Self::Generated {
                 map: generated.get(&mask).cloned(),
                 frame: [frame.width, frame.height],
@@ -474,6 +540,17 @@ impl CompiledShape {
                 if !(0.0..=1.0).contains(&u) || !(0.0..=1.0).contains(&v) {
                     return 0.0;
                 }
+                let (mw, mh) = map.size();
+                map.sample(u * mw as f32, v * mh as f32)
+            }
+            Self::Range {
+                ref map,
+                frame,
+                crop,
+            } => {
+                let Some(map) = map else { return 0.0 };
+                let u = (x / frame[0] - crop.x) / crop.w;
+                let v = (y / frame[1] - crop.y) / crop.h;
                 let (mw, mh) = map.size();
                 map.sample(u * mw as f32, v * mh as f32)
             }
