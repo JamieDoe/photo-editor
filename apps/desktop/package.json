@@ -4,12 +4,13 @@
   "version": "0.0.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "dev": "npm run -s notices && vite",
+    "build": "tsc --noEmit && npm run -s notices && vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "tauri": "tauri",
     "bundle": "sh ../../scripts/build-native-macos.sh && tauri build --config src-tauri/tauri.bundle.conf.json",
+    "notices": "node ../../scripts/third-party-notices.mjs public/third-party-notices.json",
     "bindings": "cd ../.. && cargo test -q -p desktop -p renderer --features renderer/ts export_bindings"
   },
   "dependencies": {
