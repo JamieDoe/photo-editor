@@ -972,8 +972,8 @@ impl Engine {
             let sample = shared
                 .renderer
                 .render(&plan, &level, render_format, token)?;
-            let sample = export::sharpen::sharpen(&sample, sharpening);
-            let sample = export::colour::convert(&sample, colour_space, format.pixel_format());
+            let sample = export::sharpen::sharpen(sample, sharpening);
+            let sample = export::colour::convert(sample, colour_space, format.pixel_format());
             let sample_bytes = export::encode_in(&sample, format, colour_space, None)?.len() as u64;
             let sample_pixels = u64::from(sample.width()) * u64::from(sample.height());
             let long = full_output.0.max(full_output.1).max(1);
@@ -1451,16 +1451,17 @@ impl Shared {
         } else {
             image_core::PixelFormat::Rgb16
         };
+        // Rendered once: the decode is freed as soon as its framed copy exists, and
+        // nothing made from it is cached (ADR 0091).
         let rendered = self
             .renderer
-            .render(&plan, &decoded.image, render_format, token)?;
-        drop(decoded);
+            .render_once(&plan, decoded.image, render_format, token)?;
         let rendered = match req.long_edge {
             Some(edge) => export::resize::fit_long_edge(&rendered, edge),
             None => rendered,
         };
         // Sharpened for its medium at the size it is written (ADR 0059).
-        let rendered = export::sharpen::sharpen(&rendered, req.sharpening);
+        let rendered = export::sharpen::sharpen(rendered, req.sharpening);
         // The watermark (ADR 0069) at the size written, after sharpening so its edges
         // stay as drawn.
         let rendered = match &req.watermark {
@@ -1469,7 +1470,7 @@ impl Shared {
         };
         // In the chosen colour space (ADR 0062), rounded to the file's depth once.
         let rendered =
-            export::colour::convert(&rendered, req.colour_space, req.format.pixel_format());
+            export::colour::convert(rendered, req.colour_space, req.format.pixel_format());
         let render_ms = ms(t);
 
         progress(ExportProgress {
@@ -1499,33 +1500,48 @@ impl Shared {
                 )
             })
             .flatten();
-        let bytes = export::encode_in(&rendered, req.format, req.colour_space, entries.as_ref())?;
-        let encode_ms = ms(t);
-        if token.is_cancelled() {
-            return Err(EngineError::cancelled());
-        }
-
-        progress(ExportProgress {
-            stage: ExportStage::Writing,
-            fraction: 0.95,
-        });
-        let t = Instant::now();
-        export::write_atomic(&req.destination, &bytes)?;
-        let write_ms = ms(t);
+        // A TIFF is written as it is encoded, never whole in memory (ADR 0091); the
+        // other formats are encoded, then written.
+        let (written, encode_ms, write_ms) = if req.format == export::ExportFormat::Tiff {
+            if token.is_cancelled() {
+                return Err(EngineError::cancelled());
+            }
+            let written = export::encode_to_file(
+                &req.destination,
+                &rendered,
+                req.format,
+                req.colour_space,
+                entries.as_ref(),
+            )?;
+            (written as usize, ms(t), 0.0)
+        } else {
+            let bytes =
+                export::encode_in(&rendered, req.format, req.colour_space, entries.as_ref())?;
+            let encode_ms = ms(t);
+            if token.is_cancelled() {
+                return Err(EngineError::cancelled());
+            }
+            progress(ExportProgress {
+                stage: ExportStage::Writing,
+                fraction: 0.95,
+            });
+            let t = Instant::now();
+            export::write_atomic(&req.destination, &bytes)?;
+            (bytes.len(), encode_ms, ms(t))
+        };
+        let (width, height) = (rendered.width(), rendered.height());
+        drop(rendered);
 
         let total_ms = ms(start);
         log::info!(
-            "exported {} ({}x{}, {} bytes) in {total_ms:.0} ms",
+            "exported {} ({width}x{height}, {written} bytes) in {total_ms:.0} ms",
             req.destination.display(),
-            rendered.width(),
-            rendered.height(),
-            bytes.len()
         );
         Ok(ExportSummary {
             path: req.destination.clone(),
-            width: rendered.width(),
-            height: rendered.height(),
-            bytes: bytes.len(),
+            width,
+            height,
+            bytes: written,
             decode_ms,
             render_ms,
             encode_ms,

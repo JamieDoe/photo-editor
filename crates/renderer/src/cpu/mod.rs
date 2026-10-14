@@ -27,6 +27,71 @@ const CHUNK_PIXELS: usize = 64 * 1024;
 pub struct CpuRenderer;
 
 impl CpuRenderer {
+    /// Renders `source` when nothing will render it again (an export's decode, ADR
+    /// 0091): as [`RenderBackend::render`], but nothing made from it is cached, and the
+    /// source and each full-size copy made from it (retouched, framed) are freed as
+    /// soon as the next one exists, so at most two are held at once.
+    pub fn render_once(
+        &self,
+        plan: &RenderPlan,
+        source: LinearImage,
+        format: PixelFormat,
+        cancel: &dyn Cancellation,
+    ) -> Result<OutputImage, RenderError> {
+        let (w, h) = plan.output_size(source.width(), source.height());
+        let mut out =
+            OutputImage::new(w, h, format).map_err(|e| RenderError::Backend(e.to_string()))?;
+        let rows = 0..h as usize;
+        let source = if plan.spots.is_empty()
+            && plan.removals.is_empty()
+            && plan.removal_fill.is_none()
+            && plan.red_eyes.is_empty()
+        {
+            source
+        } else {
+            kernels::retouched(
+                &source,
+                &plan.removals,
+                plan.removal_fill.as_ref(),
+                &plan.spots,
+                &plan.red_eyes,
+                cancel,
+            )?
+        };
+        let (sw, sh) = (source.width(), source.height());
+        if plan.geometry.is_none() && plan.chromatic_aberration.is_none() && plan.lens.is_none() {
+            self.render_frame(plan, &source, Frame::whole(sw, sh), rows, &mut out, cancel)?;
+            return Ok(out);
+        }
+        let g = plan.geometry.unwrap_or_default();
+        let where_in_frame = Self::frame_of(plan, &g, sw, sh);
+        let framed = crate::geometry::resample_corrected(
+            &source,
+            &g,
+            plan.chromatic_aberration.as_ref(),
+            plan.lens.as_ref(),
+        );
+        drop(source);
+        self.render_frame(plan, &framed, where_in_frame, rows, &mut out, cancel)?;
+        Ok(out)
+    }
+
+    /// Where a framed source sits in the frame masks are drawn in.
+    fn frame_of(plan: &RenderPlan, g: &crate::geometry::Geometry, sw: u32, sh: u32) -> Frame {
+        let (fw, fh) = g.oriented_size(sw as f32, sh as f32);
+        Frame {
+            crop: g.effective_crop(sw as f32, sh as f32),
+            width: fw,
+            height: fh,
+            from_source: Some(SourceFrame {
+                geometry: *g,
+                width: sw as f32,
+                height: sh as f32,
+                lens: plan.lens,
+            }),
+        }
+    }
+
     /// Renders into an existing buffer (reused across interactive frames by callers
     /// that own one). `out` must have the plan's output size for this source
     /// ([`RenderPlan::output_size`]).
@@ -122,18 +187,7 @@ impl CpuRenderer {
         // the stages run on the framed image, which is cached while other controls
         // change.
         let g = plan.geometry.unwrap_or_default();
-        let (fw, fh) = g.oriented_size(sw as f32, sh as f32);
-        let where_in_frame = Frame {
-            crop: g.effective_crop(sw as f32, sh as f32),
-            width: fw,
-            height: fh,
-            from_source: Some(SourceFrame {
-                geometry: g,
-                width: sw as f32,
-                height: sh as f32,
-                lens: plan.lens,
-            }),
-        };
+        let where_in_frame = Self::frame_of(plan, &g, sw, sh);
         let framed = kernels::cached_frame(
             source,
             &g,

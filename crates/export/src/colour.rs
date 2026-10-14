@@ -57,11 +57,12 @@ fn encode_curve(curve: Curve, v: f32) -> f32 {
 
 /// `image` (sRGB-encoded RGB, 8- or 16-bit) in `to`, as `format` (8- or 16-bit RGB).
 /// sRGB to sRGB only changes the depth.
-pub fn convert(image: &OutputImage, to: ExportColourSpace, format: PixelFormat) -> OutputImage {
+pub fn convert(image: OutputImage, to: ExportColourSpace, format: PixelFormat) -> OutputImage {
     let (w, h) = (image.width(), image.height());
     let wide_in = image.format() == PixelFormat::Rgb16;
+    // Owned, so nothing to convert passes the image on rather than copying it (ADR 0091).
     if to == ExportColourSpace::Srgb && image.format() == format {
-        return image.clone();
+        return image;
     }
     // Decoding table for the input's depth.
     let levels = if wide_in { 65536 } else { 256 };
@@ -141,7 +142,7 @@ mod tests {
         // Same white, and P3 shares sRGB's curve: greys keep their values.
         for v in [0u8, 50, 128, 200, 255] {
             let out = convert(
-                &pixel([v; 3]),
+                pixel([v; 3]),
                 ExportColourSpace::DisplayP3,
                 PixelFormat::Rgb8,
             );
@@ -149,13 +150,13 @@ mod tests {
         }
         // Adobe RGB's own curve: mid grey encodes differently, white and black do not.
         let white = convert(
-            &pixel([255; 3]),
+            pixel([255; 3]),
             ExportColourSpace::AdobeRgb,
             PixelFormat::Rgb8,
         );
         assert_eq!(white.data(), &[255; 3]);
         let black = convert(
-            &pixel([0; 3]),
+            pixel([0; 3]),
             ExportColourSpace::AdobeRgb,
             PixelFormat::Rgb8,
         );
@@ -167,7 +168,7 @@ mod tests {
         // sRGB's pure red is less saturated than P3's or Adobe RGB's: green and blue
         // are no longer zero, red below the maximum.
         for space in [ExportColourSpace::DisplayP3, ExportColourSpace::AdobeRgb] {
-            let out = convert(&pixel([255, 0, 0]), space, PixelFormat::Rgb8);
+            let out = convert(pixel([255, 0, 0]), space, PixelFormat::Rgb8);
             let p = out.data();
             assert!(p[0] < 255 && p[0] > 200, "{space:?}: {p:?}");
             if space == ExportColourSpace::DisplayP3 {
@@ -177,7 +178,7 @@ mod tests {
         // sRGB's pure green in Adobe RGB (whose green reaches much further): the
         // well-known (144, 255, 60).
         let g = convert(
-            &pixel([0, 255, 0]),
+            pixel([0, 255, 0]),
             ExportColourSpace::AdobeRgb,
             PixelFormat::Rgb8,
         );
@@ -209,10 +210,10 @@ mod tests {
             .flat_map(|v| v.to_ne_bytes())
             .collect();
         let img = OutputImage::from_raw(1, 1, PixelFormat::Rgb16, data).unwrap();
-        let out = convert(&img, ExportColourSpace::AdobeRgb, PixelFormat::Rgb16);
+        let out = convert(img.clone(), ExportColourSpace::AdobeRgb, PixelFormat::Rgb16);
         assert_eq!(out.format(), PixelFormat::Rgb16);
         // 16-bit to 8-bit sRGB: only the depth changes.
-        let eight = convert(&img, ExportColourSpace::Srgb, PixelFormat::Rgb8);
+        let eight = convert(img, ExportColourSpace::Srgb, PixelFormat::Rgb8);
         assert_eq!(
             eight.data()[0],
             (30000.0f32 / 65535.0 * 255.0).round() as u8

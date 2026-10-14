@@ -192,6 +192,35 @@ fn cached_range(
 /// source, for the last two sources (the interactive and detail previews' levels take
 /// turns), so dragging other controls does not retouch (or fill) again and the caches
 /// keyed on the retouched image keep hitting. A cancelled fill is not cached.
+/// `source` with its removals (ADR 0066), spots (ADR 0054) and red eyes (ADR 0080).
+pub(super) fn retouched(
+    source: &LinearImage,
+    removals: &[crate::remove::Removal],
+    fill: Option<&Arc<crate::remove::Fill>>,
+    spots: &[crate::retouch::Spot],
+    red_eyes: &[crate::redeye::RedEye],
+    cancel: &dyn Cancellation,
+) -> Result<LinearImage, RenderError> {
+    let retouched = if removals.is_empty() && fill.is_none() {
+        crate::retouch::retouch(source, spots)
+    } else {
+        let filled = match fill {
+            Some(fill) => fill.apply(source),
+            None => crate::remove::remove(source, removals, cancel)?,
+        };
+        if spots.is_empty() {
+            filled
+        } else {
+            crate::retouch::retouch(&filled, spots)
+        }
+    };
+    Ok(if red_eyes.is_empty() {
+        retouched
+    } else {
+        crate::redeye::apply(&retouched, red_eyes)
+    })
+}
+
 pub(super) fn cached_retouch(
     source: &LinearImage,
     removals: &[crate::remove::Removal],
@@ -254,24 +283,7 @@ pub(super) fn cached_retouch(
     {
         return Ok(Arc::clone(image));
     }
-    let retouched = if removals.is_empty() && fill.is_none() {
-        crate::retouch::retouch(source, spots)
-    } else {
-        let filled = match fill {
-            Some(fill) => fill.apply(source),
-            None => crate::remove::remove(source, removals, cancel)?,
-        };
-        if spots.is_empty() {
-            filled
-        } else {
-            crate::retouch::retouch(&filled, spots)
-        }
-    };
-    let image = Arc::new(if red_eyes.is_empty() {
-        retouched
-    } else {
-        crate::redeye::apply(&retouched, red_eyes)
-    });
+    let image = Arc::new(retouched(source, removals, fill, spots, red_eyes, cancel)?);
     let mut cache = LAST.lock().unwrap_or_else(|e| e.into_inner());
     cache.retain(|((id, _), _)| *id != key.0);
     if cache.len() >= 2 {

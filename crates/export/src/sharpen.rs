@@ -60,10 +60,12 @@ impl OutputSharpening {
 ///
 /// Memory stays at two single-channel float planes besides the output: luma, and its
 /// horizontal blur; the vertical blur is taken as each output row is written.
-pub fn sharpen(image: &OutputImage, medium: OutputSharpening) -> OutputImage {
+pub fn sharpen(image: OutputImage, medium: OutputSharpening) -> OutputImage {
+    // Owned, so no sharpening passes the image on rather than copying it (ADR 0091).
     let Some(mask) = medium.mask() else {
-        return image.clone();
+        return image;
     };
+    let image = &image;
     let (w, h) = (image.width() as usize, image.height() as usize);
     let format = image.format();
     let bpp = format.bytes_per_pixel();
@@ -167,7 +169,7 @@ mod tests {
             OutputSharpening::Matte,
             OutputSharpening::Glossy,
         ] {
-            let out = row(&sharpen(&img, medium));
+            let out = row(&sharpen(img.clone(), medium));
             // Darker just before the edge, lighter just after: overshoot, a crisper edge.
             assert!(out[19] < 80 && out[20] > 160, "{medium:?}: {out:?}");
             // Far from it, untouched.
@@ -175,7 +177,7 @@ mod tests {
         }
         // Prints are sharpened more (and wider) than screens; matte most.
         let reach = |m| {
-            let out = row(&sharpen(&img, m));
+            let out = row(&sharpen(img.clone(), m));
             80 - i32::from(out[19]) + i32::from(out[20]) - 160
         };
         assert!(reach(OutputSharpening::Matte) > reach(OutputSharpening::Glossy));
@@ -185,10 +187,10 @@ mod tests {
     #[test]
     fn none_noise_and_colour() {
         let img = edge(80, 160);
-        assert!(sharpen(&img, OutputSharpening::None) == img);
+        assert!(sharpen(img.clone(), OutputSharpening::None) == img);
         // Faint grain (a level or two) is below the threshold: left alone.
         let grain = edge(120, 121);
-        assert!(sharpen(&grain, OutputSharpening::Screen) == grain);
+        assert!(sharpen(grain.clone(), OutputSharpening::Screen) == grain);
         // A coloured edge keeps its colours' differences: the same is added to each.
         let data: Vec<u8> = (0..8 * 40)
             .flat_map(|i| {
@@ -200,7 +202,7 @@ mod tests {
             })
             .collect();
         let img = OutputImage::from_raw(40, 8, PixelFormat::Rgb8, data).unwrap();
-        let out = sharpen(&img, OutputSharpening::Matte);
+        let out = sharpen(img.clone(), OutputSharpening::Matte);
         let p = &out.data()[19 * 3..19 * 3 + 3];
         assert_eq!(i32::from(p[0]) - i32::from(p[1]), 40, "{p:?}");
     }
@@ -212,7 +214,7 @@ mod tests {
             .flat_map(u16::to_ne_bytes)
             .collect();
         let img = OutputImage::from_raw(40, 8, PixelFormat::Rgb16, data).unwrap();
-        let out = sharpen(&img, OutputSharpening::Glossy);
+        let out = sharpen(img.clone(), OutputSharpening::Glossy);
         assert_eq!(out.format(), PixelFormat::Rgb16);
         let s = out.samples16().unwrap();
         assert!(s[19 * 3] < 20000 && s[20 * 3] > 40000);

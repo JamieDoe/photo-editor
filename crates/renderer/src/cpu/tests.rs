@@ -1531,3 +1531,56 @@ fn range_masks_adjust_by_lightness_and_colour() {
     };
     assert_eq!(render(&none).data(), before.data());
 }
+
+#[test]
+fn rendering_once_matches_a_cached_render() {
+    use crate::geometry::{AspectRatio, CropRect, Geometry};
+    let img = chart();
+    // Framing and a retouch spot: the copies render_once makes and frees.
+    let recipe = EditRecipe {
+        exposure: 0.4,
+        clarity: 20.0,
+        geometry: Some(Geometry {
+            straighten: 3.0,
+            crop: CropRect {
+                x: 0.1,
+                y: 0.1,
+                w: 0.8,
+                h: 0.7,
+            },
+            aspect: AspectRatio::Free,
+            ..Geometry::default()
+        }),
+        spots: vec![crate::retouch::Spot {
+            kind: crate::retouch::SpotKind::Heal,
+            x: 0.5,
+            y: 0.5,
+            source_x: 0.3,
+            source_y: 0.4,
+            radius: 0.05,
+            feather: 50.0,
+            opacity: 100.0,
+        }],
+        ..EditRecipe::default()
+    };
+    let plan = RenderPlan::from_recipe(&recipe, None);
+    let cached = CpuRenderer
+        .render(&plan, &img, PixelFormat::Rgb16, &NeverCancel)
+        .unwrap();
+    let once = CpuRenderer
+        .render_once(&plan, img.clone(), PixelFormat::Rgb16, &NeverCancel)
+        .unwrap();
+    assert_eq!(once.data(), cached.data());
+    // And without framing or retouching.
+    let plain = RenderPlan::from_recipe(&EditRecipe::default(), None);
+    assert_eq!(
+        CpuRenderer
+            .render_once(&plain, img.clone(), PixelFormat::Rgb8, &NeverCancel)
+            .unwrap()
+            .data(),
+        CpuRenderer
+            .render(&plain, &img, PixelFormat::Rgb8, &NeverCancel)
+            .unwrap()
+            .data()
+    );
+}

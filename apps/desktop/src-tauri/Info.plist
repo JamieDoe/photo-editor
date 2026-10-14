@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the app bundle's Info.plist by Tauri. -->
+<plist version="1.0">
+<dict>
+	<!-- ADR 0091: the system allocator otherwise keeps the pages of freed large blocks
+	     (an export's decode and render, hundreds of megabytes), and they count against
+	     the machine until the app quits. Applies whenever macOS launches the app. -->
+	<key>LSEnvironment</key>
+	<dict>
+		<key>MallocLargeCache</key>
+		<string>0</string>
+	</dict>
+</dict>
+</plist>

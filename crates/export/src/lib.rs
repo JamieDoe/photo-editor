@@ -290,11 +290,22 @@ fn encode_tiff(
     space: colour::ExportColourSpace,
     metadata: Option<&metadata::Entries>,
 ) -> Result<Vec<u8>, ExportError> {
+    let mut out = std::io::Cursor::new(Vec::with_capacity(image.byte_size() / 2));
+    encode_tiff_to(&mut out, image, space, metadata)?;
+    Ok(out.into_inner())
+}
+
+/// Encodes a TIFF into `out` (ADR 0057), as [`encode_in`] does into memory.
+fn encode_tiff_to<W: std::io::Write + std::io::Seek>(
+    out: W,
+    image: &OutputImage,
+    space: colour::ExportColourSpace,
+    metadata: Option<&metadata::Entries>,
+) -> Result<(), ExportError> {
     use tiff::encoder::{Compression, Rational, TiffEncoder, colortype, compression::DeflateLevel};
     use tiff::tags::{Predictor, ResolutionUnit, Tag};
     let err = |e: tiff::TiffError| ExportError::Encode(e.to_string());
-    let mut out = std::io::Cursor::new(Vec::with_capacity(image.byte_size() / 2));
-    let mut encoder = TiffEncoder::new(&mut out)
+    let mut encoder = TiffEncoder::new(out)
         .map_err(err)?
         .with_compression(Compression::Deflate(DeflateLevel::Balanced))
         .with_predictor(Predictor::Horizontal);
@@ -323,13 +334,53 @@ fn encode_tiff(
     }
     match image.format() {
         PixelFormat::Rgb16 => {
-            let samples = image.samples16().unwrap_or_default();
-            write!(colortype::RGB16, &samples)
+            // The samples where they are when the buffer is aligned for them (large
+            // allocations are), rather than a full-size copy (ADR 0091).
+            // SAFETY: every bit pattern is a valid u16; `align_to` splits off any
+            // unaligned ends, and only an empty split is used.
+            let (head, samples, tail) = unsafe { image.data().align_to::<u16>() };
+            if head.is_empty() && tail.is_empty() {
+                write!(colortype::RGB16, samples)
+            } else {
+                let samples = image.samples16().unwrap_or_default();
+                write!(colortype::RGB16, &samples)
+            }
         }
         PixelFormat::Rgb8 => write!(colortype::RGB8, image.data()),
         PixelFormat::Rgba8 => write!(colortype::RGBA8, image.data()),
     }
-    Ok(out.into_inner())
+    Ok(())
+}
+
+/// Encodes `image` and writes it to `dest` atomically (see [`write_atomic`]): a TIFF
+/// straight into the file, as it is encoded, rather than whole in memory first (ADR
+/// 0091); the other formats, small once compressed, through memory. The file's size.
+pub fn encode_to_file(
+    dest: &Path,
+    image: &OutputImage,
+    format: ExportFormat,
+    space: colour::ExportColourSpace,
+    metadata: Option<&metadata::Entries>,
+) -> Result<u64, ExportError> {
+    if dest.file_name().is_none() {
+        return Err(ExportError::InvalidDestination("no file name".into()));
+    }
+    if format != ExportFormat::Tiff {
+        let bytes = encode_in(image, format, space, metadata)?;
+        write_atomic(dest, &bytes)?;
+        return Ok(bytes.len() as u64);
+    }
+    let mut size = 0;
+    platform::fs::write_atomic_with(dest, |file| {
+        let mut out = std::io::BufWriter::new(file);
+        encode_tiff_to(&mut out, image, space, metadata)?;
+        let file = out
+            .into_inner()
+            .map_err(|e| ExportError::Io(e.into_error()))?;
+        size = file.metadata().map_err(ExportError::Io)?.len();
+        Ok::<(), ExportError>(())
+    })?;
+    Ok(size)
 }
 
 /// Writes `bytes` to `dest` atomically (see [`platform::fs::write_atomic`]).
@@ -687,5 +738,57 @@ mod tests {
         // The tagged JPEG still decodes.
         let (w, h, _) = decode(tagged);
         assert_eq!((w, h), (4, 4));
+    }
+
+    #[test]
+    fn a_tiff_written_as_it_is_encoded_is_the_one_encoded_in_memory() {
+        let dir = fixtures::TempDir::new("export-to-file");
+        let image = ramp16(37, 23);
+        let entries = metadata::entries(
+            &metadata::CaptureFacts::default(),
+            &metadata::Judgements {
+                rating: 3,
+                ..Default::default()
+            },
+            metadata::MetadataChoice::All,
+            37,
+            23,
+            colour::ExportColourSpace::DisplayP3,
+        );
+        let dest = dir.path().join("out.tif");
+        let size = encode_to_file(
+            &dest,
+            &image,
+            ExportFormat::Tiff,
+            colour::ExportColourSpace::DisplayP3,
+            entries.as_ref(),
+        )
+        .unwrap();
+        let in_memory = encode_in(
+            &image,
+            ExportFormat::Tiff,
+            colour::ExportColourSpace::DisplayP3,
+            entries.as_ref(),
+        )
+        .unwrap();
+        let written = std::fs::read(&dest).unwrap();
+        assert_eq!(written, in_memory);
+        assert_eq!(size, written.len() as u64);
+        // JPEGs go through memory, written the same way.
+        let jpeg = dir.path().join("out.jpg");
+        let size = encode_to_file(
+            &jpeg,
+            &OutputImage::from_raw(16, 16, PixelFormat::Rgb8, vec![90; 768]).unwrap(),
+            JPEG,
+            colour::ExportColourSpace::Srgb,
+            None,
+        )
+        .unwrap();
+        assert_eq!(size, std::fs::metadata(&jpeg).unwrap().len());
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            2,
+            "no temporary files"
+        );
     }
 }
