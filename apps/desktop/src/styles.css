@@ -988,6 +988,20 @@ button.setting-switch[aria-checked="true"] .switch { justify-content: flex-end; 
 /* Smart collections (ADR 0084): one rule a row, its name then its choices. */
 .smart-rules { gap: 8px; }
 .smart-rules > .text-input { margin-bottom: 4px; }
+
+/* Keywords (ADR 0088): chips for those the photos have, a field with suggestions. */
+.keywords-body { gap: 10px; }
+.keyword-chips { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; max-height: 168px; overflow-y: auto; }
+.keyword-chip { max-width: 100%; height: 26px; display: inline-flex; align-items: center; gap: 4px; padding: 0 3px 0 9px; border-radius: 7px; background: var(--fill-quiet); border: 1px solid var(--hairline); font-size: 12.5px; color: var(--text); }
+.keyword-chip.partial { padding-left: 3px; border-style: dashed; color: var(--text-2); }
+.keyword-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.keyword-count { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+button.keyword-chip-button { flex-shrink: 0; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--text-3); }
+button.keyword-chip-button:hover:not(:disabled) { background: var(--hover-strong); color: var(--text); }
+.keyword-form { position: relative; display: flex; flex-direction: column; }
+.keyword-suggestions { margin: 4px 0 0; padding: 4px; list-style: none; border-radius: 8px; background: var(--canvas); border: 1px solid var(--hairline); display: flex; flex-direction: column; }
+.keyword-suggestions li { height: 28px; padding: 0 8px; display: flex; align-items: center; border-radius: 6px; font-size: 12.5px; color: var(--text); cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.keyword-suggestions li:hover, .keyword-suggestions li[aria-selected="true"] { background: var(--hover-strong); }
 .rule-row { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: center; gap: 8px; font-size: 12px; color: var(--text-2); }
 .rule-row .text-input { height: 30px; font-size: 12.5px; }
 select.rule-select { height: 30px; width: 100%; padding: 0 24px 0 9px; border-radius: 7px; background: var(--canvas); border: 1px solid var(--hairline); color: var(--text); font-size: 12.5px; }

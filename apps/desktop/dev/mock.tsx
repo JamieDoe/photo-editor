@@ -67,14 +67,29 @@ const albumList = () => [...mockAlbums.keys()].map(albumDto).sort((x, y) => x.na
 /** Dev-only smart collections (ADR 0084): name and rules, by id; matched like the
  *  catalogue on marks, and on file paths for words. */
 const mockSmart = new Map<number, { name: string; rules: SmartRulesDto }>([
-  [1, { name: "Best of Iceland", rules: { rating: 4, flag: null, label: null, edited: null, words: "iceland" } }],
+  [1, { name: "Best of Iceland", rules: { rating: 4, flag: null, label: null, edited: null, words: "iceland", keyword: null } }],
 ]);
 let nextSmart = 2;
+/** Dev-only keywords (ADR 0088), by photo path; a few to begin with. */
+const mockKeywords = new Map<string, string[]>([
+  ["/Users/me/Photos/2026 Iceland/DSC_0.NEF", ["Iceland", "Waterfall"]],
+  ["/Users/me/Photos/2026 Iceland/DSC_1.NEF", ["Iceland", "Puffin"]],
+]);
+const keywordUses = (paths: string[] | null) => {
+  const counts = new Map<string, number>();
+  for (const [path, names] of mockKeywords) {
+    if (paths && !paths.includes(path)) continue;
+    for (const n of names) counts.set(n, (counts.get(n) ?? 0) + 1);
+  }
+  return [...counts].map(([name, photos]) => ({ name, photos })).sort((a, b) => a.name.localeCompare(b.name));
+};
+const hasKeyword = (path: string, keyword: string | null) =>
+  !keyword || (mockKeywords.get(path) ?? []).some((k) => k.toLowerCase() === keyword.toLowerCase());
 const smartMatches = (rules: SmartRulesDto) => {
   const words = rules.words.toLowerCase().split(/\s+/).filter(Boolean);
   return (lastListing ?? mockListing("/Users/me/Photos/2026 Iceland")).photos
     .map((p, i) => ({ ...p, marks: marksOf(p.path, i) }))
-    .filter((p) => matchesMarks(p, rules) && words.every((w) => p.path.toLowerCase().includes(w)));
+    .filter((p) => matchesMarks(p, rules) && hasKeyword(p.path, rules.keyword) && words.every((w) => p.path.toLowerCase().includes(w)));
 };
 const smartDto = (id: number) => {
   const c = mockSmart.get(id)!;
@@ -493,6 +508,25 @@ mockIPC((cmd, payload) => {
       const members = new Set(mockAlbums.get(id)!.paths);
       return { album: albumDto(id), photos: all.photos.map((p, i) => ({ ...p, marks: marksOf(p.path, i) })).filter((p) => members.has(p.path)) };
     }
+    case "list_keywords":
+      return keywordUses(null);
+    case "photo_keywords":
+      return keywordUses((payload as { paths: string[] }).paths);
+    case "add_keywords":
+    case "remove_keywords": {
+      const { paths, names } = payload as { paths: string[]; names: string[] };
+      const library = keywordUses(null).map((k) => k.name);
+      for (const path of paths) {
+        let now = mockKeywords.get(path) ?? [];
+        for (const raw of names) {
+          const name = library.find((k) => k.toLowerCase() === raw.toLowerCase()) ?? raw.trim();
+          now = now.filter((k) => k.toLowerCase() !== name.toLowerCase());
+          if (cmd === "add_keywords") now.push(name);
+        }
+        mockKeywords.set(path, now);
+      }
+      return keywordUses(paths);
+    }
     case "list_smart_collections":
       return [...mockSmart.keys()].map(smartDto).sort((x, y) => x.name.localeCompare(y.name));
     case "create_smart_collection": {
@@ -521,7 +555,11 @@ mockIPC((cmd, payload) => {
       const all = lastListing ?? mockListing("/Users/me/Photos/2026 Iceland");
       const photos = all.photos
         .map((p, i) => ({ ...p, marks: marksOf(p.path, i) }))
-        .filter((p) => words.every((w) => p.path.toLowerCase().includes(w)));
+        .filter((p) =>
+          words.every(
+            (w) => p.path.toLowerCase().includes(w) || (mockKeywords.get(p.path) ?? []).some((k) => k.toLowerCase().includes(w)),
+          ),
+        );
       return new Promise((r) => setTimeout(() => r({ query, photos }), 40));
     }
     case "library_collection": {

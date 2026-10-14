@@ -42,7 +42,7 @@ pub async fn set_photo_marks(
         catalogue.set_marks(&photos, change)?;
         if sidecars {
             let changed: Vec<PathBuf> = files.iter().map(|(file, _)| file.clone()).collect();
-            app_core::sidecars::sync_files(&catalogue, &changed, &raw);
+            app_core::sidecars::sync_files(&catalogue, &changed, &raw, false);
         }
         catalogue.collection_counts()
     })

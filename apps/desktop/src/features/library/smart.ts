@@ -9,7 +9,7 @@ import { LABELS } from "./marks";
  * a smart collection leaves the view at once, as it does from Picks.
  */
 
-export const NO_RULES: SmartRulesDto = { rating: null, flag: null, label: null, edited: null, words: "" };
+export const NO_RULES: SmartRulesDto = { rating: null, flag: null, label: null, edited: null, words: "", keyword: null };
 
 /** The rating rule's choices: any, unrated, or at least 1–5 stars. */
 export const RATING_RULES: ReadonlyArray<{ value: number | null; label: string }> = [
@@ -38,10 +38,18 @@ export const EDITED_RULES: ReadonlyArray<{ value: boolean | null; label: string 
 
 /** No rules: every photo would match (that is All photos, not a smart collection). */
 export function hasNoRules(r: SmartRulesDto): boolean {
-  return r.rating === null && r.flag === null && r.label === null && r.edited === null && r.words.trim() === "";
+  return (
+    r.rating === null &&
+    r.flag === null &&
+    r.label === null &&
+    r.edited === null &&
+    r.words.trim() === "" &&
+    !r.keyword?.trim()
+  );
 }
 
-/** Whether `photo`'s marks and edit match `rules` (words are the catalogue's to judge). */
+/** Whether `photo`'s marks and edit match `rules` (words and keywords are the
+ *  catalogue's to judge). */
 export function matchesMarks(photo: PhotoEntryDto, rules: SmartRulesDto): boolean {
   const { rating, flag, label } = photo.marks;
   if (rules.rating !== null && (rules.rating === 0 ? rating !== 0 : rating < rules.rating)) return false;
@@ -73,6 +81,7 @@ export function rulesSummary(r: SmartRulesDto): string {
   if (r.flag !== null) parts.push(FLAG_RULES.find((x) => x.value === r.flag)?.label ?? "");
   if (r.label !== null) parts.push(r.label === "none" ? "No label" : (LABELS.find((l) => l.id === r.label)?.name ?? ""));
   if (r.edited !== null) parts.push(r.edited ? "Edited" : "Not edited");
+  if (r.keyword?.trim()) parts.push(`Keyword ${r.keyword.trim()}`);
   if (r.words.trim()) parts.push(`“${r.words.trim().replace(/\s+/g, " ")}”`);
   return parts.filter(Boolean).join(" · ");
 }

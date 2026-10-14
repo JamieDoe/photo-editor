@@ -286,6 +286,14 @@ export const SmartIcon = (p: IconProps) => (
   </Icon>
 );
 
+/** Keywords (ADR 0088): a luggage tag. */
+export const TagIcon = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M2.5 3.5v3.6a1 1 0 0 0 .3.7l5.6 5.6a1 1 0 0 0 1.4 0l3.4-3.4a1 1 0 0 0 0-1.4L7.6 3a1 1 0 0 0-.7-.3H3.3a.8.8 0 0 0-.8.8Z" />
+    <circle cx="5.4" cy="5.6" r="0.9" />
+  </Icon>
+);
+
 /** An album (ADR 0055): two photos stacked. */
 export const AlbumIcon = (p: IconProps) => (
   <Icon {...p}>

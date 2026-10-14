@@ -953,8 +953,10 @@ pub struct SmartRulesDto {
     pub label: Option<ColourLabelDto>,
     /// Edited (true) or not (false).
     pub edited: Option<bool>,
-    /// Words as the search box takes them: folders, cameras, lenses, dates.
+    /// Words as the search box takes them: folders, cameras, lenses, keywords, dates.
     pub words: String,
+    /// Photos with this keyword, ignoring case (ADR 0088).
+    pub keyword: Option<String>,
 }
 
 impl From<app_core::SmartRules> for SmartRulesDto {
@@ -973,6 +975,7 @@ impl From<app_core::SmartRules> for SmartRulesDto {
             label: r.label.map(ColourLabelDto::from),
             edited: r.edited,
             words: r.words,
+            keyword: r.keyword,
         }
     }
 }
@@ -993,6 +996,26 @@ impl From<SmartRulesDto> for app_core::SmartRules {
             label: r.label.map(app_core::ColourLabel::from),
             edited: r.edited,
             words: r.words,
+            keyword: r.keyword,
+        }
+    }
+}
+
+/// A keyword (ADR 0088) and how many photos have it: in the library, or among the
+/// photos asked about.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub struct KeywordUseDto {
+    pub name: String,
+    pub photos: u32,
+}
+
+impl From<app_core::KeywordUse> for KeywordUseDto {
+    fn from(k: app_core::KeywordUse) -> Self {
+        Self {
+            name: k.name,
+            photos: k.photos as u32,
         }
     }
 }
@@ -1096,6 +1119,8 @@ pub enum IndexEvent {
         details_read: u32,
         /// New photos that took their marks from another app's sidecars (ADR 0067).
         marks_from_sidecars: u32,
+        /// Photos that took keywords from another app's sidecar (ADR 0088).
+        keywords_from_sidecars: u32,
         total_ms: f64,
     },
     Failed {

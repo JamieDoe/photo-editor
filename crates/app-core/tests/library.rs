@@ -258,3 +258,32 @@ fn new_raws_take_marks_from_another_apps_sidecars_once() {
     assert_eq!(again.marks_from_sidecars, 0);
     assert_eq!(marks("DSC_1.NEF"), Default::default());
 }
+
+#[test]
+fn new_raws_take_keywords_from_another_apps_sidecars() {
+    let s = setup("index-sidecar-keywords");
+    for (i, name) in ["DSC_1.NEF", "DSC_2.NEF"].iter().enumerate() {
+        photo(&s.root.join(name), i as u16);
+    }
+    // Lightroom's keywords, with no marks; and marks with keywords.
+    let keywords_only = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:subject><rdf:Bag><rdf:li>Heron</rdf:li><rdf:li>Loch Lomond</rdf:li></rdf:Bag></dc:subject></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    let both = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/" xmp:Rating="4"><dc:subject><rdf:Bag><rdf:li>heron</rdf:li></rdf:Bag></dc:subject></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+    std::fs::write(s.root.join("DSC_1.xmp"), keywords_only).unwrap();
+    std::fs::write(s.root.join("DSC_2.xmp"), both).unwrap();
+
+    let first = s.index();
+    assert_eq!(
+        (first.marks_from_sidecars, first.keywords_from_sidecars),
+        (1, 2)
+    );
+    let keywords = |name: &str| {
+        let photo = s.catalogue.photo_at(&s.root.join(name)).unwrap().unwrap();
+        s.catalogue.photo_keywords(photo).unwrap()
+    };
+    assert_eq!(keywords("DSC_1.NEF"), ["Heron", "Loch Lomond"]);
+    // The library's spelling of a keyword it already has.
+    assert_eq!(keywords("DSC_2.NEF"), ["Heron"]);
+    // Only once, when the photo joins the library.
+    let again = s.index();
+    assert_eq!(again.keywords_from_sidecars, 0);
+}

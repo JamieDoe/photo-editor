@@ -12,6 +12,7 @@ import type { SelfTestConfigDto } from "../../ipc/generated/SelfTestConfigDto";
 import { fitCropFor } from "../editor/cropGeometry";
 import { loadNotices } from "../settings/notices";
 import { applyPreset } from "../editor/presets";
+import { NO_RULES } from "../library/smart";
 import { beforeRecipe, mixerOf, neutralRecipe } from "../editor/recipe";
 import type { DisplayedFrame, Editor } from "../editor/useEditor";
 
@@ -586,9 +587,9 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       const word = indexing.folder.split(/[\\/]/).filter(Boolean).pop() ?? "";
       const before = photo.marks.label;
       await ipc.setPhotoMarks([photo.path], { type: "label", label: "purple" });
-      const rules = { rating: null, flag: null, label: "purple" as const, edited: null, words: word };
+      const rules = { rating: null, flag: null, label: "purple" as const, edited: null, words: word, keyword: null };
       const refused = async (f: () => Promise<unknown>) => f().then(() => false, () => true);
-      const noRules = await refused(() => ipc.createSmartCollection("x", { rating: null, flag: null, label: null, edited: null, words: "  " }));
+      const noRules = await refused(() => ipc.createSmartCollection("x", { rating: null, flag: null, label: null, edited: null, words: "  ", keyword: null }));
       const noName = await refused(() => ipc.createSmartCollection("   ", rules));
       const counted = await ipc.countSmartRules(rules);
       const made = await ipc.createSmartCollection("  Self-test   smart ", rules);
@@ -633,6 +634,48 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       smartCheck.listedBefore &&
       !smartCheck.listedAfterDelete &&
       smartCheck.photoKept;
+
+    // Keywords (ADR 0088) through the real commands and catalogue: two photos of the
+    // fixtures folder take keywords (one twice, in another case: kept once), which the
+    // library lists, search finds and a smart rule matches; taken off again, they are
+    // forgotten.
+    const keywordsCheck = await (async () => {
+      if (!indexing) return null;
+      const photos = (await ipc.listFolder(indexing.folder)).photos.slice(0, 2).map((p) => p.path);
+      if (photos.length === 0) return null;
+      const [one] = photos;
+      const names = ["Self-test heron", "self-test HERON", "  Self-test   loch "];
+      const added = await ipc.addKeywords(photos, names);
+      const onOne = await ipc.photoKeywords([one!]);
+      const listed = (await ipc.listKeywords()).filter((k) => k.name.startsWith("Self-test"));
+      const found = (await ipc.searchLibrary("self-test loch")).photos.filter((p) => photos.includes(p.path)).length;
+      const matched = await ipc.countSmartRules({ ...NO_RULES, keyword: "SELF-TEST HERON" });
+      const afterOne = await ipc.removeKeywords([one!], ["self-test heron"]);
+      const shared = await ipc.photoKeywords(photos);
+      await ipc.removeKeywords(photos, ["Self-test heron", "Self-test loch"]);
+      const left = (await ipc.listKeywords()).filter((k) => k.name.startsWith("Self-test")).length;
+      return {
+        photos: photos.length,
+        added: added.map((k) => `${k.name}:${k.photos}`),
+        onOne: onOne.map((k) => k.name),
+        listed: listed.map((k) => k.name),
+        found,
+        matched,
+        afterOne: afterOne.map((k) => k.name),
+        shared: shared.map((k) => `${k.name}:${k.photos}`),
+        left,
+      };
+    })();
+    const keywordsOk =
+      keywordsCheck !== null &&
+      keywordsCheck.onOne.join("|") === "Self-test heron|Self-test loch" &&
+      keywordsCheck.listed.length === 2 &&
+      keywordsCheck.added.includes(`Self-test heron:${keywordsCheck.photos}`) &&
+      keywordsCheck.found === keywordsCheck.photos &&
+      keywordsCheck.matched >= keywordsCheck.photos &&
+      keywordsCheck.afterOne.join("|") === "Self-test loch" &&
+      keywordsCheck.shared.includes("Self-test loch:" + keywordsCheck.photos) &&
+      keywordsCheck.left === 0;
 
     // Search and Recently imported (ADR 0056) through the real commands and catalogue:
     // the fixtures folder's name, the test photo's camera and capture year find it; a
@@ -2080,6 +2123,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       lastPlace: lastPlaceOk,
       albums: albumsOk,
       smartCollections: smartOk,
+      keywords: keywordsOk,
       search: searchOk,
       savedEdits: editsOk,
       toneCurve: toneCurveOk,
@@ -2166,6 +2210,7 @@ export async function runSelfTest(config: SelfTestConfigDto, driver: SelfTestDri
       allPhotos,
       albums,
       smartCollections: smartCheck,
+      keywords: keywordsCheck,
       thirdPartyNotices: { libraries: libraries.length, texts: Object.keys(notices?.texts ?? {}).length },
       search: searchCheck,
       edits,

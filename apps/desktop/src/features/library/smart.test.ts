@@ -42,12 +42,14 @@ describe("smart collections", () => {
     expect(hasNoRules({ ...NO_RULES, words: "   " })).toBe(true);
     expect(hasNoRules({ ...NO_RULES, edited: false })).toBe(false);
     expect(hasNoRules({ ...NO_RULES, rating: 0 })).toBe(false);
+    expect(hasNoRules({ ...NO_RULES, keyword: " " })).toBe(true);
+    expect(hasNoRules({ ...NO_RULES, keyword: "Heron" })).toBe(false);
   });
 
   it("read as a short summary", () => {
-    expect(rulesSummary({ rating: 3, flag: "picked", label: "red", edited: true, words: " iceland   2026 " })).toBe(
-      "★ 3 and up · Picked · Red · Edited · “iceland 2026”",
-    );
+    expect(
+      rulesSummary({ rating: 3, flag: "picked", label: "red", edited: true, words: " iceland   2026 ", keyword: "Heron" }),
+    ).toBe("★ 3 and up · Picked · Red · Edited · Keyword Heron · “iceland 2026”");
     expect(rulesSummary({ ...NO_RULES, label: "none", edited: false })).toBe("No label · Not edited");
     expect(rulesSummary(NO_RULES)).toBe("");
   });

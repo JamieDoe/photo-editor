@@ -20,6 +20,10 @@ label: ColourLabelDto | null,
  */
 edited: boolean | null, 
 /**
- * Words as the search box takes them: folders, cameras, lenses, dates.
+ * Words as the search box takes them: folders, cameras, lenses, keywords, dates.
  */
-words: string, };
+words: string, 
+/**
+ * Photos with this keyword, ignoring case (ADR 0088).
+ */
+keyword: string | null, };

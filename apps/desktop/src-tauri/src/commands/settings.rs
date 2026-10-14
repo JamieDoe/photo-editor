@@ -71,7 +71,7 @@ fn write_all_sidecars(state: &AppState) {
     let raw = super::library::raw_extensions(&state.engine.info().extensions);
     let catalogue = std::sync::Arc::clone(&state.catalogue);
     tauri::async_runtime::spawn_blocking(move || {
-        app_core::sidecars::sync_files(&catalogue, &files, &raw);
+        app_core::sidecars::sync_files(&catalogue, &files, &raw, false);
         log::info!("sidecars: synced for {} marked photos", files.len());
     });
 }

@@ -129,17 +129,24 @@ pub(crate) fn output_sharpening(s: settings::OutputSharpening) -> app_core::Outp
 }
 
 /// The colour space for the remembered settings' choice (ADR 0062).
-/// The marks of the photo whose file is at `path`, as an export writes them (ADR
-/// 0067); none for a file outside the library or when the catalogue cannot say.
+/// The marks (ADR 0067) and keywords (ADR 0088) of the photo whose file is at `path`,
+/// as an export writes them; none for a file outside the library or when the catalogue
+/// cannot say.
 fn marks_at(catalogue: &app_core::Catalogue, path: &std::path::Path) -> app_core::Judgements {
-    let marks = catalogue
+    let found = catalogue
         .photo_at(path)
-        .and_then(|photo| photo.map(|p| catalogue.marks(p)).transpose())
+        .and_then(|photo| {
+            photo
+                .map(|p| Ok((catalogue.marks(p)?, catalogue.photo_keywords(p)?)))
+                .transpose()
+        })
         .unwrap_or_else(|e| {
             log::warn!("marks lookup failed for {}: {e}", path.display());
             None
         });
-    marks.map(|m| app_core::judgements(&m)).unwrap_or_default()
+    found
+        .map(|(marks, keywords)| app_core::judgements(&marks, keywords))
+        .unwrap_or_default()
 }
 
 fn watermark_position(p: settings::WatermarkPosition) -> app_core::WatermarkPosition {

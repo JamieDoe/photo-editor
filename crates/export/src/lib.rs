@@ -558,6 +558,7 @@ mod tests {
             rating: 4,
             rejected: false,
             label: Some(LabelName::Purple),
+            keywords: vec!["Heron".into()],
         };
         let facts = CaptureFacts {
             camera_make: Some("FUJIFILM".into()),
@@ -588,7 +589,9 @@ mod tests {
                 let bytes = encode_in(&image, format, space, entries.as_ref()).unwrap();
                 // The marks as XMP (ADR 0067), wherever metadata is kept.
                 let has = |s: &str| bytes.windows(s.len()).any(|w| w == s.as_bytes());
-                let has_marks = has("xmp:Rating=\"4\"") && has("xmp:Label=\"Purple\"");
+                let has_marks = has("xmp:Rating=\"4\"")
+                    && has("xmp:Label=\"Purple\"")
+                    && has("<rdf:li>Heron</rdf:li>");
                 assert_eq!(
                     has_marks,
                     choice != MetadataChoice::None,

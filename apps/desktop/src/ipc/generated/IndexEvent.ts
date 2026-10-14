@@ -9,4 +9,8 @@ export type IndexEvent = { "type": "progress", root: string, stage: IndexStageDt
 /**
  * New photos that took their marks from another app's sidecars (ADR 0067).
  */
-marksFromSidecars: number, totalMs: number, } | { "type": "failed", root: string, error: IpcError, };
+marksFromSidecars: number, 
+/**
+ * Photos that took keywords from another app's sidecar (ADR 0088).
+ */
+keywordsFromSidecars: number, totalMs: number, } | { "type": "failed", root: string, error: IpcError, };

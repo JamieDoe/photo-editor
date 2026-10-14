@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CalibrationIcon, ColourIcon, CompareIcon, RetouchIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, SearchIcon, UndoIcon } from "../../components/icons";
+import { CalibrationIcon, ColourIcon, CompareIcon, RetouchIcon, CropIcon, DiagnosticsIcon, MaskIcon, OpenIcon, RedoIcon, SearchIcon, TagIcon, UndoIcon } from "../../components/icons";
 import { MarkControls } from "../../components/MarkControls";
 import type { MarkChangeDto } from "../../ipc/generated/MarkChangeDto";
 import type { MarksDto } from "../../ipc/generated/MarksDto";
 import { formatAperture, formatFocal, formatShutter } from "../../lib/format";
 import { hasCommandModifier, isTextEntry } from "../../lib/keyboard";
+import { KeywordsEditor } from "../library/KeywordsEditor";
 import { markChangeForKey } from "../library/marks";
 import type { LibraryApi } from "../library/useLibrary";
 import * as ipc from "../../ipc/client";
@@ -200,6 +201,11 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
   // filmstrip, Paste also applies to them, and Sync edits gives them this photo's edit
   // (ADR 0049): they are written straight to the library.
   const [syncing, setSyncing] = useState(false);
+  // Keywords (ADR 0088) of the open Library photo and any ticked in the filmstrip.
+  const [keywordsAt, setKeywordsAt] = useState<HTMLElement | null>(null);
+  const keywordsButton = useRef<HTMLButtonElement>(null);
+  const keywordTargets = currentPath ? [currentPath, ...library.batch.filter((p) => p !== currentPath)] : [];
+  useEffect(() => setKeywordsAt(null), [currentPath]);
   /** Sets `groups` from `source` on the ticked photos other than the open one. */
   const applyToTicked = async (source: EditRecipe, groups: string[]) => {
     const targets = library.batch.filter((p) => p !== currentPath);
@@ -305,6 +311,7 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
       else if (key === "c" && e.shiftKey) copyRef.current();
       else if (key === "v" && e.shiftKey) void pasteRef.current();
       else if (key === "u" && e.shiftKey) void autoRef.current();
+      else if (key === "k" && !e.shiftKey && keywordsButton.current) setKeywordsAt(keywordsButton.current);
       else if ((key === "=" || key === "+") && zoomable) zoomModel.step(1);
       else if (key === "-" && zoomable) zoomModel.step(-1);
       else if (key === "0" && zoomable) zoomModel.fit();
@@ -348,6 +355,27 @@ export function EditView({ editor, marks, onMark, onStep, position, onOpenFile, 
                 saving={image.editSaving}
                 state={editor.saveState}
                 edited={!isIdentity(recipe)}
+              />
+            )}
+            {image && currentPath && (
+              <button
+                ref={keywordsButton}
+                className="icon-button history-button"
+                onClick={(e) => setKeywordsAt(keywordsAt ? null : e.currentTarget)}
+                aria-expanded={keywordsAt !== null}
+                aria-label="Keywords"
+                title="Keywords (⌘K)"
+              >
+                <TagIcon />
+              </button>
+            )}
+            {keywordsAt && keywordTargets.length > 0 && (
+              <KeywordsEditor
+                paths={keywordTargets}
+                anchor={keywordsAt}
+                onClose={() => setKeywordsAt(null)}
+                onChanged={library.keywordsChanged}
+                onError={editor.reportError}
               />
             )}
             {image && (

@@ -7,6 +7,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ExportEstimateDto } from "./generated/ExportEstimateDto";
 import type { ExportEstimateRequestDto } from "./generated/ExportEstimateRequestDto";
 import type { LibraryPlace } from "./generated/LibraryPlace";
+import type { KeywordUseDto } from "./generated/KeywordUseDto";
 import type { ChromaticAberration } from "./generated/ChromaticAberration";
 import type { EngineInfoDto } from "./generated/EngineInfoDto";
 import type { BackupStatusDto } from "./generated/BackupStatusDto";
@@ -242,6 +243,14 @@ export const updateSmartCollection = (id: number, name: string, rules: SmartRule
 export const deleteSmartCollection = (id: number) => invoke<void>("delete_smart_collection", { id });
 /** How many photos `rules` match, while they are chosen. */
 export const countSmartRules = (rules: SmartRulesDto) => invoke<number>("count_smart_rules", { rules });
+/** Keywords (ADR 0088): the library's, for suggestions; those of some photos, each with
+ *  how many of them have it; and adding or removing some (the photos' keywords after). */
+export const listKeywords = () => invoke<KeywordUseDto[]>("list_keywords");
+export const photoKeywords = (paths: string[]) => invoke<KeywordUseDto[]>("photo_keywords", { paths });
+export const addKeywords = (paths: string[], names: string[]) => invoke<KeywordUseDto[]>("add_keywords", { paths, names });
+export const removeKeywords = (paths: string[], names: string[]) =>
+  invoke<KeywordUseDto[]>("remove_keywords", { paths, names });
+
 export const smartCollectionPhotos = (id: number) =>
   invoke<SmartCollectionListingDto>("smart_collection_photos", { id });
 /** The library's photos matching every word of `query` (ADR 0056): file and folder

@@ -113,6 +113,10 @@ export function useLibrary(remembered?: RememberedView) {
   /** A search of the whole library (ADR 0056): what is typed, and its results, shown
    *  over whatever view is underneath until cleared. */
   const [query, setQuery] = useState("");
+  const smartRef = useRef(smart);
+  smartRef.current = smart;
+  const queryRef = useRef(query);
+  queryRef.current = query;
   const [search, setSearch] = useState<SearchResultsDto | null>(null);
   const searchSeq = useRef(0);
   const requestRef = useRef(0);
@@ -400,6 +404,21 @@ export function useLibrary(remembered?: RememberedView) {
     }
   }, [refreshStatus, refreshSmartSoon]);
 
+  /** Keywords changed on some photos (ADR 0088): smart collections may count others
+   *  now, and the smart collection or search shown may hold others. */
+  const keywordsChanged = useCallback(() => {
+    refreshSmartSoon();
+    const shown = smartRef.current;
+    if (shown) {
+      const id = shown.collection.id;
+      ipc.smartCollectionPhotos(id).then(
+        (listing) => setSmart((now) => (now?.collection.id === id ? listing : now)),
+        () => undefined,
+      );
+    }
+    if (queryRef.current.trim()) runSearch(queryRef.current);
+  }, [refreshSmartSoon, runSearch]);
+
   /** Ticks or unticks a photo for batch editing. */
   const toggleBatch = useCallback((path: string) => {
     batchAnchor.current = path;
@@ -436,6 +455,8 @@ export function useLibrary(remembered?: RememberedView) {
     loading,
     error,
     clearError: () => setError(null),
+    /** Shows a failure from outside the hook (a keyword change). */
+    reportError: async (e: unknown) => setError(await toAppError(e)),
     indexing,
     lastIndex,
     status,
@@ -535,6 +556,7 @@ export function useLibrary(remembered?: RememberedView) {
     neighbour,
     setMarks,
     markEdited,
+    keywordsChanged,
     findPhoto,
     /** Batch selection (ADR 0049): the ticked photos still in this view. */
     batch: batchInView,

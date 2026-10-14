@@ -1264,3 +1264,26 @@ full size):
 Without OpenMP LibRaw decodes on one thread, so it was not shipped that way. With it,
 the shipped build is as fast as Homebrew's or faster (full-size decodes 20–37 % faster
 here, from the newer OpenMP runtime or the build flags; not investigated further).
+
+## 63. Keywords (ADR 0088)
+
+The smart collections catalogue of §60 (20,000 photos) with three keywords on each from
+a pool of 500 (60,000 links), release build, median of 7; `main` alternated with the
+branch on the same machine (`cargo test --release -p catalogue smart_collections_at_scale
+-- --ignored --nocapture`):
+
+| Rules | `main` | With keywords |
+|---|---|---|
+| Words "nothing-here" (no match: every condition tried) | 35–36 ms | 39 ms |
+| Words "trip 42" | 69–70 ms | 74–75 ms (2,741 photos: "42" now matches keywords too) |
+| ★ 3 and up, "z 6 2023" | 8.6–8.8 ms | 19–20 ms |
+| Keyword "subject 42" | — | 0.1 ms (120 photos) |
+| Keywords of 1,000 photos (the popover) | — | 1.7 ms |
+| The library's 500 keywords (suggestions) | — | 2.1 ms |
+| Adding 60,000 keywords, one photo per call | — | 179 ms |
+
+A word matches a keyword through `p.id IN (photos with a keyword LIKE it)`, which SQLite
+works out once per word over the keywords (hundreds or thousands) rather than once per
+photo. A first version asked per photo (`EXISTS`): words then cost 30% more than before,
+and a keyword rule 9 ms. Searches run off the main thread after typing pauses (§38).
+
