@@ -1,0 +1,17 @@
+{
+  "build": {
+    "beforeBundleCommand": "sh ../../scripts/bundle-native-macos.sh"
+  },
+  "bundle": {
+    "macOS": {
+      "signingIdentity": "-",
+      "hardenedRuntime": false,
+      "frameworks": [
+        "../../../target/native/bundle/libraw_r.25.dylib",
+        "../../../target/native/bundle/libjpeg.62.dylib",
+        "../../../target/native/bundle/libturbojpeg.0.dylib",
+        "../../../target/native/bundle/libomp.dylib"
+      ]
+    }
+  }
+}

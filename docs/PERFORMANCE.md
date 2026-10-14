@@ -1245,3 +1245,22 @@ Oklab conversion a pixel, then the test) and kept for the latest six shapes and 
 so dragging a mask's own sliders, or any control after the masks, reads the map. The
 tint is drawn from the engine's view at up to 2048 px, read from a pyramid level without
 rendering.
+
+## 62. The shipped native libraries (ADR 0086)
+
+LibRaw 0.22.2 as the app ships it (built here for macOS 13 with LLVM OpenMP 21.1.8)
+against Homebrew's (macOS 26 build, its OpenMP), `bench --single FILE --iterations 3`,
+release build, two alternating rounds (ms, decode at the opening preview's scale /
+full size):
+
+| Raw | Homebrew | Shipped, without OpenMP | Shipped, with OpenMP |
+|---|---|---|---|
+| Canon EOS R6 CR3 | 91 / 366–370 | 298–304 / 989–1006 | 89–90 / 254 |
+| Fujifilm X-T3 RAF | 174–181 / 2117–2134 | 856–1008 / 10936–13027 | 173–174 / 1709–1720 |
+| Nikon Z 6 NEF | 324–326 / 647 | 430–434 / 1290–1308 | 326–328 / 519–528 |
+| Sony A7R IV ARW (61 MP) | 311–318 / 1238 | 444–447 / 2548–2568 | 272–273 / 784–789 |
+| Ricoh GR III DNG | 406–408 / 722 | 427 / 1140–1159 | 382–385 / 572–573 |
+
+Without OpenMP LibRaw decodes on one thread, so it was not shipped that way. With it,
+the shipped build is as fast as Homebrew's or faster (full-size decodes 20–37 % faster
+here, from the newer OpenMP runtime or the build flags; not investigated further).

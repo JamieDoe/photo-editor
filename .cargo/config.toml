@@ -1,3 +1,11 @@
 [env]
 # ts-rs writes generated TypeScript bindings here (see docs/ARCHITECTURE.md, "Typed IPC").
 TS_RS_EXPORT_DIR = { value = "apps/desktop/src/ipc/generated", relative = true }
+# The native libraries the app ships, built for its oldest macOS by
+# scripts/build-native-macos.sh (ADR 0086). While they aren't built, the build scripts
+# fall back to Homebrew's, which are fine for development but can't be shipped.
+LIBRAW_DIR = { value = "target/native/macos-arm64", relative = true }
+JPEG_TURBO_DIR = { value = "target/native/macos-arm64", relative = true }
+# The oldest macOS the app runs on (ADR 0086); keep in step with the script and
+# bundle.macOS.minimumSystemVersion.
+MACOSX_DEPLOYMENT_TARGET = "13.0"

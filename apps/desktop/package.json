@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "tauri": "tauri",
+    "bundle": "sh ../../scripts/build-native-macos.sh && tauri build --config src-tauri/tauri.bundle.conf.json",
     "bindings": "cd ../.. && cargo test -q -p desktop -p renderer --features renderer/ts export_bindings"
   },
   "dependencies": {
