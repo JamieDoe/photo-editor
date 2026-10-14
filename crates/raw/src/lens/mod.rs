@@ -1,9 +1,11 @@
 //! A lens's corrections as the camera recorded them in the raw file (ADR 0075), so
-//! distortion and vignetting can be corrected without a lens database.
+//! distortion, vignetting and chromatic aberration can be corrected without a lens
+//! database.
 //!
 //! - **Sony** (ARW): in the raw image's IFD, tags `0x7037` (distortion) and `0x7032`
 //!   (vignetting), each a count then that many signed 16-bit values at radii evenly
-//!   spaced from the centre to the corner.
+//!   spaced from the centre to the corner; and `0x7035` (chromatic aberration, ADR
+//!   0083), a count then red's values and blue's, at the same radii.
 //!
 //! Only the file's headers are read, a few kilobytes, never the image.
 
@@ -28,10 +30,15 @@ pub struct LensProfile {
     /// At each knot, how bright the lens leaves the image, relative to its centre (1:
     /// no vignetting).
     pub vignetting: Option<Vec<f32>>,
+    /// At each knot, how much larger the lens makes the red and the blue images than
+    /// the green one: a point's radius in red (or blue) as a multiple of its radius in
+    /// green (1: no chromatic aberration).
+    pub chromatic_aberration: Option<[Vec<f32>; 2]>,
 }
 
 /// Sony's tags.
 const SONY_VIGNETTING: u16 = 0x7032;
+const SONY_CHROMATIC_ABERRATION: u16 = 0x7035;
 const SONY_DISTORTION: u16 = 0x7037;
 const SUB_IFDS: u16 = 0x014a;
 const EXIF_IFD: u16 = 0x8769;
@@ -45,7 +52,7 @@ pub fn read(path: &Path) -> Option<LensProfile> {
     let tiff = Tiff::open(&mut file)?;
     let mut pending = vec![tiff.first_ifd];
     let mut seen = Vec::new();
-    let (mut distortion, mut vignetting, mut lens) = (None, None, None);
+    let (mut distortion, mut vignetting, mut chromatic, mut lens) = (None, None, None, None);
     while let Some(offset) = pending.pop() {
         if offset == 0 || seen.contains(&offset) || seen.len() >= MAX_IFDS {
             continue;
@@ -64,11 +71,14 @@ pub fn read(path: &Path) -> Option<LensProfile> {
                 SONY_VIGNETTING => {
                     vignetting = tiff.shorts(&mut file, e).and_then(|v| sony_curve(&v))
                 }
+                SONY_CHROMATIC_ABERRATION => {
+                    chromatic = tiff.shorts(&mut file, e).and_then(|v| sony_curve(&v))
+                }
                 _ => {}
             }
         }
     }
-    sony_profile(distortion, vignetting).map(|p| LensProfile { lens, ..p })
+    sony_profile(distortion, vignetting, chromatic).map(|p| LensProfile { lens, ..p })
 }
 
 /// A Sony curve: a count `n`, then `n` values.
@@ -79,13 +89,34 @@ fn sony_curve(values: &[i16]) -> Option<Vec<i16>> {
 
 /// Sony's encodings as curves (as darktable and RawTherapee read them):
 /// - distortion: `1 + v / 2^14`;
-/// - vignetting: `2^(0.5 - 2^(v / 2^13 - 1))`, so 0 is no vignetting.
-fn sony_profile(distortion: Option<Vec<i16>>, vignetting: Option<Vec<i16>>) -> Option<LensProfile> {
-    let n = distortion.as_ref().or(vignetting.as_ref())?.len();
+/// - vignetting: `2^(0.5 - 2^(v / 2^13 - 1))`, so 0 is no vignetting;
+/// - chromatic aberration: red's values then blue's, each `1 + v / 2^21`.
+fn sony_profile(
+    distortion: Option<Vec<i16>>,
+    vignetting: Option<Vec<i16>>,
+    chromatic: Option<Vec<i16>>,
+) -> Option<LensProfile> {
+    // Red's and blue's curves, each as long as the others.
+    let chromatic = chromatic.filter(|c| c.len() % 2 == 0).map(|c| {
+        let (red, blue) = c.split_at(c.len() / 2);
+        [red, blue].map(|v| {
+            v.iter()
+                .map(|&v| 1.0 + f32::from(v) / 2_097_152.0)
+                .collect::<Vec<f32>>()
+        })
+    });
+    let n = distortion
+        .as_ref()
+        .or(vignetting.as_ref())
+        .map(Vec::len)
+        .or(chromatic.as_ref().map(|c| c[0].len()))?;
     let fits = |c: &Option<Vec<i16>>| c.as_ref().is_none_or(|c| c.len() == n);
-    if !fits(&distortion) || !fits(&vignetting) {
+    if !fits(&distortion) || !fits(&vignetting) || n < 2 {
         return None;
     }
+    // A chromatic aberration curve that doesn't fit the others is left out, not the
+    // whole profile.
+    let chromatic = chromatic.filter(|c| c[0].len() == n);
     let knots = (0..n).map(|i| i as f32 / (n - 1) as f32).collect();
     Some(LensProfile {
         source: "Sony",
@@ -97,6 +128,7 @@ fn sony_profile(distortion: Option<Vec<i16>>, vignetting: Option<Vec<i16>>) -> O
                 .map(|&v| (0.5 - (f32::from(v) / 8192.0 - 1.0).exp2()).exp2())
                 .collect()
         }),
+        chromatic_aberration: chromatic,
     })
 }
 

@@ -126,6 +126,12 @@ chromaticAberration?: ChromaticAberration,
  */
 profileCorrections?: boolean, 
 /**
+ * The profile corrects distortion and vignetting only, as before recipe version
+ * 32 (ADR 0083): set on older edits that applied it, so they render as they did.
+ * Written only when set; turning lens corrections off or on again clears it.
+ */
+profileWithoutChromaticAberration?: boolean, 
+/**
  * Made on the file as stored, before photos were shown upright by their EXIF
  * orientation (recipes before version 30; ADR 0078). Written only when set;
  * [`EditRecipe::on_upright`] adapts such a recipe and clears it.

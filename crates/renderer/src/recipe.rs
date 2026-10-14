@@ -62,7 +62,10 @@ use crate::ops::colour_mixer::ColourMixer;
 ///   0078). Older recipes that edit something are marked `unoriented`, made on the
 ///   file as stored, and adapted when they meet the upright photo.
 /// - 31: adds red-eye corrections (ADR 0080), written only when there are some.
-pub const RECIPE_VERSION: u32 = 31;
+/// - 32: lens profiles also correct chromatic aberration (ADR 0083). Older recipes
+///   that applied a profile to an edit are marked `profileWithoutChromaticAberration`,
+///   so they render as they did.
+pub const RECIPE_VERSION: u32 = 32;
 
 fn is_true(v: &bool) -> bool {
     *v
@@ -145,6 +148,12 @@ pub struct EditRecipe {
     #[serde(skip_serializing_if = "is_true")]
     #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
     pub profile_corrections: bool,
+    /// The profile corrects distortion and vignetting only, as before recipe version
+    /// 32 (ADR 0083): set on older edits that applied it, so they render as they did.
+    /// Written only when set; turning lens corrections off or on again clears it.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(feature = "ts", ts(optional, as = "Option<bool>"))]
+    pub profile_without_chromatic_aberration: bool,
     /// Made on the file as stored, before photos were shown upright by their EXIF
     /// orientation (recipes before version 30; ADR 0078). Written only when set;
     /// [`EditRecipe::on_upright`] adapts such a recipe and clears it.
@@ -234,6 +243,7 @@ impl Default for EditRecipe {
             geometry: None,
             chromatic_aberration: None,
             profile_corrections: true,
+            profile_without_chromatic_aberration: false,
             unoriented: false,
             point_curve: None,
             parametric_curve: None,
@@ -315,8 +325,14 @@ impl EditRecipe {
         // Nor were rendered files turned upright (version 30): older edits were made on
         // them as stored.
         let unoriented = current.unoriented || (read_as < 30 && !current.is_identity());
+        let profile_corrections = current.profile_corrections && !keeps_without;
+        // Profiles didn't correct chromatic aberration before version 32: older edits
+        // that apply one keep that.
+        let without_fringes = current.profile_without_chromatic_aberration
+            || (read_as < 32 && profile_corrections && !current.is_identity());
         Ok(Self {
-            profile_corrections: current.profile_corrections && !keeps_without,
+            profile_corrections,
+            profile_without_chromatic_aberration: without_fringes,
             unoriented,
             ..current
         }
@@ -359,6 +375,7 @@ impl EditRecipe {
             // Kept while on, even if nothing was measured: the toggle stays on.
             chromatic_aberration: self.chromatic_aberration.map(|c| c.sanitized()),
             profile_corrections: self.profile_corrections,
+            profile_without_chromatic_aberration: self.profile_without_chromatic_aberration,
             unoriented: self.unoriented,
             point_curve: self.point_curve.filter(|c| !c.is_identity()),
             parametric_curve: self
@@ -501,6 +518,7 @@ impl EditRecipe {
             && s.geometry.is_none()
             && s.chromatic_aberration.is_none()
             && s.profile_corrections
+            && !s.profile_without_chromatic_aberration
             && s.point_curve.is_none()
             && s.parametric_curve.is_none()
             && s.colour_grading.is_none()
@@ -580,7 +598,7 @@ mod tests {
         };
         assert_eq!(
             r.to_json(),
-            r#"{"version":31,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
+            r#"{"version":32,"exposure":0.5,"contrast":0.0,"highlights":0.0,"shadows":0.0,"whites":0.0,"blacks":0.0,"dehaze":0.0,"temperature":0.0,"tint":0.0,"vibrance":0.0,"saturation":0.0,"texture":0.0,"clarity":0.0,"sharpening":40.0,"noiseReduction":0.0,"vignette":0.0,"grain":0.0,"look":"standard"}"#
         );
     }
 
@@ -658,6 +676,36 @@ mod tests {
             }
             .is_identity()
         );
+    }
+
+    #[test]
+    fn older_edits_keep_profiles_without_their_chromatic_aberration() {
+        // An edit made with a profile before version 32 keeps rendering without its
+        // chromatic aberration, and says so.
+        let old = EditRecipe::from_json(r#"{"version":31,"exposure":0.3}"#).unwrap();
+        assert!(old.profile_corrections && old.profile_without_chromatic_aberration);
+        assert!(
+            old.to_json()
+                .contains(r#""profileWithoutChromaticAberration":true"#)
+        );
+        assert!(!old.is_identity());
+        let again = EditRecipe::from_json(&old.to_json()).unwrap();
+        assert!(again.profile_without_chromatic_aberration);
+        // One without the profile has nothing to mark; nor has one that changes nothing.
+        let off =
+            EditRecipe::from_json(r#"{"version":31,"exposure":0.3,"profileCorrections":false}"#)
+                .unwrap();
+        assert!(!off.profile_without_chromatic_aberration);
+        assert!(!off.to_json().contains("profileWithoutChromaticAberration"));
+        assert!(
+            EditRecipe::from_json(r#"{"version":31}"#)
+                .unwrap()
+                .is_identity()
+        );
+        // New edits have the full profile.
+        let new = EditRecipe::from_json(r#"{"version":32,"exposure":0.3}"#).unwrap();
+        assert!(!new.profile_without_chromatic_aberration);
+        assert!(!new.to_json().contains("profileWithoutChromaticAberration"));
     }
 
     #[test]

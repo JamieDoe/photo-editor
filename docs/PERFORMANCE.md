@@ -1195,3 +1195,17 @@ samples in 119 MB).
 Interactive previews during an export of the 24 MP file: p50 77 → 83 ms, max
 102 → 108 ms (idle 60 → 55 ms): the same within noise, though the export's decode
 now uses the background lane's threads.
+
+## 59. Chromatic aberration from the lens profile (ADR 0083)
+
+Framing the Sony A7R IV's 4784×3188 level (15 MP) with its profile, release build,
+three rounds of five on the noisy machine:
+
+| Profile applied | Framing |
+|---|---|
+| Distortion and vignetting | 138–152 ms |
+| Also chromatic aberration | 177–196 ms |
+
+Red and blue are each sampled through the profile's curve at the pixel's radius (a
+square root and two cubic Hermite lookups), once per framing change. Previews and
+exports then reuse the framed image.

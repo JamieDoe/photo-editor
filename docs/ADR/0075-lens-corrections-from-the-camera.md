@@ -49,9 +49,10 @@ What the camera fixtures record (read with a small TIFF walker):
      start of the plan multiplies it back, in floating point, so bright corners don't
      clip. Every stage after (tone maps, dehaze, the photo's white) sees the
      corrected light.
-   - **Chromatic aberration** from the profile isn't applied yet. The "Remove
+   - **Chromatic aberration** from the profile wasn't applied at first: the "Remove
      chromatic aberration" switch measures it from the photo (ADR 0035), and both
-     would correct it twice.
+     would correct it twice. ADR 0083 applies it, with the measurement replacing it
+     while that switch is on.
 3. **The recipe:** `profileCorrections`, on by default and written only when off.
    - **Recipe version 29.** Older recipes that edit something read with it off, so
      they render as they did. Older recipes that change nothing are no edit, like a
@@ -84,8 +85,7 @@ removes, so our correction is the fuller one.
 - Framing with a profile costs about 65 ms more for a 15 MP view (once, when the
   framing changes); slider changes cost nothing extra.
 - **Next:**
-  - the profile's chromatic aberration, which would replace the measured one where
-    there is a profile;
+  - the profile's chromatic aberration: done (ADR 0083);
   - DNG opcode lists (`WarpRectilinear`, `FixVignetteRadial`), Fujifilm, Olympus/OM
     and Panasonic, each checked against a file that has them.
 - **Older DSLR lenses** need lensfun's database: a licensing decision for later.

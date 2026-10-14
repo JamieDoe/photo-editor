@@ -122,6 +122,18 @@ fn reads_the_camera_files_that_have_it() {
     let d = p.distortion.unwrap();
     assert!((d[15] - (1.0 - 728.0 / 16384.0)).abs() < 1e-6, "{}", d[15]);
     assert!((0.5..0.55).contains(&p.vignetting.unwrap()[15]));
+    // Red larger than green by 1536 / 2^21 at the corner, blue smaller by 512 / 2^21.
+    let [red, blue] = p.chromatic_aberration.unwrap();
+    assert!(
+        (red[15] - (1.0 + 1536.0 / 2_097_152.0)).abs() < 1e-7,
+        "{}",
+        red[15]
+    );
+    assert!(
+        (blue[15] - (1.0 - 512.0 / 2_097_152.0)).abs() < 1e-7,
+        "{}",
+        blue[15]
+    );
     for none in [
         "nikon-z6-14bit-lossless.nef",
         "canon-eos-r6-20mp.cr3",
@@ -130,4 +142,42 @@ fn reads_the_camera_files_that_have_it() {
     ] {
         assert!(read(&dir.join(none)).is_none(), "{none}");
     }
+}
+
+#[test]
+fn reads_sonys_chromatic_aberration_as_red_then_blue() {
+    // A count of 32: red's 16 values, then blue's.
+    let ca: Vec<i16> = std::iter::once(32)
+        .chain((0..16).map(|i| i * 100))
+        .chain((0..16).map(|i| -i * 50))
+        .collect();
+    for little in [true, false] {
+        let p = read_bytes(&tiff(
+            little,
+            &[
+                (SONY_DISTORTION, curve(-48)),
+                (SONY_CHROMATIC_ABERRATION, ca.clone()),
+            ],
+        ))
+        .unwrap();
+        let [red, blue] = p.chromatic_aberration.unwrap();
+        assert_eq!((red.len(), blue.len()), (16, 16));
+        assert_eq!((red[0], blue[0]), (1.0, 1.0));
+        assert!((red[15] - (1.0 + 1500.0 / 2_097_152.0)).abs() < 1e-7);
+        assert!((blue[15] - (1.0 - 750.0 / 2_097_152.0)).abs() < 1e-7);
+    }
+    // On its own, it is a profile.
+    let alone = read_bytes(&tiff(true, &[(SONY_CHROMATIC_ABERRATION, ca.clone())])).unwrap();
+    assert!(alone.distortion.is_none() && alone.chromatic_aberration.is_some());
+    // Curves of another length than the others' are left out, the rest kept.
+    let short: Vec<i16> = std::iter::once(16).chain(0..16).collect();
+    let p = read_bytes(&tiff(
+        true,
+        &[
+            (SONY_DISTORTION, curve(-48)),
+            (SONY_CHROMATIC_ABERRATION, short),
+        ],
+    ))
+    .unwrap();
+    assert!(p.distortion.is_some() && p.chromatic_aberration.is_none());
 }

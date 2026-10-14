@@ -32,6 +32,8 @@ describe("presets", () => {
     const off = applyPreset({ ...photo, profileCorrections: false }, { ...mono, recipe: { ...mono.recipe, profileCorrections: true } });
     expect(off.profileCorrections).toBe(false);
     expect("profileCorrections" in applyPreset(photo, mono)).toBe(false);
+    const older = applyPreset({ ...photo, profileWithoutChromaticAberration: true }, mono);
+    expect(older.profileWithoutChromaticAberration).toBe(true);
   });
 
   it("knows when a photo has a preset's look", () => {

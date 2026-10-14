@@ -13,6 +13,10 @@ pub(crate) fn of(path: &Path) -> Option<(LensCorrection, String)> {
         &profile.knots,
         profile.distortion.as_deref(),
         profile.vignetting.as_deref(),
+        profile
+            .chromatic_aberration
+            .as_ref()
+            .map(|[red, blue]| [&red[..], &blue[..]]),
     )?;
     Some((
         correction,
@@ -20,10 +24,17 @@ pub(crate) fn of(path: &Path) -> Option<(LensCorrection, String)> {
     ))
 }
 
-/// `lens` when `recipe` applies the photo's profile.
+/// `lens` as `recipe` applies the photo's profile: not at all when it is off, and
+/// without its chromatic aberration for edits made before profiles corrected it (ADR
+/// 0083).
 pub(crate) fn applied(
     recipe: &renderer::EditRecipe,
     lens: Option<LensCorrection>,
 ) -> Option<LensCorrection> {
-    lens.filter(|_| recipe.profile_corrections)
+    let lens = lens.filter(|_| recipe.profile_corrections)?;
+    if recipe.profile_without_chromatic_aberration {
+        lens.without_chromatic_aberration()
+    } else {
+        Some(lens)
+    }
 }

@@ -1,9 +1,11 @@
 //! Lens corrections from a profile (ADR 0075): the lens's distortion undone in the
-//! geometry mapping ([`crate::geometry::Mapping`]), and its vignetting as a gain.
+//! geometry mapping ([`crate::geometry::Mapping`]), its vignetting as a gain, and its
+//! chromatic aberration (ADR 0083) by sampling red and blue where the lens put them.
 //!
 //! A profile gives curves of the radius from the image's centre, as fractions of its
 //! half-diagonal: where the lens really puts a point (as a multiple of the ideal
-//! radius), and how bright it leaves it (relative to the centre). The corrected photo
+//! radius), how bright it leaves it (relative to the centre), and how much larger it
+//! makes the red and blue images than the green one. The corrected photo
 //! is scaled, when it has to be, so it still fills the frame: pincushion correction
 //! would otherwise leave gaps at the edges.
 
@@ -19,8 +21,12 @@ pub struct LensCorrection {
     distortion: [f32; MAX_KNOTS],
     /// Brightness relative to the centre at each knot (1: none).
     vignetting: [f32; MAX_KNOTS],
+    /// Red's and blue's radius over green's at each knot (1: none).
+    red: [f32; MAX_KNOTS],
+    blue: [f32; MAX_KNOTS],
     has_distortion: bool,
     has_vignetting: bool,
+    has_chromatic_aberration: bool,
     /// Whether the knots are evenly spaced from 0 to 1 (as Sony's are), so a radius's
     /// knot is found directly.
     uniform: bool,
@@ -41,14 +47,19 @@ pub struct LensAt {
 const MAX_DISTORTION: f32 = 0.25;
 /// The darkest vignetting a profile may lift: four stops.
 const MIN_BRIGHTNESS: f32 = 1.0 / 16.0;
+/// The chromatic aberration a profile may undo, either way: as much as a measured
+/// correction may (ADR 0035), well beyond real lenses.
+const MAX_CHROMATIC: f32 = crate::chromatic::MAX_COEFFICIENT;
 
 impl LensCorrection {
-    /// A profile's curves at `knots` (ascending, 0..=1 of the half-diagonal). `None`
-    /// when the curves don't fit together or correct nothing.
+    /// A profile's curves at `knots` (ascending, 0..=1 of the half-diagonal):
+    /// distortion, vignetting, and red's and blue's chromatic aberration. `None` when
+    /// the curves don't fit together or correct nothing.
     pub fn new(
         knots: &[f32],
         distortion: Option<&[f32]>,
         vignetting: Option<&[f32]>,
+        chromatic_aberration: Option<[&[f32]; 2]>,
     ) -> Option<Self> {
         let n = knots.len();
         let ascending = knots.windows(2).all(|k| k[1] > k[0]);
@@ -59,6 +70,7 @@ impl LensCorrection {
             || !knots.iter().all(|k| k.is_finite())
             || !fits(distortion)
             || !fits(vignetting)
+            || !chromatic_aberration.is_none_or(|[r, b]| fits(Some(r)) && fits(Some(b)))
         {
             return None;
         }
@@ -80,15 +92,27 @@ impl LensCorrection {
             },
             distortion: curve(distortion, 1.0 - MAX_DISTORTION, 1.0 + MAX_DISTORTION),
             vignetting: curve(vignetting, MIN_BRIGHTNESS, 1.0),
+            red: curve(
+                chromatic_aberration.map(|[r, _]| r),
+                1.0 - MAX_CHROMATIC,
+                1.0 + MAX_CHROMATIC,
+            ),
+            blue: curve(
+                chromatic_aberration.map(|[_, b]| b),
+                1.0 - MAX_CHROMATIC,
+                1.0 + MAX_CHROMATIC,
+            ),
             has_distortion: distortion.is_some_and(|d| d.iter().any(|&v| v != 1.0)),
             has_vignetting: vignetting.is_some_and(|v| v.iter().any(|&b| b < 1.0)),
+            has_chromatic_aberration: chromatic_aberration
+                .is_some_and(|[r, b]| r.iter().chain(b).any(|&v| v != 1.0)),
             uniform: knots
                 .iter()
                 .enumerate()
                 .all(|(i, &k)| (k - i as f32 / (n - 1) as f32).abs() < 1e-6),
             fill: 1.0,
         };
-        if !lens.has_distortion && !lens.has_vignetting {
+        if !lens.has_distortion && !lens.has_vignetting && !lens.has_chromatic_aberration {
             return None;
         }
         lens.fill = lens.fill_scale();
@@ -101,6 +125,22 @@ impl LensCorrection {
 
     pub fn has_vignetting(&self) -> bool {
         self.has_vignetting
+    }
+
+    pub fn has_chromatic_aberration(&self) -> bool {
+        self.has_chromatic_aberration
+    }
+
+    /// It without its chromatic aberration: for edits made before profiles corrected
+    /// it (ADR 0083), and while the photo's own measurement replaces it (ADR 0035).
+    /// `None` when nothing else is left to correct.
+    pub fn without_chromatic_aberration(self) -> Option<Self> {
+        (self.has_distortion || self.has_vignetting).then_some(Self {
+            red: [1.0; MAX_KNOTS],
+            blue: [1.0; MAX_KNOTS],
+            has_chromatic_aberration: false,
+            ..self
+        })
     }
 
     /// The ideal image's scale (at most 1) at which every point of the frame comes
@@ -170,10 +210,13 @@ impl LensCorrection {
         [
             self.n as u32
                 ^ (u32::from(self.has_distortion) << 8)
-                ^ (u32::from(self.has_vignetting) << 9),
+                ^ (u32::from(self.has_vignetting) << 9)
+                ^ (u32::from(self.has_chromatic_aberration) << 10),
             self.fill.to_bits(),
             sum(&self.distortion[..self.n]) ^ sum(&self.knots[..self.n]).rotate_left(11),
-            sum(&self.vignetting[..self.n]),
+            sum(&self.vignetting[..self.n])
+                ^ sum(&self.red[..self.n]).rotate_left(7)
+                ^ sum(&self.blue[..self.n]).rotate_left(19),
         ]
     }
 }
@@ -195,6 +238,21 @@ impl LensAt {
         let r = (dx * dx + dy * dy).sqrt() / self.half_diagonal * lens.fill;
         let k = lens.fill * lens.distortion_at(r);
         (self.centre.0 + dx * k, self.centre.1 + dy * k)
+    }
+
+    /// Where red and blue are sampled for sensor pixel (`x`, `y`), green's: where the
+    /// lens put the same point of the scene in each. The curves are read at the
+    /// point's sensor radius; they change too slowly for the distortion between it and
+    /// the ideal radius to matter (well under a hundredth of a pixel).
+    #[inline]
+    pub fn fringe_points(&self, x: f32, y: f32) -> [(f32, f32); 2] {
+        let lens = &self.lens;
+        let (dx, dy) = (x - self.centre.0, y - self.centre.1);
+        let r = (dx * dx + dy * dy).sqrt() / self.half_diagonal;
+        [&lens.red, &lens.blue].map(|c| {
+            let k = lens.curve(c, r);
+            (self.centre.0 + dx * k, self.centre.1 + dy * k)
+        })
     }
 
     /// The gain that undoes the lens's vignetting at sensor pixel (`x`, `y`).
@@ -270,7 +328,7 @@ mod tests {
     fn evenly_spaced_knots_are_found_directly_with_the_same_curve() {
         let even = knots(16);
         let v: Vec<f32> = even.iter().map(|r| 1.0 - 0.3 * r * r * r).collect();
-        let lens = LensCorrection::new(&even, None, Some(&v)).unwrap();
+        let lens = LensCorrection::new(&even, None, Some(&v), None).unwrap();
         assert!(lens.uniform);
         let mut padded = [1.0; MAX_KNOTS];
         padded[..16].copy_from_slice(&v);
@@ -287,7 +345,7 @@ mod tests {
     fn barrel_is_undone_by_sampling_further_in_and_fills_without_scaling() {
         // Barrel: the corner really at 0.95 of its ideal radius.
         let d: Vec<f32> = knots(16).iter().map(|r| 1.0 - 0.05 * r * r).collect();
-        let profile = LensCorrection::new(&knots(16), Some(&d), None).unwrap();
+        let profile = LensCorrection::new(&knots(16), Some(&d), None, None).unwrap();
         assert_eq!(profile.fill, 1.0);
         let lens = profile.at(600.0, 400.0);
         // The corner comes from 0.95 of the way out; the centre stays.
@@ -301,7 +359,7 @@ mod tests {
     #[test]
     fn pincushion_is_scaled_to_fill_the_frame() {
         let d: Vec<f32> = knots(16).iter().map(|r| 1.0 + 0.04 * r * r).collect();
-        let profile = LensCorrection::new(&knots(16), Some(&d), None).unwrap();
+        let profile = LensCorrection::new(&knots(16), Some(&d), None, None).unwrap();
         assert!(
             profile.fill < 1.0 && profile.fill > 0.95,
             "{}",
@@ -332,7 +390,7 @@ mod tests {
     #[test]
     fn vignetting_is_lifted_towards_the_corners() {
         let v: Vec<f32> = knots(16).iter().map(|r| 1.0 - 0.5 * r * r).collect();
-        let profile = LensCorrection::new(&knots(16), None, Some(&v)).unwrap();
+        let profile = LensCorrection::new(&knots(16), None, Some(&v), None).unwrap();
         assert!(!profile.has_distortion() && profile.has_vignetting());
         assert!((profile.headroom() - 2.0).abs() < 1e-4);
         let lens = profile.at(600.0, 400.0);
@@ -343,14 +401,47 @@ mod tests {
     }
 
     #[test]
+    fn chromatic_aberration_moves_red_and_blue_about_the_centre() {
+        let k = knots(16);
+        let red: Vec<f32> = k.iter().map(|r| 1.0 + 0.001 * r).collect();
+        let blue: Vec<f32> = k.iter().map(|r| 1.0 - 0.0005 * r).collect();
+        let d: Vec<f32> = k.iter().map(|r| 1.0 - 0.02 * r * r).collect();
+        let profile = LensCorrection::new(&k, Some(&d), None, Some([&red, &blue])).unwrap();
+        let lens = profile.at(600.0, 400.0);
+        // At the corner (radius 1), red 0.1 % further out and blue 0.05 % further in.
+        let [(rx, ry), (bx, by)] = lens.fringe_points(600.0, 400.0);
+        assert!((rx - (300.0 + 300.0 * 1.001)).abs() < 1e-3);
+        assert!((ry - (200.0 + 200.0 * 1.001)).abs() < 1e-3);
+        assert!((bx - (300.0 + 300.0 * 0.9995)).abs() < 1e-3);
+        assert!((by - (200.0 + 200.0 * 0.9995)).abs() < 1e-3);
+        // The centre stays.
+        assert_eq!(lens.fringe_points(300.0, 200.0), [(300.0, 200.0); 2]);
+        // Without it, distortion is kept and the key changes.
+        let plain = profile.without_chromatic_aberration().unwrap();
+        assert!(!plain.has_chromatic_aberration() && plain.has_distortion());
+        assert_ne!(plain.key(), profile.key());
+        assert_eq!(
+            plain.at(600.0, 400.0).fringe_points(600.0, 400.0),
+            [(600.0, 400.0); 2]
+        );
+        // Curves of another length make no profile.
+        assert!(LensCorrection::new(&k, Some(&d), None, Some([&red[..4], &blue])).is_none());
+    }
+
+    #[test]
     fn profiles_that_dont_fit_or_correct_nothing_are_none() {
         let k = knots(4);
-        assert!(LensCorrection::new(&k, Some(&[1.0, 1.0, 1.0]), None).is_none());
+        assert!(LensCorrection::new(&k, Some(&[1.0, 1.0, 1.0]), None, None).is_none());
         assert!(
-            LensCorrection::new(&[0.0, 0.5, 0.4, 1.0], Some(&[1.0, 0.99, 0.98, 0.97]), None,)
-                .is_none()
+            LensCorrection::new(
+                &[0.0, 0.5, 0.4, 1.0],
+                Some(&[1.0, 0.99, 0.98, 0.97]),
+                None,
+                None
+            )
+            .is_none()
         );
-        assert!(LensCorrection::new(&k, Some(&[1.0; 4]), Some(&[1.0; 4])).is_none());
-        assert!(LensCorrection::new(&k, Some(&[1.0, f32::NAN, 1.0, 1.0]), None).is_none());
+        assert!(LensCorrection::new(&k, Some(&[1.0; 4]), Some(&[1.0; 4]), None).is_none());
+        assert!(LensCorrection::new(&k, Some(&[1.0, f32::NAN, 1.0, 1.0]), None, None).is_none());
     }
 }

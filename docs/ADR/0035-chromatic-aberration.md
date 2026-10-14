@@ -79,3 +79,6 @@ See docs/PERFORMANCE.md §24.
 - X-Trans (Fuji) previews come from LibRaw's half-size mode like Bayer files. The
   measurement worked well on the X-T3 sample (about 4 and 8 px of CA at full size,
   visibly removed), but it is one sample.
+- **Since ADR 0083,** a lens profile that records chromatic aberration (Sony) corrects
+  it by default. While this switch is on, its measurement replaces the profile's, so
+  the fringes are never corrected twice.
